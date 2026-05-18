@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.utils.chat_upload import attachment_prompt_text
+
 
 def sanitize_history_messages(
     messages: list[dict[str, Any]],
@@ -18,8 +20,13 @@ def sanitize_history_messages(
             if content is not None and str(content).strip():
                 safe.append({"role": "system", "content": str(content)})
         elif role == "user":
-            if content is not None and str(content).strip():
-                safe.append({"role": "user", "content": str(content)})
+            extra = msg.get("extra_data")
+            text = attachment_prompt_text(
+                str(content) if content is not None else "",
+                extra if isinstance(extra, dict) else None,
+            )
+            if text.strip():
+                safe.append({"role": "user", "content": text})
         elif role == "assistant":
             if content is not None and str(content).strip():
                 safe.append({"role": "assistant", "content": str(content)})

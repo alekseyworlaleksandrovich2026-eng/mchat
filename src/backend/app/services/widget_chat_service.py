@@ -94,6 +94,7 @@ async def prepare_widget_chat(
     conversation_id: str | None,
     request: Request,
     visitor_token: str | None = None,
+    extra_data: dict | None = None,
 ) -> WidgetChatContext:
     result = await db.execute(
         select(CustomerConfig).where(
@@ -138,6 +139,7 @@ async def prepare_widget_chat(
         conversation_id=conversation.id,
         role="user",
         content=message_text,
+        extra_data=extra_data,
     )
     db.add(user_message)
     await db.flush()

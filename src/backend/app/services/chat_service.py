@@ -51,6 +51,7 @@ class ChatService:
         content: str,
         role: str = "user",
         user: User | None = None,
+        extra_data: dict | None = None,
     ) -> MessageResponse:
         """Send a message and trigger AI response processing."""
         # Find or create conversation
@@ -84,6 +85,7 @@ class ChatService:
             user_id=user.id if user else None,
             role=role,
             content=content,
+            extra_data=extra_data,
         )
         self.db.add(message)
         await self.db.flush()

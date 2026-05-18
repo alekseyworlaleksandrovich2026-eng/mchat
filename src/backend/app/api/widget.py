@@ -1,6 +1,6 @@
 """Widget/public API router (no auth required for most endpoints)."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -22,6 +22,7 @@ from app.services.widget_chat_service import (
     sse_line,
     widget_contact_info,
 )
+from app.utils.chat_upload import save_chat_attachment
 
 
 def _conversation_belongs_to_customer(
@@ -63,6 +64,7 @@ class WidgetChatResponse(BaseModel):
     response: str = Field(..., alias="response")
     conversation_id: str = Field(..., alias="conversationId")
     message_id: str = Field(..., alias="messageId")
+    user_attachments: list[dict] | None = Field(None, alias="userAttachments")
 
     model_config = {"populate_by_name": True}
 
@@ -139,6 +141,62 @@ async def create_visitor_conversation(
         contact_info=request.contact_info,
     )
     return conversation
+
+
+@router.post("/{customer_id}/upload", response_model=WidgetChatResponse)
+async def widget_upload_attachment(
+    customer_id: str,
+    http_request: Request,
+    file: UploadFile = File(...),
+    conversation_id: str | None = Form(None, alias="conversationId"),
+    visitor_token: str | None = Form(None, alias="visitorToken"),
+    content: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload image/file from widget and get AI reply."""
+    attachment = await save_chat_attachment(file)
+    display = (content or "").strip() or attachment["name"]
+    try:
+        ctx = await prepare_widget_chat(
+            db,
+            customer_id,
+            display,
+            conversation_id,
+            http_request,
+            visitor_token=visitor_token,
+            extra_data={"attachments": [attachment]},
+        )
+        from app.bot.engine import process_message
+
+        full_response = ""
+        async for token in process_message(
+            ctx.conversation,
+            ctx.user_message,
+            ctx.ai_config,
+            db,
+            customer_config=ctx.customer,
+        ):
+            full_response += token
+
+        await db.flush()
+        assistant_msg = await resolve_assistant_message(db, ctx.conversation.id)
+        await db.commit()
+
+        return WidgetChatResponse(
+            response=full_response or "抱歉，我暂时无法回复，请稍后再试。",
+            conversation_id=ctx.conversation.id,
+            message_id=assistant_msg.id if assistant_msg else ctx.user_message.id,
+            user_attachments=[attachment],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Widget upload error: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Upload failed: {str(e)}",
+        ) from e
 
 
 @router.post("/{customer_id}/chat", response_model=WidgetChatResponse)

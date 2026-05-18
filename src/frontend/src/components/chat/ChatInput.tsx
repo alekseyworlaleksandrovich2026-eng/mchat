@@ -5,8 +5,7 @@ import { cn } from '@/lib/utils'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
 
 interface ChatInputProps {
-  onSend: (content: string) => void
-  onUpload?: (file: File) => void
+  onSend: (content: string, file?: File) => void
   disabled?: boolean
   placeholder?: string
   compact?: boolean
@@ -16,7 +15,6 @@ interface ChatInputProps {
 
 export function ChatInput({
   onSend,
-  onUpload,
   disabled = false,
   placeholder,
   compact = false,
@@ -89,10 +87,12 @@ export function ChatInput({
 
   const handleSubmit = () => {
     const trimmed = content.trim()
-    if (!trimmed) return
+    if (!trimmed && !selectedFile) return
     if (speech.isListening) speech.stopListening()
-    onSend(trimmed)
+    onSend(trimmed, selectedFile ?? undefined)
     setContent('')
+    setSelectedFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
@@ -109,7 +109,6 @@ export function ChatInput({
     const file = e.target.files?.[0]
     if (file) {
       setSelectedFile(file)
-      onUpload?.(file)
     }
   }
 
@@ -119,8 +118,8 @@ export function ChatInput({
       for (const item of Array.from(items)) {
         if (item.type.startsWith('image/')) {
           const file = item.getAsFile()
-          if (file && onUpload) {
-            onUpload(file)
+          if (file) {
+            setSelectedFile(file)
           }
           break
         }
@@ -150,7 +149,16 @@ export function ChatInput({
 
       {selectedFile && (
         <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
-          <Paperclip className="w-4 h-4 text-gray-400" />
+          {selectedFile.type.startsWith('image/') ? (
+            <img
+              src={URL.createObjectURL(selectedFile)}
+              alt=""
+              className="w-10 h-10 rounded object-cover shrink-0"
+              onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
+            />
+          ) : (
+            <Paperclip className="w-4 h-4 text-gray-400 shrink-0" />
+          )}
           <span className="text-sm text-gray-600 dark:text-gray-300 truncate flex-1">
             {selectedFile.name}
           </span>
@@ -237,10 +245,10 @@ export function ChatInput({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={disabled || !content.trim()}
+          disabled={disabled || (!content.trim() && !selectedFile)}
           className={cn(
             'p-2.5 rounded-xl transition-colors',
-            content.trim()
+            content.trim() || selectedFile
               ? 'bg-primary-600 text-white hover:bg-primary-700'
               : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed',
           )}

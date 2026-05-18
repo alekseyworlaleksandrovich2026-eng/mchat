@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import i18n from '@/i18n'
+import { normalizeMessageMedia } from '@/lib/mediaUrl'
 import type { Message } from '@/stores/chat'
 
 const VISITOR_KEY_PREFIX = 'mchat_widget_visitor_'
@@ -151,14 +152,17 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       }
 
       const data = await res.json()
-      const list: Message[] = (data.messages || []).map((m: Message) => ({
-        id: m.id,
-        conversation_id: m.conversation_id,
-        role: m.role as Message['role'],
-        content: m.content,
-        content_type: 'text' as const,
-        created_at: m.created_at,
-      }))
+      const list: Message[] = (data.messages || []).map((m: Message) =>
+        normalizeMessageMedia({
+          id: m.id,
+          conversation_id: m.conversation_id,
+          role: m.role as Message['role'],
+          content: m.content,
+          content_type: m.content_type || 'text',
+          extra_data: m.extra_data,
+          created_at: m.created_at,
+        }),
+      )
 
       if (list.length === 0) {
         setMessages([
@@ -200,18 +204,34 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
   }, [agentId, loadHistory])
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!agentId || !content.trim() || isLoading || isStreaming) return
+    async (content: string, file?: File) => {
+      if (!agentId || isLoading || isStreaming) return
+      if (!file && !content.trim()) return
 
       const visitorToken = getOrCreateVisitorToken(agentId)
-      const text = content.trim()
+      const text = content.trim() || file?.name || ''
+      const previewUrl =
+        file && file.type.startsWith('image/')
+          ? URL.createObjectURL(file)
+          : undefined
       const tempId = `user-${Date.now()}`
       const userMessage: Message = {
         id: tempId,
         conversation_id: sessionStorage.getItem(conversationStorageKey(agentId)) || '',
         role: 'user',
         content: text,
-        content_type: 'text',
+        content_type: file?.type.startsWith('image/') ? 'image' : file ? 'file' : 'text',
+        extra_data: file
+          ? {
+              attachments: [
+                {
+                  name: file.name,
+                  mime: file.type,
+                  url: previewUrl,
+                },
+              ],
+            }
+          : undefined,
         created_at: new Date().toISOString(),
       }
 
@@ -225,14 +245,48 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       setError(null)
 
       const convId = sessionStorage.getItem(conversationStorageKey(agentId))
-      const payload = JSON.stringify({
-        message: text,
-        conversationId: convId,
-        visitorToken,
-      })
 
       try {
-        let result: { conversationId: string; messageId: string; response: string }
+        let result: {
+          conversationId: string
+          messageId: string
+          response: string
+          userAttachments?: Array<{ url?: string; name?: string; mime?: string }>
+        }
+
+        if (file) {
+          const form = new FormData()
+          form.append('file', file)
+          if (convId) form.append('conversationId', convId)
+          form.append('visitorToken', visitorToken)
+          if (content.trim()) form.append('content', content.trim())
+
+          const uploadRes = await fetch(`${base}/widget/${agentId}/upload`, {
+            method: 'POST',
+            body: form,
+          })
+          if (!uploadRes.ok) {
+            const errBody = await uploadRes.json().catch(() => ({}))
+            throw new Error(
+              typeof errBody.detail === 'string'
+                ? errBody.detail
+                : `请求失败 (${uploadRes.status})`,
+            )
+          }
+          const data = await uploadRes.json()
+          result = {
+            conversationId: data.conversationId,
+            messageId: data.messageId,
+            response: data.response || '',
+            userAttachments: data.userAttachments,
+          }
+          setStreamingContent(result.response)
+        } else {
+        const payload = JSON.stringify({
+          message: text,
+          conversationId: convId,
+          visitorToken,
+        })
 
         const streamRes = await fetch(`${base}/widget/${agentId}/chat/stream`, {
           method: 'POST',
@@ -266,6 +320,9 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
           }
           setStreamingContent(result.response)
         }
+        }
+
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
 
         if (result.conversationId) {
           sessionStorage.setItem(
@@ -283,14 +340,22 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
           created_at: new Date().toISOString(),
         }
 
+        const finalUserMessage = normalizeMessageMedia({
+          ...userMessage,
+          extra_data: result.userAttachments?.length
+            ? { attachments: result.userAttachments }
+            : userMessage.extra_data,
+        })
+
         setMessages((prev) =>
           dedupeMessages([
             ...prev.filter((m) => m.id !== tempId),
-            userMessage,
+            finalUserMessage,
             assistantMessage,
           ]),
         )
       } catch (e) {
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
         const errMsg = e instanceof Error ? e.message : i18n.t('chat.networkError')
         setError(errMsg)
         setMessages((prev) => [

@@ -13,9 +13,9 @@ export function ChatPage() {
   const navigate = useNavigate()
   const chat = useChat(conversationId)
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, file?: File) => {
     if (conversationId) {
-      chat.sendMessage(conversationId, content)
+      chat.sendMessage(conversationId, content, file)
     }
   }
 

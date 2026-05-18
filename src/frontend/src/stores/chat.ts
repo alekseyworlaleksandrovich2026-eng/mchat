@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '@/lib/api'
+import { normalizeMessageMedia } from '@/lib/mediaUrl'
 
 function dedupeMessages(messages: Message[]): Message[] {
   const seen = new Set<string>()
@@ -46,7 +47,7 @@ interface ChatState {
 
   fetchConversations: () => Promise<void>
   fetchMessages: (conversationId: string) => Promise<void>
-  sendMessage: (conversationId: string, content: string) => Promise<void>
+  sendMessage: (conversationId: string, content: string, file?: File) => Promise<void>
   createConversation: (title?: string) => Promise<Conversation>
   clearCurrentConversation: () => void
   addMessage: (message: Message) => void
@@ -79,7 +80,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const resp = await api.get<{ messages: Message[] }>(`/chat/conversations/${conversationId}`)
       set({
-        messages: dedupeMessages(resp.messages || []),
+        messages: dedupeMessages((resp.messages || []).map(normalizeMessageMedia)),
         isLoading: false,
       })
     } catch (err: any) {
@@ -87,14 +88,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId: string, content: string) => {
+  sendMessage: async (conversationId: string, content: string, file?: File) => {
     const tempId = `temp-${Date.now()}`
+    const previewUrl =
+      file && file.type.startsWith('image/')
+        ? URL.createObjectURL(file)
+        : undefined
 
     const userMessage: Message = {
       id: tempId,
       conversation_id: conversationId,
       role: 'user',
-      content,
+      content: content || file?.name || '',
+      content_type: file?.type?.startsWith('image/') ? 'image' : file ? 'file' : 'text',
+      extra_data: file
+        ? {
+            attachments: [
+              {
+                name: file.name,
+                mime: file.type,
+                url: previewUrl,
+                pending: true,
+              },
+            ],
+          }
+        : undefined,
       created_at: new Date().toISOString(),
     }
 
@@ -105,13 +123,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
 
     try {
-      await api.post('/chat/send', {
-        conversation_id: conversationId,
-        content,
-        role: 'user',
-      })
+      if (file) {
+        const form = new FormData()
+        form.append('conversation_id', conversationId)
+        form.append('file', file)
+        if (content.trim()) {
+          form.append('content', content.trim())
+        }
+        const saved = await api.upload<Message>('/chat/upload', form)
+        const persisted = normalizeMessageMedia({
+          ...saved,
+          content_type: file.type?.startsWith('image/') ? 'image' : 'file',
+        })
+        set((state) => ({
+          messages: state.messages.map((m) => (m.id === tempId ? persisted : m)),
+        }))
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+      } else {
+        await api.post('/chat/send', {
+          conversation_id: conversationId,
+          content,
+          role: 'user',
+        })
+      }
     } catch (apiErr: any) {
-      set({ error: apiErr.message, isStreaming: false })
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      set((state) => ({
+        error: apiErr.message,
+        isStreaming: false,
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }))
     }
   },
 
@@ -134,23 +175,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addMessage: (message: Message) => {
+    const normalized = normalizeMessageMedia(message)
     set((state) => {
-      if (state.messages.some((m) => m.id === message.id)) {
+      if (state.messages.some((m) => m.id === normalized.id)) {
         return { isStreaming: false, streamingContent: '' }
       }
       const duplicateAssistant =
-        message.role === 'assistant' &&
+        normalized.role === 'assistant' &&
         state.messages.some(
           (m) =>
             m.role === 'assistant' &&
-            m.content === message.content &&
-            m.conversation_id === message.conversation_id,
+            m.content === normalized.content &&
+            m.conversation_id === normalized.conversation_id,
         )
       if (duplicateAssistant) {
         return { isStreaming: false, streamingContent: '' }
       }
       return {
-        messages: [...state.messages, message],
+        messages: [...state.messages, normalized],
         isStreaming: false,
         streamingContent: '',
       }

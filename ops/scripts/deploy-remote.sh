@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy mchat to remote server
+# Deploy mchat to remote server (incremental update; preserves DB, .env, skills, uploads)
 # Usage: bash ops/scripts/deploy-remote.sh [user@host]
 set -euo pipefail
 
@@ -11,10 +11,34 @@ echo "==> Build frontend (local)"
 cd "$PROJECT_DIR/src/frontend"
 npm run build
 
-echo "==> Generate production .env"
-JWT_SECRET=$(openssl rand -hex 32)
-ENV_FILE="$PROJECT_DIR/ops/deploy/.env.production.generated"
-cat > "$ENV_FILE" <<EOF
+echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
+rsync -avz --delete \
+  --exclude '.git' \
+  --exclude 'node_modules' \
+  --exclude 'src/frontend/node_modules' \
+  --exclude 'src/backend/venv' \
+  --exclude '__pycache__' \
+  --exclude '*.pyc' \
+  --exclude '.env' \
+  --exclude 'ops/deploy/.env.production.generated' \
+  --exclude 'src/backend/logs' \
+  --exclude 'logs' \
+  --exclude 'skills' \
+  --exclude 'data' \
+  --exclude 'uploads' \
+  --exclude 'test.db' \
+  --exclude '.pytest_cache' \
+  --exclude 'src/frontend/.vite' \
+  "$PROJECT_DIR/" "${REMOTE}:${REMOTE_DIR}/"
+
+# Preserve existing server .env (JWT, passwords); only bootstrap if missing
+if ssh "$REMOTE" "test -f ${REMOTE_DIR}/.env"; then
+  echo "==> Keep existing ${REMOTE_DIR}/.env on server"
+else
+  echo "==> Create initial .env on server"
+  JWT_SECRET=$(openssl rand -hex 32)
+  ENV_FILE="$PROJECT_DIR/ops/deploy/.env.production.generated"
+  cat > "$ENV_FILE" <<EOF
 DATABASE_URL=mysql+aiomysql://mchat:112358xx@10.98.8.8:3306/mchat
 REDIS_URL=redis://10.98.8.12:6379/0
 
@@ -39,29 +63,16 @@ MAX_UPLOAD_SIZE_MB=50
 EMBEDDING_PROVIDER=openai
 EMBEDDING_MODEL=text-embedding-3-small
 EOF
-
-echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
-rsync -avz --delete \
-  --exclude '.git' \
-  --exclude 'node_modules' \
-  --exclude 'src/frontend/node_modules' \
-  --exclude 'src/backend/venv' \
-  --exclude '__pycache__' \
-  --exclude '*.pyc' \
-  --exclude '.env' \
-  --exclude 'src/backend/logs' \
-  --exclude 'src/frontend/.vite' \
-  "$PROJECT_DIR/" "${REMOTE}:${REMOTE_DIR}/"
-
-rsync -avz "$ENV_FILE" "${REMOTE}:${REMOTE_DIR}/.env"
+  rsync -avz "$ENV_FILE" "${REMOTE}:${REMOTE_DIR}/.env"
+fi
 
 echo "==> Fix frontend dist permissions on server"
 ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist 2>/dev/null || true"
 
-echo "==> Remote setup"
+echo "==> Remote setup (pip, db migrate, restart services)"
 ssh "$REMOTE" "chmod +x ${REMOTE_DIR}/ops/deploy/remote-setup.sh && bash ${REMOTE_DIR}/ops/deploy/remote-setup.sh"
 
 echo ""
 echo "Deployed to http://10.98.8.15:5180/admin"
-echo "Admin: admin / admin123 (change after login)"
-echo "JWT_SECRET saved in ops/deploy/.env.production.generated (local only)"
+echo "API: http://10.98.8.15:3001/docs"
+echo "Database: migrate only (no data wipe). Existing .env on server unchanged."

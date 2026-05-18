@@ -7,6 +7,7 @@ import { Message } from '@/stores/chat'
 import { Avatar } from '@/components/ui/Avatar'
 import { createMarkdownComponents } from './markdownComponents'
 import { useThrottledValue } from '@/hooks/useThrottledValue'
+import { resolveUploadUrl } from '@/lib/mediaUrl'
 
 interface MessageBubbleProps {
   message: Message
@@ -48,6 +49,25 @@ export function MessageBubble({
   const displayContent = isStreaming ? streamingContent || '' : message.content
   const throttledContent = useThrottledValue(displayContent, isStreaming ? 50 : 0)
 
+  type Attachment = { url?: string; name?: string; mime?: string }
+  const attachments = (message.extra_data?.attachments as Attachment[] | undefined) ?? []
+  const withResolvedUrl = (att: Attachment) => ({
+    ...att,
+    url: resolveUploadUrl(att.url),
+  })
+  const imageAttachments = attachments
+    .filter((a) => a.url && String(a.mime || '').startsWith('image/'))
+    .map(withResolvedUrl)
+  const fileAttachments = attachments
+    .filter((a) => a.url && !String(a.mime || '').startsWith('image/'))
+    .map(withResolvedUrl)
+  const caption =
+    attachments.length > 0 &&
+    displayContent &&
+    attachments.some((a) => a.name === displayContent)
+      ? ''
+      : displayContent
+
   return (
     <div
       className={cn(
@@ -80,9 +100,40 @@ export function MessageBubble({
         style={isUser && accentColor ? { backgroundColor: accentColor } : undefined}
       >
         {isUser ? (
-          <p className="text-sm whitespace-pre-wrap break-words">
-            {message.content}
-          </p>
+          <div className="space-y-2">
+            {imageAttachments.map((att, i) => (
+              <a
+                key={`${att.url}-${i}`}
+                href={att.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block"
+              >
+                <img
+                  src={att.url}
+                  alt={att.name || 'image'}
+                  className="max-w-full max-h-64 rounded-lg object-contain"
+                />
+              </a>
+            ))}
+            {fileAttachments.map((att, i) => (
+              <a
+                key={`${att.url}-${i}`}
+                href={att.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm underline break-all opacity-90"
+              >
+                {att.name || 'attachment'}
+              </a>
+            ))}
+            {caption ? (
+              <p className="text-sm whitespace-pre-wrap break-words">{caption}</p>
+            ) : null}
+            {!caption && attachments.length === 0 ? (
+              <p className="text-sm whitespace-pre-wrap break-words">{displayContent}</p>
+            ) : null}
+          </div>
         ) : (
           <div className="max-w-none break-words text-gray-800 dark:text-gray-200">
             <ReactMarkdown

@@ -11,7 +11,7 @@ interface ChatWindowProps {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
-  onSend: (content: string) => void
+  onSend: (content: string, file?: File) => void
   title?: string
   emptyMessage?: string
   disabled?: boolean

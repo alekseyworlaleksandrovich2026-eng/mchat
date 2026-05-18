@@ -14,6 +14,7 @@ from app.bot.messages import (
     build_tool_result_message,
     sanitize_history_messages,
 )
+from app.utils.chat_upload import attachment_prompt_text
 from app.bot.provider import create_provider
 from app.bot.patent_links import linkify_patent_ids, patent_link_settings_from_skills
 from app.bot.skill_context import (
@@ -189,10 +190,21 @@ async def process_message(
             if hist_msg.id == message.id:
                 continue
             history_payload.append(
-                {"role": hist_msg.role, "content": hist_msg.content}
+                {
+                    "role": hist_msg.role,
+                    "content": hist_msg.content,
+                    "extra_data": hist_msg.extra_data,
+                }
             )
         messages_list.extend(sanitize_history_messages(history_payload))
-        messages_list.append({"role": "user", "content": message.content})
+        messages_list.append(
+            {
+                "role": "user",
+                "content": attachment_prompt_text(
+                    message.content, message.extra_data
+                ),
+            }
+        )
 
         provider = create_provider(ai_config)
         full_response = ""

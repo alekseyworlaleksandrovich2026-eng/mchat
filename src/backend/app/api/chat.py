@@ -1,6 +1,6 @@
 """Chat API router."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -15,8 +15,38 @@ from app.schemas.chat import (
     MessageResponse,
 )
 from app.services.chat_service import ChatService
+from app.utils.chat_upload import save_chat_attachment
 
 router = APIRouter()
+
+
+@router.post("/upload", response_model=MessageResponse)
+async def upload_chat_attachment(
+    conversation_id: str = Form(...),
+    file: UploadFile = File(...),
+    content: str | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an image or file and send it as a user message."""
+    attachment = await save_chat_attachment(file)
+    display = (content or "").strip() or attachment["name"]
+    chat_service = ChatService(db)
+    try:
+        return await chat_service.send_message(
+            conversation_id=conversation_id,
+            content=display,
+            role="user",
+            user=current_user,
+            extra_data={"attachments": [attachment]},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send attachment: {e}",
+        ) from e
 
 
 @router.post("/send", response_model=MessageResponse)
