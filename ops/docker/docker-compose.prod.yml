@@ -1,0 +1,81 @@
+# Production Docker Compose - MySQL + Backend + Frontend
+# Copy ops/docker/.env.example to .env.production and adjust values before deploy.
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mchat-mysql-prod
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mchat}
+      MYSQL_USER: ${MYSQL_USER:-mchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mchat_password_change_me}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password_change_me}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mchat-prod-network
+    restart: always
+
+  backend:
+    build:
+      context: ../../src/backend
+      dockerfile: Dockerfile
+    container_name: mchat-backend-prod
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: "mysql+aiomysql://${MYSQL_USER:-mchat}:${MYSQL_PASSWORD:-mchat_password_change_me}@mysql:3306/${MYSQL_DATABASE:-mchat}"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "3001"
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - mchat-prod-network
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ../../src/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:3001}"
+    container_name: mchat-frontend-prod
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    networks:
+      - mchat-prod-network
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mysql_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  mchat-prod-network:
+    driver: bridge

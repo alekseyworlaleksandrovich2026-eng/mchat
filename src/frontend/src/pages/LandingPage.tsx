@@ -1,0 +1,246 @@
+import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import {
+  Bot,
+  BookOpen,
+  Puzzle,
+  MessageCircle,
+  Globe,
+  Layers,
+  Github,
+  ArrowRight,
+  Sparkles,
+  Zap,
+  Code2,
+} from 'lucide-react'
+import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
+
+const GITHUB_URL = 'https://github.com/windinwing/mchat'
+
+const featureIcons = [Bot, BookOpen, Puzzle, MessageCircle, Globe, Layers] as const
+const featureKeys = [
+  'featureBot',
+  'featureRag',
+  'featureSkill',
+  'featureWidget',
+  'featureChannel',
+  'featureTenant',
+] as const
+
+export function LandingPage() {
+  const { t } = useTranslation()
+
+  return (
+    <div className="min-h-screen bg-[#fafbfc] dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-gray-200/80 dark:border-gray-800/80 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-lg shadow-primary-500/25">
+              <MessageCircle className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">MChat</span>
+          </Link>
+          <nav className="hidden sm:flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
+            <a href="#features" className="hover:text-primary-600 transition-colors">
+              {t('landing.navFeatures')}
+            </a>
+            <a href="#quickstart" className="hover:text-primary-600 transition-colors">
+              {t('landing.quickTitle')}
+            </a>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary-600 transition-colors inline-flex items-center gap-1"
+            >
+              <Github className="w-4 h-4" />
+              {t('common.github')}
+            </a>
+          </nav>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher />
+            <Link
+              to="/admin/login"
+              className="hidden sm:inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            >
+              {t('common.admin')}
+            </Link>
+            <Link
+              to="/admin/login"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 shadow-md shadow-primary-600/20 transition-colors"
+            >
+              {t('landing.ctaAdmin')}
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-primary-50/80 via-transparent to-transparent dark:from-primary-950/40 pointer-events-none" />
+        <div
+          className="absolute top-20 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full bg-primary-400/10 blur-3xl pointer-events-none"
+          aria-hidden
+        />
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-24 sm:pt-24 sm:pb-32 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-medium mb-6">
+            <Sparkles className="w-3.5 h-3.5" />
+            {t('landing.badge')}
+          </div>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight">
+            {t('landing.heroTitle')}
+            <br />
+            <span className="bg-gradient-to-r from-primary-600 to-violet-600 bg-clip-text text-transparent">
+              {t('landing.heroTitleAccent')}
+            </span>
+          </h1>
+          <p className="mt-6 max-w-2xl mx-auto text-lg text-gray-600 dark:text-gray-400 leading-relaxed">
+            {t('landing.heroSubtitle')}
+          </p>
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link
+              to="/admin/login"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 shadow-lg shadow-primary-600/25 transition-all hover:scale-[1.02]"
+            >
+              {t('landing.ctaAdmin')}
+              <ArrowRight className="w-5 h-5" />
+            </Link>
+            <Link
+              to="/widget/demo"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 font-medium hover:border-primary-400 transition-all"
+            >
+              <Zap className="w-5 h-5 text-primary-600" />
+              {t('landing.ctaWidget')}
+            </Link>
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-gray-600 dark:text-gray-400 font-medium hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <Github className="w-5 h-5" />
+              {t('landing.ctaGithub')}
+            </a>
+          </div>
+          <div className="mt-16 grid grid-cols-3 gap-6 max-w-lg mx-auto">
+            {[
+              { v: '10+', k: 'landing.statsModels' },
+              { v: '6+', k: 'landing.statsChannels' },
+              { v: '1', k: 'landing.statsDeploy' },
+            ].map((s) => (
+              <div key={s.k} className="text-center">
+                <p className="text-2xl sm:text-3xl font-bold text-primary-600">{s.v}</p>
+                <p className="text-xs sm:text-sm text-gray-500 mt-1">{t(s.k)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="py-20 sm:py-28 bg-white dark:bg-gray-900/50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <h2 className="text-3xl sm:text-4xl font-bold">{t('landing.featuresTitle')}</h2>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">{t('landing.featuresSubtitle')}</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featureKeys.map((key, i) => {
+              const Icon = featureIcons[i]
+              return (
+                <div
+                  key={key}
+                  className="group p-6 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-lg hover:shadow-primary-500/5 transition-all"
+                >
+                  <div className="w-11 h-11 rounded-xl bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center text-primary-600 mb-4 group-hover:scale-110 transition-transform">
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">
+                    {t(`landing.${key}Title`)}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                    {t(`landing.${key}Desc`)}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Architecture */}
+      <section className="py-16 border-y border-gray-200 dark:border-gray-800">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row items-center gap-10">
+          <div className="flex-1">
+            <h2 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+              <Code2 className="w-8 h-8 text-primary-600" />
+              {t('landing.archTitle')}
+            </h2>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">{t('landing.archLine1')}</p>
+            <p className="mt-2 text-gray-600 dark:text-gray-400">{t('landing.archLine2')}</p>
+          </div>
+          <div className="flex-1 w-full max-w-md p-6 rounded-2xl bg-gray-900 text-gray-100 font-mono text-xs sm:text-sm shadow-xl overflow-x-auto">
+            <pre className="whitespace-pre">{`mchat/
+├── src/backend/    # FastAPI + Bot + RAG
+├── src/frontend/   # React admin + landing
+├── skills/         # Skill packages
+└── ops/docker/     # Compose stacks`}</pre>
+          </div>
+        </div>
+      </section>
+
+      {/* Quick start */}
+      <section id="quickstart" className="py-20 sm:py-28">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <h2 className="text-3xl font-bold text-center mb-12">{t('landing.quickTitle')}</h2>
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-sm font-medium border-b border-gray-200 dark:border-gray-700">
+                {t('landing.quickDocker')}
+              </div>
+              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto">
+{`git clone https://github.com/windinwing/mchat.git
+cd mchat
+docker compose -f ops/docker/docker-compose.lite.yml up -d
+# Admin: http://localhost:5173`}
+              </pre>
+            </div>
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-sm font-medium border-b border-gray-200 dark:border-gray-700">
+                {t('landing.quickDev')}
+              </div>
+              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto">
+{`make install && make dev
+# API:  http://localhost:3001/docs
+# Web:  http://localhost:5173`}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-200 dark:border-gray-800 py-12 bg-white dark:bg-gray-900">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-primary-600" />
+            <span className="font-semibold">MChat</span>
+            <span className="text-gray-400">·</span>
+            <span className="text-sm text-gray-500">{t('landing.footerTagline')}</span>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-gray-500">
+            <a href={GITHUB_URL} className="hover:text-primary-600" target="_blank" rel="noreferrer">
+              {t('common.github')}
+            </a>
+            <Link to="/admin/login" className="hover:text-primary-600">
+              {t('common.admin')}
+            </Link>
+            <span>{t('landing.footerLicense')}</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  )
+}

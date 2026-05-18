@@ -1,0 +1,159 @@
+# MChat — 多租户 AI 智能客服平台
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
+[![Node 20+](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
+
+**[English](README.md)** · **[GitHub](https://github.com/windinwing/mchat)**
+
+MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流式 Bot 引擎、RAG 知识库、Skill 插件系统与嵌入式聊天 Widget，支持 **10+ 大模型提供商**及多渠道接入（网站 Widget、WebSocket、REST API、微信公众号等）。
+
+## 特性
+
+- **Bot 引擎** — 流式 LLM 推理与工具调用，支持 OpenAI、Anthropic、Google、DeepSeek、Ollama、Groq 等
+- **Skill 插件** — 从磁盘或 zip 热加载 `SKILL.md`（如专利检索、自定义工具）
+- **RAG 知识库** — 文档导入、分块、Milvus 向量检索、上下文注入
+- **嵌入式 Widget** — 一行 `<script>` 即可为任意网站接入品牌化客服窗口
+- **多租户** — 多个客服 Agent，独立 AI 配置、技能与知识库
+- **多渠道** — Web Widget、REST、WebSocket、微信公众号
+- **语音输入** — 支持 OpenAI Whisper 转写（可选本地模型）
+- **安全认证** — JWT 与 API Key 管理
+- **Docker 部署** — `docker compose up -d` 一键启动
+
+## 快速开始
+
+### Docker（推荐）
+
+```bash
+git clone https://github.com/windinwing/mchat.git
+cd mchat
+
+docker compose -f ops/docker/docker-compose.lite.yml up -d
+
+# 管理后台: http://localhost:5173
+# API 文档:  http://localhost:3001/docs
+# 项目主页:  http://localhost:5173/
+```
+
+**默认管理员账号**（首次启动自动创建）：`admin` / `admin123`  
+登录后请在 **管理后台 → 用户管理** 中修改密码。可通过 `.env` 设置 `ADMIN_USERNAME`、`ADMIN_PASSWORD`；生产环境建议设置 `SHOW_BOOTSTRAP_CREDENTIALS=false` 隐藏登录页默认密码提示。
+
+### 嵌入 Widget
+
+```html
+<script
+  src="http://localhost:5173/widget-loader.js"
+  data-mchat-url="http://localhost:3001"
+  data-agent-id="YOUR_AGENT_ID"
+  data-primary-color="#3b82f6"
+  data-welcome-message="你好！有什么可以帮助你的？"
+  data-bot-name="智能客服"
+></script>
+```
+
+### 本地开发
+
+```bash
+make install   # 安装依赖
+make dev       # 启动前后端
+
+# 后端: http://localhost:3001  (/docs 为 Swagger)
+# 前端: http://localhost:5173
+```
+
+```bash
+make test      # 运行测试
+make lint      # 代码检查
+mchat run      # CLI 启动服务
+```
+
+## 项目结构
+
+```
+mchat/
+├── src/
+│   ├── backend/          # FastAPI 后端 (Python 3.12+)
+│   │   └── app/
+│   │       ├── api/      # REST 路由
+│   │       ├── bot/      # Bot 引擎 + 模型提供商
+│   │       ├── knowledge/# RAG + Milvus
+│   │       ├── skill/    # 技能系统
+│   │       └── channels/ # 微信等频道适配
+│   └── frontend/         # React + Vite + Tailwind
+│       └── src/
+│           ├── i18n/     # 中英文 (react-i18next)
+│           └── pages/    # 落地页 + 管理后台
+├── skills/               # 技能包目录
+├── docs/                 # 架构、API、部署文档
+├── ops/docker/           # Docker Compose
+└── Makefile
+```
+
+## 支持的 LLM 提供商
+
+| 提供商 | 默认 API 地址 | 说明 |
+|--------|---------------|------|
+| `openai` | https://api.openai.com/v1 | GPT-4o、o1 等 |
+| `anthropic` | https://api.anthropic.com | Claude |
+| `google` | https://generativelanguage.googleapis.com | Gemini |
+| `deepseek` | https://api.deepseek.com | OpenAI 兼容 |
+| `ollama` | http://localhost:11434/v1 | 本地模型 |
+| `groq` | https://api.groq.com/openai/v1 | 高速推理 |
+| `zhipu` / `moonshot` / `siliconflow` / `together` | *(需配置 api_base)* | 国内/托管 API |
+| `openai-compatible` | *(需配置 api_base)* | 任意 OpenAI 兼容端点 |
+
+## API 概览
+
+| 模块 | 路径 | 说明 |
+|------|------|------|
+| 聊天 | `/api/chat/*` | 对话与消息 |
+| Agent | `/api/agents/*` | AI 配置 |
+| 知识库 | `/api/knowledge/*` | 文档与检索 |
+| Widget | `/api/widget/*` | 嵌入式聊天 |
+| 技能 | `/api/skills/*` | 技能管理 |
+| 频道 | `/api/channels/*` | 微信公众号等 |
+| 语音 | `/api/speech/*` | 语音转文字 |
+| 认证 | `/api/auth/*` | 登录 / JWT |
+| WebSocket | `/ws` | 实时流式 |
+| 健康检查 | `/api/health` | 服务状态 |
+
+详见 [docs/api.md](docs/api.md) 或启动后访问 `/docs`。
+
+## 多语言
+
+管理后台与项目主页支持**简体中文**与 **English**。语言偏好保存在 `localStorage`（`mchat_lang`），可在页头或侧栏切换。
+
+## CLI 工具
+
+```bash
+mchat init
+mchat run
+mchat config show
+mchat skill list
+mchat skill create <name>
+mchat db init
+mchat db seed
+```
+
+## Docker 变体
+
+| 文件 | 服务 | 场景 |
+|------|------|------|
+| `docker-compose.lite.yml` | MySQL + 后端 + 前端 | 开发 / 轻量 |
+| `docker-compose.yml` | + Milvus、etcd、MinIO、Redis | 完整 RAG |
+| `docker-compose.prod.yml` | + Nginx HTTPS | 生产 |
+| `docker-compose.dev.yml` | 热重载 | 本地开发 |
+
+## 技术栈
+
+**后端：** FastAPI、SQLAlchemy 2.0、Milvus、OpenAI / Anthropic SDK、JWT、Loguru  
+
+**前端：** React 19、TypeScript、Vite、Tailwind CSS 4、Zustand、react-i18next
+
+## 许可证
+
+[MIT License](LICENSE)
+
+## 贡献
+
+欢迎提交 Issue 与 Pull Request。仓库地址：[https://github.com/windinwing/mchat](https://github.com/windinwing/mchat)

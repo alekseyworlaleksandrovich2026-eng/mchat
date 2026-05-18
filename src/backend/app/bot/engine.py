@@ -1,0 +1,339 @@
+"""Bot engine - core message processing pipeline with streaming."""
+
+from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
+from typing import Any
+import uuid
+
+from loguru import logger
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.bot.messages import (
+    build_assistant_tool_call_message,
+    build_tool_result_message,
+    sanitize_history_messages,
+)
+from app.bot.provider import create_provider
+from app.bot.patent_links import linkify_patent_ids, patent_link_settings_from_skills
+from app.bot.skill_context import (
+    append_patent_tool_hints,
+    build_openai_tools,
+    build_prompt_skill_section,
+    knowledge_base_ids_for_chat,
+    load_skills_for_chat,
+)
+from app.knowledge.rag import RagService
+from app.models.ai_config import AIConfig
+from app.models.conversation import Conversation
+from app.models.customer import CustomerConfig
+from app.models.message import Message
+from app.models.skill import Skill
+
+_PATENT_SEARCH_OBSERVATION_NUDGE = (
+    "（专利检索结果表格已在上方展示给用户，用户看不到本条消息。）\n"
+    "请用中文写一段回复，以小标题「初步观察」开头，接着用 4–6 条要点（列表即可）概括："
+    "主要申请人类型（企业/高校/外资等）、代表性机构、技术方向、以及总申请量说明；"
+    "不要重复表格、不要罗列专利号、不要写 command= / page= 等技术参数。\n"
+    "最后用 1–2 句自然语言说明：如需某条详情、权利要求、法律状态，"
+    "或按公司、IPC、时间范围精确筛选，让用户直接告诉你即可。"
+)
+
+
+def _tool_result_display_text(result: Any) -> str:
+    """Text to stream to the user from a tool result (preserves markdown links)."""
+    if isinstance(result, str) and result.strip():
+        return result.strip() + "\n\n"
+    if isinstance(result, dict):
+        err = result.get("error")
+        if err:
+            return f"❌ {err}\n\n"
+        for key in ("message", "content", "text"):
+            val = result.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip() + "\n\n"
+    return ""
+
+
+def _merge_tool_call(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
+    if incoming.get("id"):
+        merged["id"] = incoming["id"]
+    if incoming.get("name"):
+        merged["name"] = incoming["name"]
+    if incoming.get("arguments"):
+        prev = merged.get("arguments") or {}
+        if isinstance(prev, dict) and isinstance(incoming["arguments"], dict):
+            merged["arguments"] = {**prev, **incoming["arguments"]}
+        else:
+            merged["arguments"] = incoming["arguments"]
+    return merged
+
+
+async def _append_rag_context(
+    system_prompt: str,
+    query: str,
+    user_id: str,
+    customer_config: CustomerConfig | None,
+) -> str:
+    kb_ids = knowledge_base_ids_for_chat(customer_config)
+    rag = RagService()
+    all_results = []
+
+    try:
+        if kb_ids:
+            for kb_id in kb_ids:
+                search_results = await rag.search(
+                    query=query,
+                    user_id=user_id,
+                    knowledge_base_id=kb_id,
+                    top_k=3,
+                )
+                all_results.extend(search_results.results)
+        else:
+            search_results = await rag.search(
+                query=query,
+                user_id=user_id,
+                top_k=3,
+            )
+            all_results.extend(search_results.results)
+    except Exception as e:
+        logger.warning(f"RAG search failed: {e}")
+        return system_prompt
+
+    if not all_results:
+        return system_prompt
+
+    seen: set[str] = set()
+    context_parts: list[str] = []
+    for r in all_results:
+        key = f"{r.document_id}:{r.content[:80]}"
+        if key in seen:
+            continue
+        seen.add(key)
+        context_parts.append(f"[Source: {r.title}]\n{r.content}")
+
+    if not context_parts:
+        return system_prompt
+
+    return (
+        system_prompt
+        + "\n\n## Knowledge Base Context\n"
+        "Use the following information to help answer the user's question:\n\n"
+        + "\n\n".join(context_parts)
+    )
+
+
+async def process_message(
+    conversation: Conversation,
+    message: Message,
+    ai_config: AIConfig | None,
+    db_session: AsyncSession,
+    customer_config: CustomerConfig | None = None,
+) -> AsyncGenerator[str, None]:
+    """Process a user message through the bot pipeline."""
+    try:
+        if ai_config is None:
+            result = await db_session.execute(
+                select(AIConfig).where(AIConfig.is_default == True)
+            )
+            ai_config = result.scalar_one_or_none()
+
+        if ai_config is None:
+            yield "Error: No AI configuration available. Please configure an AI provider first."
+            return
+
+        system_prompt = ai_config.system_prompt or "You are a helpful AI assistant."
+
+        prompt_skills, tool_skills = await load_skills_for_chat(
+            db_session,
+            user_id=ai_config.user_id,
+            customer_config=customer_config,
+        )
+        skill_section = build_prompt_skill_section(prompt_skills)
+        if skill_section:
+            system_prompt += skill_section
+
+        tools = build_openai_tools(tool_skills)
+        system_prompt = append_patent_tool_hints(system_prompt, tool_skills)
+        patent_links = patent_link_settings_from_skills(tool_skills)
+
+        def _with_patent_links(text: str) -> str:
+            return linkify_patent_ids(
+                text,
+                enabled=patent_links["enabled"],
+                template=str(patent_links["template"]),
+            )
+
+        system_prompt = await _append_rag_context(
+            system_prompt,
+            message.content,
+            ai_config.user_id,
+            customer_config,
+        )
+
+        messages_list: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt}
+        ]
+
+        history_result = await db_session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation.id)
+            .order_by(Message.created_at.asc())
+            .limit(20)
+        )
+        history = history_result.scalars().all()
+
+        history_payload = []
+        for hist_msg in history:
+            if hist_msg.id == message.id:
+                continue
+            history_payload.append(
+                {"role": hist_msg.role, "content": hist_msg.content}
+            )
+        messages_list.extend(sanitize_history_messages(history_payload))
+        messages_list.append({"role": "user", "content": message.content})
+
+        provider = create_provider(ai_config)
+        full_response = ""
+        reasoning_content = ""
+        tool_calls_map: dict[str, dict[str, Any]] = {}
+        first_pass_content = ""
+
+        async for chunk in provider.stream_chat(
+            messages=messages_list,
+            tools=tools if tools else None,
+            temperature=ai_config.temperature,
+            max_tokens=ai_config.max_tokens,
+        ):
+            if chunk.get("type") == "reasoning":
+                reasoning_content += chunk.get("content", "") or ""
+            elif chunk.get("type") == "content":
+                token = chunk.get("content", "")
+                if token and not token.startswith("Error:"):
+                    first_pass_content += token
+            elif chunk.get("type") == "tool_call":
+                tc = chunk.get("tool_call", {})
+                tid = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                if tid in tool_calls_map:
+                    tool_calls_map[tid] = _merge_tool_call(tool_calls_map[tid], tc)
+                else:
+                    tool_calls_map[tid] = {
+                        "id": tid,
+                        "name": tc.get("name", ""),
+                        "arguments": tc.get("arguments") or {},
+                    }
+
+        tool_calls_list = list(tool_calls_map.values())
+
+        if not tool_calls_list and first_pass_content:
+            full_response += first_pass_content
+            yield _with_patent_links(first_pass_content)
+
+        if tool_calls_list:
+            messages_list.append(
+                build_assistant_tool_call_message(
+                    full_response,
+                    tool_calls_list,
+                    reasoning_content=reasoning_content or None,
+                )
+            )
+
+            patent_search_for_summary = False
+            for tc in tool_calls_list:
+                tool_name = tc.get("name", "")
+                tool_args = tc.get("arguments") or {}
+                try:
+                    tool_result = await _execute_tool(
+                        tool_name,
+                        tool_args,
+                        tool_skills,
+                        db_session,
+                    )
+                except BaseException as e:
+                    logger.error(f"Tool execution crashed: {e}", exc_info=True)
+                    tool_result = {
+                        "error": f"技能执行失败: {e}。请检查 API Key 与参数。"
+                    }
+                messages_list.append(
+                    build_tool_result_message(tc["id"], tool_result)
+                )
+
+                tool_display = _tool_result_display_text(tool_result)
+                if tool_display:
+                    tool_display = _with_patent_links(tool_display)
+                    full_response += tool_display
+                    yield tool_display
+                    cmd = str(tool_args.get("command") or "search").lower()
+                    if (
+                        tool_name == "patent-search"
+                        and cmd == "search"
+                        and "🔍 搜索完成" in tool_display
+                        and not tool_display.lstrip().startswith("❌")
+                    ):
+                        patent_search_for_summary = True
+
+            if patent_search_for_summary:
+                messages_list.append(
+                    {"role": "user", "content": _PATENT_SEARCH_OBSERVATION_NUDGE}
+                )
+                summary_parts: list[str] = []
+                async for chunk in provider.stream_chat(
+                    messages=messages_list,
+                    tools=None,
+                    temperature=ai_config.temperature,
+                    max_tokens=ai_config.max_tokens,
+                ):
+                    if chunk.get("type") == "content":
+                        token = chunk.get("content", "")
+                        if token.startswith("Error:"):
+                            summary_parts.append(f"\n\n{token}")
+                        elif token:
+                            summary_parts.append(token)
+                if summary_parts:
+                    summary_text = _with_patent_links("".join(summary_parts))
+                    if not summary_text.startswith("\n"):
+                        summary_text = "\n\n" + summary_text.lstrip()
+                    if not summary_text.endswith("\n\n"):
+                        summary_text = summary_text.rstrip() + "\n\n"
+                    full_response += summary_text
+                    yield summary_text
+
+        if full_response:
+            full_response = _with_patent_links(full_response)
+            assistant_msg = Message(
+                conversation_id=conversation.id,
+                role="assistant",
+                content=full_response,
+                extra_data={
+                    "model": ai_config.model,
+                    "provider": ai_config.provider,
+                },
+            )
+            db_session.add(assistant_msg)
+            conversation.updated_at = datetime.now(timezone.utc)
+            conversation.last_seen_at = datetime.now(timezone.utc)
+
+    except BaseException as e:
+        logger.error(f"Bot engine error: {e}", exc_info=True)
+        yield f"\n\n抱歉，处理消息时出错：{e}"
+
+
+async def _execute_tool(
+    tool_name: str,
+    tool_args: dict[str, Any],
+    skills: list[Skill],
+    db_session: AsyncSession,
+) -> Any:
+    """Execute a skill tool function."""
+    for skill in skills:
+        if skill.name == tool_name and skill.enabled:
+            try:
+                from app.skill.executor import execute_skill
+
+                return await execute_skill(skill, tool_args)
+            except BaseException as e:
+                logger.error(f"Tool {tool_name} execution failed: {e}")
+                return {"error": str(e)}
+
+    return {"error": f"Tool '{tool_name}' not found or not enabled"}

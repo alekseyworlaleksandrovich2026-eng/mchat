@@ -1,0 +1,80 @@
+# 精简版 Docker Compose - 仅核心服务（MySQL + Backend + Frontend）
+# Milvus/Redis 可选，需要时使用完整版 docker-compose.yml
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: mchat-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mchat}
+      MYSQL_USER: ${MYSQL_USER:-mchat}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-mchat123}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mchat-network
+    restart: unless-stopped
+
+  # 后端服务
+  backend:
+    build:
+      context: ../../src/backend
+      dockerfile: Dockerfile.lite
+    container_name: mchat-backend
+    environment:
+      DATABASE_URL: "mysql+aiomysql://${MYSQL_USER:-mchat}:${MYSQL_PASSWORD:-mchat123}@mysql:3306/${MYSQL_DATABASE:-mchat}"
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-at-least-32-chars}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      MILVUS_HOST: milvus
+      MILVUS_PORT: "19530"
+      MILVUS_ENABLED: "false"
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "3001"
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - mchat-network
+    restart: unless-stopped
+
+  # 前端服务
+  frontend:
+    build:
+      context: ../../src/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:3001}"
+    container_name: mchat-frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+    networks:
+      - mchat-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  mchat-network:
+    driver: bridge

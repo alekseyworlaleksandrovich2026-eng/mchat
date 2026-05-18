@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment & secrets (keep *.example templates)
+.env
+.env.*
+!.env.example
+!**/.env.example
+ops/docker/.env
+ops/deploy/.env.production.generated
+ops/deploy/mchat.*.conf
+
+# IDE / editor
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database (local dev)
+*.db
+*.sqlite
+prisma/migrations/*/migration_lock.toml
+
+# Uploads (user content)
+uploads/
+src/backend/uploads/*
+!src/backend/uploads/.gitkeep
+
+# Logs
+logs/
+src/backend/logs/
+*.log
+
+# Local skill packages (install via admin UI or copy manually)
+skills/*
+!skills/.gitkeep
+src/backend/skills/*
+!src/backend/skills/.gitkeep
+
+# Docker
+docker-images/
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/

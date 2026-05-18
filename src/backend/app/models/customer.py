@@ -1,0 +1,95 @@
+"""Customer config and webhook config models."""
+
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+
+class CustomerConfig(Base):
+    __tablename__ = "customer_configs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+    ai_config_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("ai_configs.id"), nullable=True
+    )
+    skill_ids: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # enabled skill ids for this agent; null/[] = all user skills
+    knowledge_base_ids: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # knowledge bases for RAG; null/[] = all user KBs
+    welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    offline_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    theme: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    domains: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # comma-separated allowed domains
+    position: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="right"
+    )  # left, right
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    widget_session_ttl_hours: Mapped[int] = mapped_column(
+        nullable=False, default=24
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="customer_configs")
+
+    def __repr__(self) -> str:
+        return f"<CustomerConfig(id={self.id}, name={self.name})>"
+
+
+class WebhookConfig(Base):
+    __tablename__ = "webhook_configs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    events: Mapped[str] = mapped_column(
+        String(500), nullable=False
+    )  # comma-separated event names
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="webhook_configs")
+
+    def __repr__(self) -> str:
+        return f"<WebhookConfig(id={self.id}, name={self.name})>"

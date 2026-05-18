@@ -1,0 +1,9 @@
+[project]
+name = "mchat-backend"
+version = "1.0.0"
+description = "mchat backend - Multi-tenant AI chat platform"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+mchat = "app.cli:main"
