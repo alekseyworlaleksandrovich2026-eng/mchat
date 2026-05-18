@@ -562,7 +562,10 @@
     "toastCopyFailed": "复制失败",
     "disabledSuffix": "（已禁用）",
     "embedWelcome": "你好！有什么可以帮助你的？",
-    "embedBotName": "智能助手"
+    "embedBotName": "智能助手",
+    "fullscreen": "全屏",
+    "shrink": "缩小",
+    "minimize": "最小化"
   },
   "chat": {
     "defaultTitle": "对话",

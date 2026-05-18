@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import os
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 from loguru import logger
@@ -123,12 +125,20 @@ async def _execute_python_tool(
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            if hasattr(module, "main"):
-                result = module.main(**args)
-                return _normalize_tool_result(result)
             if hasattr(module, "run"):
-                result = module.run(**args)
+                filtered = _filter_kwargs_for_callable(module.run, args)
+                result = module.run(**filtered)
                 return _normalize_tool_result(result)
+
+            if hasattr(module, "main"):
+                sig = inspect.signature(module.main)
+                if len(sig.parameters) == 0:
+                    result = _dispatch_namespace_skill(skill_dir, module, args)
+                else:
+                    filtered = _filter_kwargs_for_callable(module.main, args)
+                    result = module.main(**filtered)
+                return _normalize_tool_result(result)
+
             return {"error": "No main() or run() function found in skill script"}
 
     except SystemExit as e:
@@ -142,6 +152,90 @@ async def _execute_python_tool(
     except BaseException as e:
         logger.error(f"Python tool execution failed: {e}")
         return {"error": str(e)}
+
+
+def _filter_kwargs_for_callable(func: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Pass only parameters accepted by the skill entry function."""
+    sig = inspect.signature(func)
+    params = sig.parameters
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return {k: v for k, v in args.items() if v is not None}
+    return {
+        k: v
+        for k, v in args.items()
+        if k in params and v is not None
+    }
+
+
+def _args_to_namespace(args: dict[str, Any]) -> SimpleNamespace:
+    """Map tool JSON args to argparse-style namespace (patent-search CLI skills)."""
+    return SimpleNamespace(
+        command=str(args.get("command") or "search").lower(),
+        query=args.get("query"),
+        patent_id=args.get("patent_id"),
+        company_name=args.get("company_name"),
+        dimension=args.get("dimension"),
+        page=int(args.get("page") or 1),
+        page_size=int(args.get("page_size") or args.get("pageSize") or 10),
+        scope=args.get("scope") or "cn",
+        sort=args.get("sort") or "relation",
+        details=bool(args.get("details")),
+        limit=int(args.get("limit") or 20),
+        type=args.get("type") or "software",
+        field=args.get("field"),
+        detail=bool(args.get("detail")),
+        trademark_id=args.get("trademark_id") or args.get("trademark-id"),
+    )
+
+
+def _load_skill_module(skill_dir: Path, filename: str, module_key: str) -> Any | None:
+    path = skill_dir / filename
+    if not path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location(module_key, path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _dispatch_namespace_skill(
+    skill_dir: Path, main_module: Any, args: dict[str, Any]
+) -> Any:
+    """Execute CLI-oriented skills whose main() has no parameters (e.g. patent-search)."""
+    skill_mod = _load_skill_module(
+        skill_dir, "patent_skill.py", f"skill_patent_{skill_dir.name}"
+    )
+    api_mod = _load_skill_module(
+        skill_dir, "patent_api.py", f"skill_api_{skill_dir.name}"
+    )
+    if skill_mod is None or api_mod is None:
+        return {
+            "error": (
+                "技能 main() 不支持工具参数；请为技能添加 run(**kwargs)，"
+                "或提供 patent_skill.py / patent_api.py 命令分发模块。"
+            )
+        }
+
+    patent_api_cls = getattr(api_mod, "PatentAPI", None)
+    patent_skill_cls = getattr(skill_mod, "PatentSkill", None)
+    if patent_api_cls is None or patent_skill_cls is None:
+        return {"error": "专利技能缺少 PatentAPI / PatentSkill 类"}
+
+    api = patent_api_cls()
+    skill = patent_skill_cls(api)
+
+    if hasattr(main_module, "handle_analysis"):
+        skill.handle_analysis = lambda a: main_module.handle_analysis(skill, a)
+    if hasattr(main_module, "handle_help"):
+        skill.handle_help = lambda a: main_module.handle_help(skill, a)
+
+    ns = _args_to_namespace(args)
+    handler = skill.commands.get(ns.command)
+    if not handler:
+        return {"error": f"Unknown command: {ns.command}"}
+    return handler(ns)
 
 
 def _normalize_tool_result(result: Any) -> Any:

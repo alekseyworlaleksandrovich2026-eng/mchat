@@ -9,6 +9,8 @@ interface ChatInputProps {
   disabled?: boolean
   placeholder?: string
   compact?: boolean
+  /** Widget embed: single-line input, no auto-grow */
+  singleLine?: boolean
   speechTranscribeUrl?: string
   speechConfigUrl?: string
 }
@@ -18,6 +20,7 @@ export function ChatInput({
   disabled = false,
   placeholder,
   compact = false,
+  singleLine = false,
   speechTranscribeUrl,
   speechConfigUrl,
 }: ChatInputProps) {
@@ -26,6 +29,7 @@ export function ChatInput({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [speechError, setSpeechError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   /** 开始录音前的输入框内容，避免预览与最终写入叠加重复 */
   const speechBaseRef = useRef('')
@@ -79,11 +83,10 @@ export function ChatInput({
   }, [speech.isListening, content])
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
-    }
-  }, [content, speech.interimText])
+    if (singleLine || !textareaRef.current) return
+    textareaRef.current.style.height = 'auto'
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
+  }, [content, speech.interimText, singleLine])
 
   const handleSubmit = () => {
     const trimmed = content.trim()
@@ -93,7 +96,7 @@ export function ChatInput({
     setContent('')
     setSelectedFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    if (textareaRef.current) {
+    if (!singleLine && textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
   }
@@ -175,7 +178,7 @@ export function ChatInput({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
+      <div className={cn('flex gap-2', singleLine ? 'items-center' : 'items-end')}>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -215,31 +218,59 @@ export function ChatInput({
         )}
 
         <div className="flex-1 min-w-0">
-          <textarea
-            ref={textareaRef}
-            value={inputValue}
-            onChange={(e) => {
-              const v = e.target.value
-              if (speech.isListening) {
-                speechBaseRef.current = v.replace(speech.interimText, '').trimEnd()
-              } else {
-                setContent(v)
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={displayPlaceholder}
-            disabled={disabled}
-            rows={1}
-            className={cn(
-              'block w-full min-h-[42px] h-auto resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm',
-              'placeholder:text-gray-400',
-              'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-              'dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder:text-gray-500',
-              speech.isListening && 'ring-2 ring-red-300 dark:ring-red-700',
-            )}
-          />
+          {singleLine ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => {
+                const v = e.target.value
+                if (speech.isListening) {
+                  speechBaseRef.current = v.replace(speech.interimText, '').trimEnd()
+                } else {
+                  setContent(v)
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={displayPlaceholder}
+              disabled={disabled}
+              className={cn(
+                'block w-full h-10 rounded-xl border border-gray-300 bg-gray-50 px-4 text-sm',
+                'placeholder:text-gray-400',
+                'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+                'dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder:text-gray-500',
+                speech.isListening && 'ring-2 ring-red-300 dark:ring-red-700',
+              )}
+            />
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={inputValue}
+              onChange={(e) => {
+                const v = e.target.value
+                if (speech.isListening) {
+                  speechBaseRef.current = v.replace(speech.interimText, '').trimEnd()
+                } else {
+                  setContent(v)
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={displayPlaceholder}
+              disabled={disabled}
+              rows={1}
+              className={cn(
+                'block w-full min-h-[42px] h-auto resize-none rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm',
+                'placeholder:text-gray-400',
+                'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
+                'disabled:opacity-50 disabled:cursor-not-allowed',
+                'dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder:text-gray-500',
+                speech.isListening && 'ring-2 ring-red-300 dark:ring-red-700',
+              )}
+            />
+          )}
         </div>
 
         <button

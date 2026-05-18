@@ -35,16 +35,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await db.commit()
 
-    # Auto-reload skills from filesystem for all users
+    # Auto-reload skills from filesystem for the primary admin user
     from app.services.skill_service import SkillService
     from app.models.user import User
     from sqlalchemy import select
     async with async_session_factory() as db:
-        users_result = await db.execute(select(User))
-        users = users_result.scalars().all()
-        for user in users:
+        user_result = await db.execute(
+            select(User).where(User.username == settings.admin_username)
+        )
+        primary_user = user_result.scalar_one_or_none()
+        if primary_user is not None:
             skill_service = SkillService(db)
-            await skill_service.reload_skills(user_id=user.id)
+            await skill_service.reload_skills(user_id=primary_user.id)
         await db.commit()
 
     # Load Milvus settings from DB, then connect

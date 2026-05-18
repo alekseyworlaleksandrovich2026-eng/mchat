@@ -10,6 +10,13 @@ export function createMarkdownComponents(
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '')
       const codeString = String(children).replace(/\n$/, '')
+      if (match && (match[1] === 'text' || match[1] === 'plaintext')) {
+        return (
+          <pre className="text-sm whitespace-pre-wrap break-words font-sans leading-relaxed bg-transparent p-0 m-0 my-2 text-gray-800 dark:text-gray-200">
+            {codeString}
+          </pre>
+        )
+      }
       if (match) {
         return (
           <div className="relative group my-2">

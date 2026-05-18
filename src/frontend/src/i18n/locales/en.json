@@ -563,7 +563,10 @@
     "toastCopyFailed": "Copy failed",
     "disabledSuffix": " (disabled)",
     "embedWelcome": "Hello! How can I help you?",
-    "embedBotName": "Assistant"
+    "embedBotName": "Assistant",
+    "fullscreen": "Fullscreen",
+    "shrink": "Shrink",
+    "minimize": "Minimize"
   },
   "chat": {
     "defaultTitle": "Chat",

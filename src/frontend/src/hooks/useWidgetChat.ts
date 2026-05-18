@@ -93,8 +93,21 @@ async function consumeWidgetStream(
   return { conversationId, messageId, response: full }
 }
 
+function welcomeOnlyMessage(welcomeMessage: string): Message {
+  return {
+    id: 'welcome',
+    conversation_id: '',
+    role: 'assistant',
+    content: welcomeMessage,
+    content_type: 'text',
+    created_at: new Date().toISOString(),
+  }
+}
+
 export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: string) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() =>
+    welcomeMessage ? [welcomeOnlyMessage(welcomeMessage)] : [],
+  )
   const [isLoading, setIsLoading] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
@@ -110,16 +123,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
     const convId = sessionStorage.getItem(conversationStorageKey(agentId))
 
     if (!convId) {
-      setMessages([
-        {
-          id: 'welcome',
-          conversation_id: '',
-          role: 'assistant',
-          content: welcomeMessage,
-          content_type: 'text',
-          created_at: new Date().toISOString(),
-        },
-      ])
+      setMessages([welcomeOnlyMessage(welcomeMessage)])
       return
     }
 
@@ -133,16 +137,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
           sessionStorage.removeItem(conversationStorageKey(agentId))
-          setMessages([
-            {
-              id: 'welcome',
-              conversation_id: '',
-              role: 'assistant',
-              content: welcomeMessage,
-              content_type: 'text',
-              created_at: new Date().toISOString(),
-            },
-          ])
+          setMessages([welcomeOnlyMessage(welcomeMessage)])
           return
         }
         const body = await res.json().catch(() => ({}))

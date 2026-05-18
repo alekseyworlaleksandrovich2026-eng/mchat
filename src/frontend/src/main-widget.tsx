@@ -1,25 +1,41 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import '@/i18n'
 import { Widget } from './components/widget/Widget'
 import './styles/index.css'
 
-// Parse configuration from URL parameters or window.__MChatConfig
 const params = new URLSearchParams(window.location.search)
+const mode = params.get('mode') || 'page'
+const isEmbed = mode === 'embed'
+
 const config = {
-  agentId: params.get('agentId') || (window as any).__MChatConfig?.agentId || '',
-  apiUrl: params.get('apiUrl') || (window as any).__MChatConfig?.apiUrl || '/api',
-  wsUrl: params.get('wsUrl') || (window as any).__MChatConfig?.wsUrl || '/ws',
+  agentId: params.get('agentId') || (window as Window & { __MChatConfig?: { agentId?: string } }).__MChatConfig?.agentId || '',
+  apiUrl:
+    params.get('apiUrl') ||
+    (window as Window & { __MChatConfig?: { apiUrl?: string } }).__MChatConfig?.apiUrl ||
+    '/api',
+  wsUrl:
+    params.get('wsUrl') ||
+    (window as Window & { __MChatConfig?: { wsUrl?: string } }).__MChatConfig?.wsUrl ||
+    '/ws',
   position: (params.get('position') as 'right' | 'left') || 'right',
   primaryColor: params.get('primaryColor') || '#3b82f6',
-  welcomeMessage: params.get('welcomeMessage') || '你好！我是智能客服助手，有什么可以帮助你的？',
+  welcomeMessage:
+    params.get('welcomeMessage') ||
+    '你好！我是智能客服助手，有什么可以帮助你的？',
   botName: params.get('botName') || '智能助手',
 }
 
-ReactDOM.createRoot(document.getElementById('mchat-widget-root')!).render(
+const rootEl = document.getElementById('mchat-widget-root')
+if (!rootEl) {
+  throw new Error('mchat-widget-root not found')
+}
+
+ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <Widget
-      variant="page"
-      defaultOpen
+      variant={isEmbed ? 'iframe' : 'page'}
+      defaultOpen={isEmbed}
       agentId={config.agentId}
       apiUrl={config.apiUrl}
       wsUrl={config.wsUrl}

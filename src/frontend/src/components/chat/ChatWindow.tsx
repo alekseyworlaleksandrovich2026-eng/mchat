@@ -123,6 +123,7 @@ export function ChatWindow({
         onSend={onSend}
         disabled={disabled}
         compact={embedded}
+        singleLine={embedded}
         speechTranscribeUrl={speechTranscribeUrl}
         speechConfigUrl={speechConfigUrl}
       />

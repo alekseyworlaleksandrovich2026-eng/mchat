@@ -63,7 +63,7 @@ export function WidgetDemo() {
     if (!agentId) return ''
     return `<!-- MChat Widget -->
 <script
-  src="${origin}/widget-loader.js"
+  src="${origin}/widget-loader.js?v=8"
   data-mchat-url="${apiBase}"
   data-agent-id="${agentId}"
   data-position="right"

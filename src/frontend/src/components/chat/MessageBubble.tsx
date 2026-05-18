@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { createMarkdownComponents } from './markdownComponents'
 import { useThrottledValue } from '@/hooks/useThrottledValue'
 import { resolveUploadUrl } from '@/lib/mediaUrl'
+import { prepareAssistantMarkdown } from '@/lib/patentMessage'
 
 interface MessageBubbleProps {
   message: Message
@@ -48,6 +49,7 @@ export function MessageBubble({
 
   const displayContent = isStreaming ? streamingContent || '' : message.content
   const throttledContent = useThrottledValue(displayContent, isStreaming ? 50 : 0)
+  const assistantText = prepareAssistantMarkdown(throttledContent)
 
   type Attachment = { url?: string; name?: string; mime?: string }
   const attachments = (message.extra_data?.attachments as Attachment[] | undefined) ?? []
@@ -140,7 +142,7 @@ export function MessageBubble({
               remarkPlugins={[remarkGfm]}
               components={markdownComponents}
             >
-              {throttledContent}
+              {assistantText}
             </ReactMarkdown>
             {isStreaming && (
               <span className="cursor-blink inline-block w-[2px] h-4 bg-current ml-0.5 align-middle" />
