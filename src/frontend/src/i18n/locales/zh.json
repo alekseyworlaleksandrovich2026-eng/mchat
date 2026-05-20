@@ -704,7 +704,7 @@
     "userLabel": "用户",
     "aiLabel": "AI 助手",
     "typing": "输入中…",
-    "knowledgeHits": "知识命中",
+    "knowledgeHits": "引用了哪些文档",
     "knowledgeHitFallback": "知识片段",
     "autoReplyHits": "自动发送资料",
     "autoReplyHitFallback": "自动资料规则",

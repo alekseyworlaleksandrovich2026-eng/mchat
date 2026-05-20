@@ -78,6 +78,24 @@ export function MessageBubble({
     }))
   const knowledgeHits = ((message.extra_data?.knowledge_hits as Array<Record<string, any>> | undefined) ?? [])
   const autoReplyRuleHits = ((message.extra_data?.auto_reply_rule_hits as Array<Record<string, any>> | undefined) ?? [])
+  const knowledgeHitLabels = useMemo(() => {
+    const seen = new Set<string>()
+    const labels: string[] = []
+
+    for (const hit of knowledgeHits) {
+      const rawTitle = String(hit.title || '').trim()
+      const label = rawTitle && !/^chunk\s+\d+$/i.test(rawTitle)
+        ? rawTitle
+        : t('chat.knowledgeHitFallback')
+      if (seen.has(label)) {
+        continue
+      }
+      seen.add(label)
+      labels.push(label)
+    }
+
+    return labels
+  }, [knowledgeHits, t])
   const imageAttachments = attachments
     .filter((a) => a.url && String(a.mime || '').startsWith('image/'))
     .map(withResolvedUrl)
@@ -278,16 +296,16 @@ export function MessageBubble({
             )}
             {(knowledgeHits.length > 0 || autoReplyRuleHits.length > 0) && (
               <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/20 px-3 py-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
-                {knowledgeHits.length > 0 && (
+                {knowledgeHitLabels.length > 0 && (
                   <div>
                     <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.knowledgeHits')}</p>
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {knowledgeHits.map((hit, index) => (
+                      {knowledgeHitLabels.map((label, index) => (
                         <span
-                          key={`${hit.document_id || hit.title}-${index}`}
+                          key={`${label}-${index}`}
                           className="rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5"
                         >
-                          {hit.title || t('chat.knowledgeHitFallback')}
+                          {label}
                         </span>
                       ))}
                     </div>

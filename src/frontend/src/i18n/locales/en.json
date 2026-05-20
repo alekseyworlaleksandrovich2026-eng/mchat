@@ -705,7 +705,7 @@
     "userLabel": "You",
     "aiLabel": "Assistant",
     "typing": "Typing…",
-    "knowledgeHits": "Knowledge hits",
+    "knowledgeHits": "Referenced documents",
     "knowledgeHitFallback": "Knowledge snippet",
     "autoReplyHits": "Auto-sent assets",
     "autoReplyHitFallback": "Auto asset rule",

@@ -36,6 +36,7 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [newTitle, setNewTitle] = useState('')
@@ -67,10 +68,6 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
   useEffect(() => {
     loadConversations()
   }, [page, pageSize, statusFilter, search])
-
-  useEffect(() => {
-    setPage(1)
-  }, [search])
 
   const loadConversations = async (showLoading = true) => {
     if (showLoading) {
@@ -117,6 +114,15 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
 
   const handleRefresh = async () => {
     await loadConversations(false)
+  }
+
+  const handleApplySearch = () => {
+    const nextSearch = searchInput.trim()
+    if (nextSearch === search) {
+      return
+    }
+    setPage(1)
+    setSearch(nextSearch)
   }
 
   const handleCreate = async () => {
@@ -193,11 +199,24 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
         <div className="flex-1">
           <Input
             placeholder={t('conversations.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === 'Enter') {
+                handleApplySearch()
+              }
+            }}
             leftIcon={<Search className="w-4 h-4" />}
           />
         </div>
+        <Button
+          variant="outline"
+          size="action"
+          leftIcon={<Search className="w-4 h-4" />}
+          onClick={handleApplySearch}
+        >
+          {t('common.search')}
+        </Button>
         <div className="w-40">
           <Select
             options={statusOptions}

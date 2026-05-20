@@ -12,6 +12,30 @@ from app.schemas.knowledge import SearchResponse, SearchResult
 class RagService:
     """Retrieval-Augmented Generation service."""
 
+    async def _load_document_titles(self, document_ids: list[str]) -> dict[str, str]:
+        unique_ids = [document_id for document_id in {doc_id for doc_id in document_ids if doc_id}]
+        if not unique_ids:
+            return {}
+
+        try:
+            from sqlalchemy import select
+
+            from app.core.database import async_session_factory
+            from app.models.knowledge import Document
+
+            async with async_session_factory() as db:
+                rows = await db.execute(
+                    select(Document.id, Document.title).where(Document.id.in_(unique_ids))
+                )
+                return {
+                    document_id: title
+                    for document_id, title in rows.all()
+                    if document_id and title
+                }
+        except Exception as e:
+            logger.warning(f"Failed to load document titles for RAG hits: {e}")
+            return {}
+
     async def search(
         self,
         query: str,
@@ -36,12 +60,17 @@ class RagService:
                     user_id=user_id,
                     kb_id=knowledge_base_id,
                 )
+                document_titles = await self._load_document_titles(
+                    [str(hit.get("document_id") or "") for hit in hits]
+                )
                 results = []
                 for hit in hits:
+                    document_id = str(hit.get("document_id") or "")
                     results.append(
                         SearchResult(
-                            document_id=hit.get("document_id", ""),
-                            title=f"Chunk {hit.get('chunk_index', 0)}",
+                            document_id=document_id,
+                            title=document_titles.get(document_id)
+                            or f"Chunk {hit.get('chunk_index', 0)}",
                             content=hit.get("content", ""),
                             score=float(hit.get("distance", 0)),
                             knowledge_base_id=hit.get("kb_id", ""),
