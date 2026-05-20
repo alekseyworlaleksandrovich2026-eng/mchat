@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Paperclip, X, Mic, Square } from 'lucide-react'
+import { Send, Paperclip, X, Mic, Square, Link2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSpeechInput } from '@/hooks/useSpeechInput'
+import { ChatSendOptions, OutboundAsset } from '@/stores/chat'
 
 interface ChatInputProps {
-  onSend: (content: string, file?: File) => void
+  onSend: (content: string, options?: ChatSendOptions) => void
   disabled?: boolean
   placeholder?: string
   compact?: boolean
@@ -13,6 +14,9 @@ interface ChatInputProps {
   singleLine?: boolean
   speechTranscribeUrl?: string
   speechConfigUrl?: string
+  allowAssistantMode?: boolean
+  allowOutboundLinks?: boolean
+  defaultSendRole?: 'user' | 'assistant'
 }
 
 export function ChatInput({
@@ -23,10 +27,22 @@ export function ChatInput({
   singleLine = false,
   speechTranscribeUrl,
   speechConfigUrl,
+  allowAssistantMode = false,
+  allowOutboundLinks = false,
+  defaultSendRole = 'user',
 }: ChatInputProps) {
   const { t, i18n } = useTranslation()
   const [content, setContent] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [sendRole, setSendRole] = useState<'user' | 'assistant'>(defaultSendRole)
+    useEffect(() => {
+      setSendRole(defaultSendRole)
+    }, [defaultSendRole])
+
+  const [linkEditorOpen, setLinkEditorOpen] = useState(false)
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkName, setLinkName] = useState('')
+  const [outboundLinks, setOutboundLinks] = useState<OutboundAsset[]>([])
   const [speechError, setSpeechError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -90,11 +106,19 @@ export function ChatInput({
 
   const handleSubmit = () => {
     const trimmed = content.trim()
-    if (!trimmed && !selectedFile) return
+    if (!trimmed && !selectedFile && outboundLinks.length === 0) return
     if (speech.isListening) speech.stopListening()
-    onSend(trimmed, selectedFile ?? undefined)
+    onSend(trimmed, {
+      file: selectedFile ?? undefined,
+      role: sendRole,
+      outboundAssets: outboundLinks.length > 0 ? outboundLinks : undefined,
+    })
     setContent('')
     setSelectedFile(null)
+    setOutboundLinks([])
+    setLinkEditorOpen(false)
+    setLinkUrl('')
+    setLinkName('')
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (!singleLine && textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -139,6 +163,29 @@ export function ChatInput({
     ? t('chat.listeningPlaceholder')
     : (placeholder ?? t('chat.inputPlaceholder'))
 
+  const addOutboundLink = () => {
+    const url = linkUrl.trim()
+    if (!url) return
+    try {
+      const parsed = new URL(url)
+      if (!['http:', 'https:'].includes(parsed.protocol)) return
+      setOutboundLinks((prev) => [
+        ...prev,
+        {
+          type: 'link',
+          name: linkName.trim() || parsed.hostname || parsed.href,
+          url: parsed.href,
+          source: 'explicit',
+        },
+      ])
+      setLinkUrl('')
+      setLinkName('')
+      setLinkEditorOpen(false)
+    } catch {
+      // Ignore invalid URL; backend validation will still guard request payloads.
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -172,9 +219,97 @@ export function ChatInput({
               if (fileInputRef.current) fileInputRef.current.value = ''
             }}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            title={t('chat.removeAttachment')}
+            aria-label={t('chat.removeAttachment')}
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {outboundLinks.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {outboundLinks.map((asset, index) => (
+            <span
+              key={`${asset.url}-${index}`}
+              className="inline-flex items-center gap-1 rounded-full bg-primary-50 dark:bg-primary-900/30 px-3 py-1 text-xs text-primary-700 dark:text-primary-300"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              <span className="max-w-[180px] truncate">{asset.name || asset.url}</span>
+              <button
+                type="button"
+                onClick={() => setOutboundLinks((prev) => prev.filter((_, i) => i !== index))}
+                className="opacity-70 hover:opacity-100"
+                title={t('chat.removeLinkAsset')}
+                aria-label={t('chat.removeLinkAsset')}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {allowOutboundLinks && linkEditorOpen && (
+        <div className="mb-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3 space-y-2">
+          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_auto] gap-2 items-center">
+            <input
+              type="url"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              placeholder={t('chat.linkUrlPlaceholder')}
+              className="min-w-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <input
+              type="text"
+              value={linkName}
+              onChange={(e) => setLinkName(e.target.value)}
+              placeholder={t('chat.linkNamePlaceholder')}
+              className="min-w-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button
+              type="button"
+              onClick={addOutboundLink}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700"
+            >
+              <Plus className="w-4 h-4" />
+              {t('chat.addLink')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(allowAssistantMode || allowOutboundLinks) && (
+        <div className="flex items-center justify-between gap-3 mb-2">
+          {allowAssistantMode ? (
+            <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-1 bg-gray-50 dark:bg-gray-900/40">
+              {(['user', 'assistant'] as const).map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setSendRole(role)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs transition-colors',
+                    sendRole === role
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
+                  )}
+                >
+                  {role === 'user' ? t('chat.sendAsUser') : t('chat.sendAsAssistant')}
+                </button>
+              ))}
+            </div>
+          ) : <div />}
+          {allowOutboundLinks && (
+            <button
+              type="button"
+              onClick={() => setLinkEditorOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600"
+            >
+              <Link2 className="w-4 h-4" />
+              {t('chat.addLinkAsset')}
+            </button>
+          )}
         </div>
       )}
 
@@ -193,7 +328,9 @@ export function ChatInput({
           type="file"
           className="hidden"
           onChange={handleFileSelect}
-          accept="image/*,.pdf,.doc,.docx,.txt"
+          accept="image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm,.pdf,.doc,.docx,.txt"
+          title={t('chat.uploadAttachment')}
+          aria-label={t('chat.uploadAttachment')}
         />
 
         {speechEnabled && (
@@ -276,10 +413,10 @@ export function ChatInput({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={disabled || (!content.trim() && !selectedFile)}
+          disabled={disabled || (!content.trim() && !selectedFile && outboundLinks.length === 0)}
           className={cn(
             'p-2.5 rounded-xl transition-colors',
-            content.trim() || selectedFile
+            content.trim() || selectedFile || outboundLinks.length > 0
               ? 'bg-primary-600 text-white hover:bg-primary-700'
               : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed',
           )}

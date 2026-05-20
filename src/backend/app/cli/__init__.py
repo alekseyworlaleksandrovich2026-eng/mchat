@@ -4,9 +4,30 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
+import io
+import re
+import shutil
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
+
+
+def _register_skill_subcommands(skill_sub: argparse._SubParsersAction) -> None:
+    skill_sub.add_parser("list", help="List installed skills")
+    skill_parser_create = skill_sub.add_parser("create", help="Create a new skill")
+    skill_parser_create.add_argument("name", help="Skill name")
+    skill_parser_install = skill_sub.add_parser(
+        "install", help="Install skill from URL or ClawHub name"
+    )
+    skill_parser_install.add_argument("source", help="Zip URL or skill name")
+    skill_parser_install.add_argument(
+        "--name",
+        help="Optional local folder name hint",
+    )
 
 
 def main() -> None:
@@ -53,9 +74,12 @@ def main() -> None:
     # skill: manage skills
     skill_parser = subparsers.add_parser("skill", help="Manage skills")
     skill_sub = skill_parser.add_subparsers(dest="skill_action")
-    skill_sub.add_parser("list", help="List installed skills")
-    skill_parser_create = skill_sub.add_parser("create", help="Create a new skill")
-    skill_parser_create.add_argument("name", help="Skill name")
+    _register_skill_subcommands(skill_sub)
+
+    # skills: alias of skill
+    skills_parser = subparsers.add_parser("skills", help="Manage skills (alias)")
+    skills_sub = skills_parser.add_subparsers(dest="skill_action")
+    _register_skill_subcommands(skills_sub)
 
     # db: database management
     db_parser = subparsers.add_parser("db", help="Database management")
@@ -83,6 +107,8 @@ async def _handle_command(args: argparse.Namespace) -> None:
         case "config":
             await _cmd_config(args)
         case "skill":
+            await _cmd_skill(args)
+        case "skills":
             await _cmd_skill(args)
         case "db":
             await _cmd_db(args)
@@ -203,8 +229,100 @@ async def _cmd_skill(args: argparse.Namespace) -> None:
 
             print(f"✅ Created skill: {name}")
 
+        case "install":
+            source = (args.source or "").strip()
+            if not source:
+                print("❌ source is required")
+                sys.exit(1)
+            await _install_skill_from_source(source, folder_hint=args.name)
+            print(f"✅ Installed skill from: {source}")
+
         case _:
-            print("Use: mchat skill list|create <name>")
+            print("Use: mchat skill list|create <name>|install <url-or-name>")
+
+
+def _safe_skill_folder_name(raw: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", raw).strip("-._")
+    return cleaned or "skill"
+
+
+def _download_bytes(url: str) -> bytes:
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "mchat-cli/1.0"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read()
+
+
+def _extract_skill_zip_to(content: bytes, target_dir: Path) -> None:
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile as e:
+        raise RuntimeError("downloaded file is not a valid zip") from e
+
+    names = [n for n in zf.namelist() if n and not n.endswith("/")]
+    skill_md = next((n for n in names if Path(n).name.lower() == "skill.md"), None)
+    if not skill_md:
+        raise RuntimeError("zip does not contain SKILL.md")
+
+    prefix = ""
+    parts = skill_md.replace("\\", "/").split("/")
+    if len(parts) > 1:
+        prefix = "/".join(parts[:-1]) + "/"
+
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="mchat-skill-") as tmp:
+        tmp_dir = Path(tmp)
+        zf.extractall(tmp_dir)
+        src_root = tmp_dir / prefix if prefix else tmp_dir
+        if not src_root.exists():
+            src_root = tmp_dir
+        for child in src_root.iterdir():
+            dest = target_dir / child.name
+            if dest.exists():
+                if dest.is_dir():
+                    shutil.rmtree(dest)
+                else:
+                    dest.unlink()
+            if child.is_dir():
+                shutil.copytree(child, dest)
+            else:
+                shutil.copy2(child, dest)
+
+
+async def _install_skill_from_source(source: str, folder_hint: str | None = None) -> None:
+    if source.startswith(("http://", "https://")):
+        urls = [source]
+        slug = _safe_skill_folder_name(folder_hint or Path(urlparse(source).path).stem)
+    else:
+        slug = _safe_skill_folder_name(folder_hint or source)
+        urls = [
+            f"https://clawhub.ai/skills/{slug}.zip",
+            f"https://clawhub.ai/api/skills/{slug}/download",
+            f"https://clawhub.ai/skills/{slug}/download",
+        ]
+
+    last_error: Exception | None = None
+    content: bytes | None = None
+    for url in urls:
+        try:
+            content = _download_bytes(url)
+            if content:
+                break
+        except (urllib.error.URLError, urllib.error.HTTPError) as e:
+            last_error = e
+            continue
+
+    if not content:
+        raise RuntimeError(f"failed to download skill: {last_error}")
+
+    target = Path("skills") / slug
+    target.mkdir(parents=True, exist_ok=True)
+    _extract_skill_zip_to(content, target)
 
 
 async def _cmd_db(args: argparse.Namespace) -> None:

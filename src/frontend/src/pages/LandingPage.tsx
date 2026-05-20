@@ -48,6 +48,9 @@ export function LandingPage() {
             <a href="#quickstart" className="hover:text-primary-600 transition-colors">
               {t('landing.quickTitle')}
             </a>
+            <Link to="/showcase" className="hover:text-primary-600 transition-colors">
+              {t('landing.navShowcase')}
+            </Link>
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -61,17 +64,16 @@ export function LandingPage() {
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
             <Link
-              to="/admin/login"
+              to="/showcase"
               className="hidden sm:inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
             >
-              {t('common.admin')}
+              {t('landing.navShowcase')}
             </Link>
             <Link
               to="/admin/login"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 shadow-md shadow-primary-600/20 transition-colors"
+              className="inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
             >
               {t('landing.ctaAdmin')}
-              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
@@ -101,24 +103,24 @@ export function LandingPage() {
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              to="/admin/login"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary-600 text-white font-medium hover:bg-primary-700 shadow-lg shadow-primary-600/25 transition-all hover:scale-[1.02]"
-            >
-              {t('landing.ctaAdmin')}
-              <ArrowRight className="w-5 h-5" />
-            </Link>
-            <Link
               to="/widget/demo"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 font-medium hover:border-primary-400 transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white/90 dark:bg-gray-900/80 text-base font-medium text-gray-700 dark:text-gray-300 hover:border-primary-400 hover:text-gray-900 dark:hover:text-white transition-all"
             >
               <Zap className="w-5 h-5 text-primary-600" />
               {t('landing.ctaWidget')}
+            </Link>
+            <Link
+              to="/showcase"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white/90 dark:bg-gray-900/80 text-base font-medium text-gray-700 dark:text-gray-300 hover:border-primary-400 hover:text-gray-900 dark:hover:text-white transition-all"
+            >
+              <MessageCircle className="w-5 h-5 text-primary-600" />
+              {t('landing.ctaShowcase')}
             </Link>
             <a
               href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-gray-600 dark:text-gray-400 font-medium hover:text-gray-900 dark:hover:text-white transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white/90 dark:bg-gray-900/80 text-base font-medium text-gray-700 dark:text-gray-300 hover:border-primary-400 hover:text-gray-900 dark:hover:text-white transition-all"
             >
               <Github className="w-5 h-5" />
               {t('landing.ctaGithub')}
@@ -196,22 +198,22 @@ export function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
           <h2 className="text-3xl font-bold text-center mb-12">{t('landing.quickTitle')}</h2>
           <div className="grid md:grid-cols-2 gap-8">
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-sm font-medium border-b border-gray-200 dark:border-gray-700">
+            <div className="rounded-2xl border border-gray-800 overflow-hidden bg-gray-950 text-gray-100">
+              <div className="px-4 py-2 bg-gray-900 text-sm font-medium border-b border-gray-800">
                 {t('landing.quickDocker')}
               </div>
-              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto">
+              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto min-h-[156px]">
 {`git clone https://github.com/windinwing/mchat.git
 cd mchat
 docker compose -f ops/docker/docker-compose.lite.yml up -d
 # Admin: http://localhost:5173`}
               </pre>
             </div>
-            <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-sm font-medium border-b border-gray-200 dark:border-gray-700">
+            <div className="rounded-2xl border border-gray-800 overflow-hidden bg-gray-950 text-gray-100">
+              <div className="px-4 py-2 bg-gray-900 text-sm font-medium border-b border-gray-800">
                 {t('landing.quickDev')}
               </div>
-              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto">
+              <pre className="p-4 text-sm bg-gray-950 text-gray-100 overflow-x-auto min-h-[156px]">
 {`make install && make dev
 # API:  http://localhost:3001/docs
 # Web:  http://localhost:5173`}
@@ -236,6 +238,9 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
             </a>
             <Link to="/admin/login" className="hover:text-primary-600">
               {t('common.admin')}
+            </Link>
+            <Link to="/showcase" className="hover:text-primary-600">
+              {t('landing.navShowcase')}
             </Link>
             <span>{t('landing.footerLicense')}</span>
           </div>

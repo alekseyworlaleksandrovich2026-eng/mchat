@@ -75,7 +75,9 @@ def create_app() -> FastAPI:
     import os
 
     # Ensure required directories exist
-    os.makedirs(settings.upload_path, exist_ok=True)
+    use_local_storage = settings.storage_backend.strip().lower() == "local"
+    if use_local_storage:
+        os.makedirs(settings.upload_path, exist_ok=True)
     os.makedirs(settings.skills_path, exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
@@ -109,7 +111,7 @@ def create_app() -> FastAPI:
 
     # Static files mount
     upload_path = settings.upload_path
-    if upload_path.exists():
+    if use_local_storage and upload_path.exists():
         app.mount(
             "/uploads",
             StaticFiles(directory=str(upload_path)),

@@ -62,8 +62,13 @@ async function request<T = any>(endpoint: string, options: RequestOptions = {}):
     }
 
     if (response.status === 401) {
-      removeToken()
-      window.location.href = '/admin/login'
+      const isLoginRequest = endpoint === '/auth/login'
+      if (!isLoginRequest) {
+        removeToken()
+        if (window.location.pathname !== '/admin/login') {
+          window.location.href = '/admin/login'
+        }
+      }
     }
 
     const detail =

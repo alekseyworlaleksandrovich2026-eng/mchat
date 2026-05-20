@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
@@ -20,6 +21,35 @@ class MilvusClient:
         self._collection_name = "document_chunks"
         self._dimension = 1536  # text-embedding-3-small default
 
+    def _connect_kwargs(self) -> tuple[dict[str, Any], str]:
+        cfg = get_milvus_runtime()
+        raw_host = (cfg.host or "").strip()
+        connect_kwargs: dict[str, Any] = {"alias": "default"}
+
+        if "://" in raw_host:
+            parsed = urlparse(raw_host)
+            base = f"{parsed.scheme}://{parsed.netloc or parsed.path}"
+            connect_kwargs["uri"] = base.rstrip("/")
+            if parsed.scheme == "https":
+                connect_kwargs["secure"] = True
+            token = parse_qs(parsed.query).get("token", [""])[0].strip()
+            if token:
+                connect_kwargs["token"] = token
+            target = connect_kwargs["uri"]
+            return connect_kwargs, target
+
+        host_only = raw_host.rstrip("/")
+        if host_only.count(":") == 1:
+            maybe_host, maybe_port = host_only.split(":", 1)
+            if maybe_host and maybe_port.isdigit():
+                connect_kwargs["host"] = maybe_host
+                connect_kwargs["port"] = maybe_port
+                return connect_kwargs, f"{maybe_host}:{maybe_port}"
+
+        connect_kwargs["host"] = host_only or "localhost"
+        connect_kwargs["port"] = str(cfg.port)
+        return connect_kwargs, f"{connect_kwargs['host']}:{connect_kwargs['port']}"
+
     async def connect(self) -> bool:
         """Connect to Milvus server."""
         cfg = get_milvus_runtime()
@@ -34,14 +64,22 @@ class MilvusClient:
             if connections.has_connection("default"):
                 connections.disconnect("default")
 
-            connections.connect(
-                alias="default",
-                host=cfg.host,
-                port=str(cfg.port),
-            )
+            connect_kwargs, target = self._connect_kwargs()
+            connections.connect(**connect_kwargs)
             self._connected = True
-            logger.info(f"Connected to Milvus at {cfg.host}:{cfg.port}")
+            logger.info(f"Connected to Milvus at {target}")
             return True
+        except ModuleNotFoundError as e:
+            missing = getattr(e, "name", "")
+            if missing == "pkg_resources":
+                logger.warning(
+                    "Failed to import pymilvus dependency pkg_resources. "
+                    "Please install setuptools<72 in the backend runtime."
+                )
+            else:
+                logger.warning(f"Failed to connect to Milvus: {e}")
+            self._connected = False
+            return False
         except Exception as e:
             logger.warning(f"Failed to connect to Milvus: {e}")
             self._connected = False

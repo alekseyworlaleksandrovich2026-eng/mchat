@@ -10,8 +10,9 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
+from app.services.storage_service import storage_service
 
-_ALLOWED_MIME_PREFIXES = ("image/", "text/")
+_ALLOWED_MIME_PREFIXES = ("image/", "text/", "video/")
 _ALLOWED_MIME_EXACT = {
     "application/pdf",
     "application/msword",
@@ -23,6 +24,10 @@ _ALLOWED_EXTENSIONS = {
     ".png",
     ".gif",
     ".webp",
+    ".mp4",
+    ".mov",
+    ".m4v",
+    ".webm",
     ".pdf",
     ".doc",
     ".docx",
@@ -85,21 +90,23 @@ def validate_chat_attachment(
 
 
 async def save_chat_attachment(file: UploadFile) -> dict:
-    """Persist upload under settings.upload_path; return attachment metadata."""
+    """Persist upload through configured storage backend; return metadata."""
     raw_name = file.filename or "upload"
     data = await file.read()
     validate_chat_attachment(raw_name, file.content_type, len(data))
 
     ext = _guess_ext(raw_name, file.content_type)
-    stored = f"{uuid.uuid4().hex}{ext}"
-    upload_dir = settings.upload_path
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    path = upload_dir / stored
-    path.write_bytes(data)
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    stored = storage_service.save_bytes(
+        data,
+        filename=stored_name,
+        content_type=file.content_type,
+        prefix="chat",
+    )
 
     mime = file.content_type or mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
     return {
-        "url": f"/uploads/{stored}",
+        "url": stored.url,
         "name": _safe_filename(raw_name),
         "mime": mime,
         "size": len(data),
@@ -122,6 +129,8 @@ def attachment_prompt_text(content: str, extra_data: dict | None) -> str:
         mime = str(att.get("mime") or "")
         if mime.startswith("image/"):
             lines.append(f"[User sent an image: {name}] URL: {url}")
+        elif mime.startswith("video/"):
+            lines.append(f"[User sent a video: {name}] URL: {url}")
         else:
             lines.append(f"[User sent a file: {name}] URL: {url}")
 

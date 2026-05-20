@@ -58,7 +58,7 @@
 ```
 
 **流式响应 (SSE):**
-```
+```raw
 data: {"type": "token", "content": "你"}
 data: {"type": "token", "content": "好"}
 data: {"type": "tool_call", "name": "search", "args": {...}}
@@ -194,9 +194,13 @@ data: {"type": "done", "message_id": "uuid"}
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/skills` | 获取技能列表 |
-| PUT | `/skills/{id}` | 启用/禁用技能 |
+| PATCH | `/skills/{id}` | 启用/禁用技能、更新配置 |
 | POST | `/skills/reload` | 重新加载技能 |
 | POST | `/skills/upload` | 上传技能包 (zip) |
+| POST | `/skills/install-url` | 从 URL 或 ClawHub 名称安装技能 |
+| GET | `/skills/catalog` | 浏览 ClawHub 技能目录（可选 query） |
+
+说明：`/skills/install-url` 支持标准 frontmatter `SKILL.md` 与 OpenClaw 风格 `SKILL.md`。
 
 ---
 

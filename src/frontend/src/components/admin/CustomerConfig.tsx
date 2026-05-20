@@ -4,14 +4,18 @@ import {
   Palette,
   Globe,
   MessageSquare,
+  MessageCircle,
   Save,
   Smartphone,
   Plus,
   Code,
   Copy,
   Bot,
+  Headphones,
   Sparkles,
   BookOpen,
+  Paperclip,
+  Trash2,
 } from 'lucide-react'
 import i18n from '@/i18n'
 import api from '@/lib/api'
@@ -36,13 +40,37 @@ interface KnowledgeBaseOption {
   name: string
 }
 
+interface AutoReplyAsset {
+  url: string
+  name?: string
+  title?: string
+  mime?: string
+  type?: string
+}
+
+interface AutoReplyRule {
+  id: string
+  name: string
+  enabled: boolean
+  trigger_text: string
+  keywords: string[]
+  keywords_text: string
+  channels: string[]
+  reply_text: string | null
+  threshold: number
+  asset: AutoReplyAsset
+}
+
+const AUTO_REPLY_CHANNEL_VALUES = ['widget', 'wechat', 'admin'] as const
+
 interface CustomerServiceConfig {
   id: string
   name: string
   user_id?: string
   ai_config_id: string | null
-  skill_ids: string[] | null
-  knowledge_base_ids: string[] | null
+  skill_ids: string[]
+  knowledge_base_ids: string[]
+  auto_reply_rules: AutoReplyRule[]
   welcome_message: string | null
   offline_message: string | null
   theme: {
@@ -50,6 +78,9 @@ interface CustomerServiceConfig {
     buttonColor?: string
     botName?: string
     widgetTitle?: string
+    launcherIcon?: string
+    launcherText?: string
+    showcaseSkillIds?: string[]
     showBranding?: boolean
   } | null
   domains: string | null
@@ -60,27 +91,87 @@ interface CustomerServiceConfig {
   updated_at?: string
 }
 
-function emptyCustomerConfig(): CustomerServiceConfig {
+interface UploadedAssetResponse {
+  url: string
+  name: string
+  mime: string
+  size: number
+  type: string
+}
+
+function normalizeAutoReplyRule(
+  rule: Partial<AutoReplyRule> | null | undefined,
+  index = 0,
+): AutoReplyRule {
   return {
-    id: '',
-    name: i18n.t('customerAgents.defaultConfigName'),
-    ai_config_id: null,
-    skill_ids: null,
-    knowledge_base_ids: null,
+    id: String(rule?.id || `rule-${Date.now()}-${index}`),
+    name: String(rule?.name || ''),
+    enabled: rule?.enabled !== false,
+    trigger_text: String(rule?.trigger_text || ''),
+    keywords: Array.isArray(rule?.keywords) ? rule.keywords.filter(Boolean).map(String) : [],
+    keywords_text: Array.isArray(rule?.keywords)
+      ? rule.keywords.filter(Boolean).map(String).join(', ')
+      : '',
+    channels: Array.isArray(rule?.channels)
+      ? rule.channels
+          .filter((channel): channel is string => typeof channel === 'string')
+          .map((channel) => channel.trim().toLowerCase())
+          .filter((channel, index, all) => AUTO_REPLY_CHANNEL_VALUES.includes(channel as (typeof AUTO_REPLY_CHANNEL_VALUES)[number]) && all.indexOf(channel) === index)
+      : [],
+    reply_text: rule?.reply_text ? String(rule.reply_text) : null,
+    threshold: typeof rule?.threshold === 'number' ? rule.threshold : 0.78,
+    asset: {
+      url: String(rule?.asset?.url || ''),
+      name: rule?.asset?.name ? String(rule.asset.name) : undefined,
+      title: rule?.asset?.title ? String(rule.asset.title) : undefined,
+      mime: rule?.asset?.mime ? String(rule.asset.mime) : undefined,
+      type: rule?.asset?.type ? String(rule.asset.type) : undefined,
+    },
+  }
+}
+
+function normalizeCustomerConfig(
+  raw?: Partial<CustomerServiceConfig> | null,
+): CustomerServiceConfig {
+  const theme = raw?.theme || {}
+  return {
+    id: String(raw?.id || ''),
+    name: String(raw?.name || i18n.t('customerAgents.defaultConfigName')),
+    user_id: raw?.user_id,
+    ai_config_id: raw?.ai_config_id || null,
+    skill_ids: Array.isArray(raw?.skill_ids) ? raw.skill_ids.filter(Boolean).map(String) : [],
+    knowledge_base_ids: Array.isArray(raw?.knowledge_base_ids) ? raw.knowledge_base_ids.filter(Boolean).map(String) : [],
+    auto_reply_rules: Array.isArray(raw?.auto_reply_rules)
+      ? raw.auto_reply_rules.map((rule, index) => normalizeAutoReplyRule(rule, index))
+      : [],
+    welcome_message: raw?.welcome_message || null,
+    offline_message: raw?.offline_message || null,
+    theme: {
+      primaryColor: String(theme.primaryColor || '#3b82f6'),
+      buttonColor: theme.buttonColor ? String(theme.buttonColor) : undefined,
+      botName: String(theme.botName || i18n.t('customerAgents.defaultBotName')),
+      widgetTitle: String(theme.widgetTitle || i18n.t('customerAgents.defaultWidgetTitle')),
+      launcherIcon: theme.launcherIcon ? String(theme.launcherIcon) : 'chat',
+      launcherText: theme.launcherText ? String(theme.launcherText) : '',
+      showcaseSkillIds: Array.isArray(theme.showcaseSkillIds)
+        ? theme.showcaseSkillIds.filter(Boolean).map(String)
+        : [],
+      showBranding: typeof theme.showBranding === 'boolean' ? theme.showBranding : true,
+    },
+    domains: raw?.domains || null,
+    position: String(raw?.position || 'right'),
+    enabled: raw?.enabled ?? true,
+    widget_session_ttl_hours: raw?.widget_session_ttl_hours ?? 24,
+    created_at: raw?.created_at,
+    updated_at: raw?.updated_at,
+  }
+}
+
+function emptyCustomerConfig(): CustomerServiceConfig {
+  return normalizeCustomerConfig({
     welcome_message: i18n.t('customerAgents.defaultWelcome'),
     offline_message: i18n.t('customerAgents.defaultOffline'),
-    theme: {
-      primaryColor: '#3b82f6',
-      buttonColor: '#3b82f6',
-      botName: i18n.t('customerAgents.defaultBotName'),
-      widgetTitle: i18n.t('customerAgents.defaultWidgetTitle'),
-      showBranding: true,
-    },
-    domains: null,
-    position: 'right',
-    enabled: true,
-    widget_session_ttl_hours: 24,
-  }
+  })
 }
 
 export function CustomerConfig() {
@@ -90,11 +181,13 @@ export function CustomerConfig() {
   const [config, setConfig] = useState<CustomerServiceConfig>(() => emptyCustomerConfig())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploadingRuleId, setUploadingRuleId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('capabilities')
   const [domainInput, setDomainInput] = useState('')
   const [aiConfigs, setAiConfigs] = useState<{ id: string; name: string }[]>([])
   const [skills, setSkills] = useState<SkillOption[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>([])
+  const assetFileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   const skillTypeLabel = (skillType: string) =>
     skillType === 'builtin' ? t('skills.builtin') : t('skills.custom')
@@ -106,6 +199,15 @@ export function CustomerConfig() {
       { id: 'domain', label: t('customerAgents.tabDomain'), icon: <Globe className="w-4 h-4" /> },
       { id: 'message', label: t('customerAgents.tabMessage'), icon: <MessageSquare className="w-4 h-4" /> },
       { id: 'embed', label: t('customerAgents.tabEmbed'), icon: <Code className="w-4 h-4" /> },
+    ],
+    [t],
+  )
+
+  const autoReplyChannelOptions = useMemo(
+    () => [
+      { value: 'widget', label: t('customerAgents.autoReplyChannelWidget') },
+      { value: 'wechat', label: t('customerAgents.autoReplyChannelWechat') },
+      { value: 'admin', label: t('customerAgents.autoReplyChannelAdmin') },
     ],
     [t],
   )
@@ -144,13 +246,14 @@ export function CustomerConfig() {
     }
   }
 
-  const useAllSkills = config.skill_ids == null
-  const useAllKbs = config.knowledge_base_ids == null
-  const selectedSkillIds = useAllSkills ? [] : (config.skill_ids ?? [])
-  const selectedKbIds = useAllKbs ? [] : (config.knowledge_base_ids ?? [])
+  const selectedSkillIds = config.skill_ids ?? []
+  const selectedKbIds = config.knowledge_base_ids ?? []
+  const showcaseSkillIds = Array.isArray(config.theme?.showcaseSkillIds)
+    ? config.theme?.showcaseSkillIds || []
+    : []
 
   const toggleSkill = (skillId: string) => {
-    const current = useAllSkills ? [] : [...selectedSkillIds]
+    const current = [...selectedSkillIds]
     const next = current.includes(skillId)
       ? current.filter((id) => id !== skillId)
       : [...current, skillId]
@@ -158,20 +261,28 @@ export function CustomerConfig() {
   }
 
   const toggleKnowledgeBase = (kbId: string) => {
-    const current = useAllKbs ? [] : [...selectedKbIds]
+    const current = [...selectedKbIds]
     const next = current.includes(kbId)
       ? current.filter((id) => id !== kbId)
       : [...current, kbId]
     setConfig({ ...config, knowledge_base_ids: next })
   }
 
+  const toggleShowcaseSkill = (skillId: string) => {
+    const next = showcaseSkillIds.includes(skillId)
+      ? showcaseSkillIds.filter((id) => id !== skillId)
+      : [...showcaseSkillIds, skillId]
+    updateTheme('showcaseSkillIds', next)
+  }
+
   const loadConfigs = async () => {
     try {
       const data = await api.get<CustomerServiceConfig[]>('/agents/customer-configs')
-      setConfigs(data)
-      if (data.length > 0) {
-        setSelectedId(data[0].id)
-        setConfig(data[0])
+      const normalized = data.map((item) => normalizeCustomerConfig(item))
+      setConfigs(normalized)
+      if (normalized.length > 0) {
+        setSelectedId(normalized[0].id)
+        setConfig(normalized[0])
       }
     } catch (err) {
       console.error('Failed to load configs:', err)
@@ -183,7 +294,7 @@ export function CustomerConfig() {
   const handleSelect = (id: string) => {
     setSelectedId(id)
     const found = configs.find((c) => c.id === id)
-    if (found) setConfig(found)
+    if (found) setConfig(normalizeCustomerConfig(found))
   }
 
   const handleCreate = async () => {
@@ -193,9 +304,10 @@ export function CustomerConfig() {
         position: 'right',
         enabled: true,
       })
-      setConfigs((prev) => [...prev, created])
-      setSelectedId(created.id)
-      setConfig(created)
+      const normalized = normalizeCustomerConfig(created)
+      setConfigs((prev) => [...prev, normalized])
+      setSelectedId(normalized.id)
+      setConfig(normalized)
       toast(t('customerAgents.toastCreated'), { type: 'success' })
     } catch (err: any) {
       toast(t('customerAgents.toastCreateFailed'), { type: 'error', message: err.message })
@@ -203,6 +315,14 @@ export function CustomerConfig() {
   }
 
   const handleSave = async () => {
+    const autoReplyRulesPayload = config.auto_reply_rules.map(({ keywords_text, ...rule }) => ({
+      ...rule,
+      keywords: keywords_text
+        .split(/,|，/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    }))
+
     if (!selectedId) {
       try {
         const created = await api.post<CustomerServiceConfig>('/agents/customer-configs', {
@@ -210,6 +330,7 @@ export function CustomerConfig() {
           ai_config_id: config.ai_config_id,
           skill_ids: config.skill_ids,
           knowledge_base_ids: config.knowledge_base_ids,
+          auto_reply_rules: autoReplyRulesPayload,
           welcome_message: config.welcome_message,
           offline_message: config.offline_message,
           theme: config.theme,
@@ -218,9 +339,10 @@ export function CustomerConfig() {
           enabled: config.enabled,
           widget_session_ttl_hours: config.widget_session_ttl_hours ?? 24,
         })
-        setConfigs((prev) => [...prev, created])
-        setSelectedId(created.id)
-        setConfig(created)
+        const normalized = normalizeCustomerConfig(created)
+        setConfigs((prev) => [...prev, normalized])
+        setSelectedId(normalized.id)
+        setConfig(normalized)
         toast(t('customerAgents.toastSaveSuccess'), { type: 'success' })
       } catch (err: any) {
         toast(t('customerAgents.toastSaveFailed'), { type: 'error', message: err.message })
@@ -230,11 +352,12 @@ export function CustomerConfig() {
 
     setSaving(true)
     try {
-      await api.put(`/agents/customer-configs/${selectedId}`, {
+      const updated = await api.put<CustomerServiceConfig>(`/agents/customer-configs/${selectedId}`, {
         name: config.name,
         ai_config_id: config.ai_config_id,
         skill_ids: config.skill_ids,
         knowledge_base_ids: config.knowledge_base_ids,
+        auto_reply_rules: autoReplyRulesPayload,
         welcome_message: config.welcome_message,
         offline_message: config.offline_message,
         theme: config.theme,
@@ -243,6 +366,9 @@ export function CustomerConfig() {
         enabled: config.enabled,
         widget_session_ttl_hours: config.widget_session_ttl_hours ?? 24,
       })
+      const normalized = normalizeCustomerConfig(updated)
+      setConfig(normalized)
+      setConfigs((prev) => prev.map((item) => (item.id === normalized.id ? normalized : item)))
       toast(t('customerAgents.toastSaveSuccess'), { type: 'success' })
     } catch (err: any) {
       toast(t('customerAgents.toastSaveFailed'), { type: 'error', message: err.message })
@@ -256,6 +382,102 @@ export function CustomerConfig() {
       ...config,
       theme: { ...(config.theme || {}), [key]: value },
     })
+  }
+
+  const toggleRuleEnabled = (ruleId: string) => {
+    setConfig({
+      ...config,
+      auto_reply_rules: config.auto_reply_rules.map((rule) =>
+        rule.id === ruleId ? { ...rule, enabled: !rule.enabled } : rule,
+      ),
+    })
+  }
+
+  const updateAutoReplyRule = (ruleId: string, patch: Partial<AutoReplyRule>) => {
+    setConfig({
+      ...config,
+      auto_reply_rules: config.auto_reply_rules.map((rule) =>
+        rule.id === ruleId ? { ...rule, ...patch } : rule,
+      ),
+    })
+  }
+
+  const toggleAutoReplyRuleChannel = (ruleId: string, channel: (typeof AUTO_REPLY_CHANNEL_VALUES)[number]) => {
+    setConfig({
+      ...config,
+      auto_reply_rules: config.auto_reply_rules.map((rule) => {
+        if (rule.id !== ruleId) return rule
+        const channels = rule.channels.includes(channel)
+          ? rule.channels.filter((item) => item !== channel)
+          : [...rule.channels, channel]
+        return { ...rule, channels }
+      }),
+    })
+  }
+
+  const updateAutoReplyRuleAsset = (ruleId: string, patch: Partial<AutoReplyAsset>) => {
+    setConfig({
+      ...config,
+      auto_reply_rules: config.auto_reply_rules.map((rule) =>
+        rule.id === ruleId
+          ? { ...rule, asset: { ...rule.asset, ...patch } }
+          : rule,
+      ),
+    })
+  }
+
+  const addAutoReplyRule = () => {
+    setConfig({
+      ...config,
+      auto_reply_rules: [
+        ...config.auto_reply_rules,
+        normalizeAutoReplyRule(
+          {
+            id: `rule-${Date.now()}-${config.auto_reply_rules.length}`,
+            name: t('customerAgents.autoReplyDefaultRuleName', {
+              count: config.auto_reply_rules.length + 1,
+            }),
+          },
+          config.auto_reply_rules.length,
+        ),
+      ],
+    })
+  }
+
+  const removeAutoReplyRule = (ruleId: string) => {
+    setConfig({
+      ...config,
+      auto_reply_rules: config.auto_reply_rules.filter((rule) => rule.id !== ruleId),
+    })
+  }
+
+  const triggerRuleAssetUpload = (ruleId: string) => {
+    setUploadingRuleId(ruleId)
+    assetFileInputRef.current?.click()
+  }
+
+  const handleRuleAssetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !uploadingRuleId) return
+
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const uploaded = await api.upload<UploadedAssetResponse>('/agents/customer-configs/upload-asset', formData)
+      updateAutoReplyRuleAsset(uploadingRuleId, {
+        url: uploaded.url,
+        name: uploaded.name,
+        title: uploaded.name,
+        mime: uploaded.mime,
+        type: uploaded.type,
+      })
+      toast(t('customerAgents.toastAssetUploadSuccess'), { type: 'success' })
+    } catch (err: any) {
+      toast(t('customerAgents.toastAssetUploadFailed'), { type: 'error', message: err.message })
+    } finally {
+      setUploadingRuleId(null)
+      if (assetFileInputRef.current) assetFileInputRef.current.value = ''
+    }
   }
 
   const addDomain = () => {
@@ -277,6 +499,14 @@ export function CustomerConfig() {
   const theme = config.theme || {}
   const domainList = config.domains ? config.domains.split(',').map((d) => d.trim()).filter(Boolean) : []
   const primaryColor = theme.primaryColor || '#3b82f6'
+  const previewLauncherIcon =
+    theme.launcherIcon === 'bot'
+      ? Bot
+      : theme.launcherIcon === 'spark'
+        ? Sparkles
+        : theme.launcherIcon === 'support'
+          ? Headphones
+          : MessageCircle
 
   const apiBase =
     typeof window !== 'undefined'
@@ -297,6 +527,8 @@ export function CustomerConfig() {
   data-primary-color="${primaryColor}"
   data-welcome-message="${(config.welcome_message || '').replace(/"/g, '&quot;')}"
   data-bot-name="${theme.botName || defaultBot}"
+  data-launcher-icon="${theme.launcherIcon || 'chat'}"
+  data-launcher-text="${(theme.launcherText || '').replace(/"/g, '&quot;')}"
 ></script>`
     : ''
 
@@ -325,6 +557,14 @@ export function CustomerConfig() {
 
   return (
     <div className="space-y-4">
+      <input
+        ref={assetFileInputRef}
+        type="file"
+        accept="image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm,.pdf,.doc,.docx,.txt,.md"
+        className="hidden"
+        title={t('customerAgents.autoReplyUploadAsset')}
+        onChange={handleRuleAssetUpload}
+      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Select
@@ -408,22 +648,44 @@ export function CustomerConfig() {
                   <label key={skill.id} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300 block mb-1">
                     <input
                       type="checkbox"
-                      checked={useAllSkills || selectedSkillIds.includes(skill.id)}
-                      onChange={() => {
-                        if (useAllSkills) setConfig({ ...config, skill_ids: [skill.id] })
-                        else toggleSkill(skill.id)
-                      }}
+                      checked={selectedSkillIds.includes(skill.id)}
+                      onChange={() => toggleSkill(skill.id)}
                     />
                     {skill.name} ({skillTypeLabel(skill.skill_type)})
                   </label>
                 ))}
-                {!useAllSkills && (
-                  <button type="button" className="text-xs text-primary-600" onClick={() => setConfig({ ...config, skill_ids: null })}>{t('customerAgents.allSkills')}</button>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-primary-600" />
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('customerAgents.showcaseSkillsSection')}</h4>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  {t('customerAgents.showcaseSkillsHint')}
+                </p>
+                {skills.map((skill) => (
+                  <label key={`showcase-${skill.id}`} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300 block mb-1">
+                    <input
+                      type="checkbox"
+                      checked={showcaseSkillIds.includes(skill.id)}
+                      onChange={() => toggleShowcaseSkill(skill.id)}
+                    />
+                    {skill.name}
+                  </label>
+                ))}
+                {showcaseSkillIds.length > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs text-primary-600"
+                    onClick={() => updateTheme('showcaseSkillIds', [])}
+                  >
+                    {t('customerAgents.showcaseUseAll')}
+                  </button>
                 )}
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <BookOpen className="w-4 h-4" />
+                  <BookOpen className="w-4 h-4 text-primary-600 dark:text-primary-400" />
                   <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('customerAgents.knowledgeSection')}</h4>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{t('customerAgents.knowledgeHint')}</p>
@@ -431,17 +693,153 @@ export function CustomerConfig() {
                   <label key={kb.id} className="flex gap-2 text-sm text-gray-700 dark:text-gray-300 block mb-1">
                     <input
                       type="checkbox"
-                      checked={useAllKbs || selectedKbIds.includes(kb.id)}
-                      onChange={() => {
-                        if (useAllKbs) setConfig({ ...config, knowledge_base_ids: [kb.id] })
-                        else toggleKnowledgeBase(kb.id)
-                      }}
+                      checked={selectedKbIds.includes(kb.id)}
+                      onChange={() => toggleKnowledgeBase(kb.id)}
                     />
                     {kb.name}
                   </label>
                 ))}
-                {!useAllKbs && (
-                  <button type="button" className="text-xs text-primary-600" onClick={() => setConfig({ ...config, knowledge_base_ids: null })}>{t('customerAgents.allKnowledgeBases')}</button>
+              </div>
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{t('customerAgents.autoReplySection')}</h4>
+                  </div>
+                  <Button
+                    type="button"
+                    size="action"
+                    variant="secondary"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    onClick={addAutoReplyRule}
+                  >
+                    {t('customerAgents.autoReplyAddRule')}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                  {t('customerAgents.autoReplyHint')}
+                </p>
+                {config.auto_reply_rules.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
+                    {t('customerAgents.autoReplyEmpty')}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {config.auto_reply_rules.map((rule, index) => (
+                      <div
+                        key={rule.id}
+                        className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 space-y-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Input
+                            label={t('customerAgents.autoReplyRuleName')}
+                            value={rule.name}
+                            onChange={(e) => updateAutoReplyRule(rule.id, { name: e.target.value })}
+                          />
+                          <label className="flex items-center gap-2 mt-6 text-sm text-gray-700 dark:text-gray-300 shrink-0">
+                            <input
+                              type="checkbox"
+                              checked={rule.enabled}
+                              onChange={() => toggleRuleEnabled(rule.id)}
+                            />
+                            {t('customerAgents.autoReplyEnabled')}
+                          </label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            leftIcon={<Trash2 className="w-4 h-4" />}
+                            className="mt-6 shrink-0"
+                            onClick={() => removeAutoReplyRule(rule.id)}
+                          >
+                            {t('common.delete')}
+                          </Button>
+                        </div>
+
+                        <Textarea
+                          label={t('customerAgents.autoReplyTriggerText')}
+                          value={rule.trigger_text}
+                          onChange={(e) => updateAutoReplyRule(rule.id, { trigger_text: e.target.value })}
+                          placeholder={t('customerAgents.autoReplyTriggerPlaceholder')}
+                        />
+
+                        <Input
+                          label={t('customerAgents.autoReplyKeywords')}
+                          value={rule.keywords_text}
+                          onChange={(e) =>
+                            updateAutoReplyRule(rule.id, {
+                              keywords_text: e.target.value,
+                            })
+                          }
+                          placeholder={t('customerAgents.autoReplyKeywordsPlaceholder')}
+                        />
+
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {t('customerAgents.autoReplyChannels')}
+                          </p>
+                          <div className="flex flex-wrap gap-3">
+                            {autoReplyChannelOptions.map((option) => (
+                              <label
+                                key={`${rule.id}-${option.value}`}
+                                className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                  checked={rule.channels.includes(option.value)}
+                                  onChange={() => toggleAutoReplyRuleChannel(rule.id, option.value as (typeof AUTO_REPLY_CHANNEL_VALUES)[number])}
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {t('customerAgents.autoReplyChannelsHint')}
+                          </p>
+                        </div>
+
+                        <Textarea
+                          label={t('customerAgents.autoReplyReplyText')}
+                          value={rule.reply_text || ''}
+                          onChange={(e) => updateAutoReplyRule(rule.id, { reply_text: e.target.value || null })}
+                          placeholder={t('customerAgents.autoReplyReplyPlaceholder')}
+                        />
+
+                        <div className="grid grid-cols-1 md:grid-cols-[7.5rem_1fr_1fr] gap-3 items-end">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="action"
+                            leftIcon={<Paperclip className="w-4 h-4" />}
+                            isLoading={uploadingRuleId === rule.id}
+                            onClick={() => triggerRuleAssetUpload(rule.id)}
+                          >
+                            {t('customerAgents.autoReplyUploadAsset')}
+                          </Button>
+                          <Input
+                            label={t('customerAgents.autoReplyAssetTitle')}
+                            value={rule.asset.title || ''}
+                            onChange={(e) => updateAutoReplyRuleAsset(rule.id, { title: e.target.value })}
+                            placeholder={t('customerAgents.autoReplyAssetTitlePlaceholder')}
+                          />
+                          <Input
+                            label={t('customerAgents.autoReplyAssetUrl')}
+                            value={rule.asset.url}
+                            onChange={(e) => updateAutoReplyRuleAsset(rule.id, { url: e.target.value })}
+                            placeholder={t('customerAgents.autoReplyAssetUrlPlaceholder')}
+                          />
+                        </div>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {t('customerAgents.autoReplyCurrentAsset', {
+                            index: index + 1,
+                            asset: rule.asset.title || rule.asset.name || rule.asset.url || t('customerAgents.autoReplyNoAsset'),
+                          })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -472,12 +870,15 @@ export function CustomerConfig() {
                       type="color"
                       value={primaryColor}
                       onChange={(e) => updateTheme('primaryColor', e.target.value)}
+                      title={t('customerAgents.themeColor')}
                       className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer"
                     />
                     <input
                       type="text"
                       value={primaryColor}
                       onChange={(e) => updateTheme('primaryColor', e.target.value)}
+                      title={t('customerAgents.themeColor')}
+                      placeholder="#3b82f6"
                       className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
                     />
                   </div>
@@ -516,17 +917,58 @@ export function CustomerConfig() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  label={t('customerAgents.launcherIconLabel')}
+                  options={[
+                    { value: 'chat', label: t('customerAgents.launcherIconChat') },
+                    { value: 'bot', label: t('customerAgents.launcherIconBot') },
+                    { value: 'spark', label: t('customerAgents.launcherIconSpark') },
+                    { value: 'support', label: t('customerAgents.launcherIconSupport') },
+                  ]}
+                  value={theme.launcherIcon || 'chat'}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                    updateTheme('launcherIcon', e.target.value)
+                  }
+                />
+                <Input
+                  label={t('customerAgents.launcherTextLabel')}
+                  value={theme.launcherText || ''}
+                  onChange={(e: any) => updateTheme('launcherText', e.target.value)}
+                  placeholder={t('customerAgents.launcherTextPlaceholder')}
+                />
+              </div>
+
               <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{t('customerAgents.previewLabel')}</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: primaryColor }} />
-                  <span className="text-sm text-gray-600 dark:text-gray-300">
-                    {theme.widgetTitle || config.name} - {theme.botName || defaultBot}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    {t('customerAgents.previewPositionSuffix', { position: previewPositionLabel })}
-                  </span>
+                <div className="rounded-2xl border border-dashed border-gray-200 dark:border-gray-600 bg-white/80 dark:bg-gray-800/60 px-4 py-6">
+                  <div
+                    className={`flex ${config.position === 'right' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className="inline-flex items-center gap-2 rounded-full bg-primary-600 px-4 py-3 text-white shadow-lg">
+                      {React.createElement(previewLauncherIcon, {
+                        className: theme.launcherText ? 'w-5 h-5' : 'w-6 h-6',
+                      })}
+                      {(theme.launcherText || '').trim() ? (
+                        <span className="text-sm font-medium">{theme.launcherText}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <span>
+                      {theme.widgetTitle || config.name} - {theme.botName || defaultBot}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {t('customerAgents.previewPositionSuffix', { position: previewPositionLabel })}
+                    </span>
+                  </div>
                 </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  {t('customerAgents.previewLauncher', {
+                    icon: theme.launcherIcon || 'chat',
+                    text: theme.launcherText || t('customerAgents.launcherTextEmpty'),
+                  })}
+                </p>
               </div>
             </div>
           </TabPanel>
@@ -632,6 +1074,14 @@ export function CustomerConfig() {
                       rel="noreferrer"
                     >
                       {t('customerAgents.openIframePage')}
+                    </a>
+                    <a
+                      className="text-primary-600 hover:underline"
+                      href={`/showcase?agentId=${selectedId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t('customerAgents.openShowcasePage')}
                     </a>
                   </div>
                 </>

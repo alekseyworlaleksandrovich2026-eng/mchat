@@ -13,9 +13,9 @@ from app.skill.utils import get_prompt_body, has_executable_script
 
 
 def _ids_from_config(value: list[str] | None) -> list[str] | None:
-    """None = use all; [] = use none; non-empty = filter to those ids."""
+    """None/[] = use none; non-empty = filter to those ids."""
     if value is None:
-        return None
+        return []
     cleaned = [str(x).strip() for x in value if str(x).strip()]
     return cleaned
 
@@ -24,6 +24,7 @@ async def load_skills_for_chat(
     db: AsyncSession,
     user_id: str,
     customer_config: CustomerConfig | None = None,
+    skill_ids_override: list[str] | None = None,
 ) -> tuple[list[Skill], list[Skill]]:
     """Return (prompt_skills, executable_tool_skills) for this chat."""
     result = await db.execute(
@@ -35,7 +36,9 @@ async def load_skills_for_chat(
     all_skills = list(result.scalars().all())
 
     allowed_ids = None
-    if customer_config is not None:
+    if skill_ids_override is not None:
+        allowed_ids = _ids_from_config(skill_ids_override)
+    elif customer_config is not None:
         allowed_ids = _ids_from_config(
             getattr(customer_config, "skill_ids", None)
         )

@@ -441,7 +441,7 @@ export function ModelProviderWorkbench() {
                   <div className="flex-1 min-w-[160px] max-w-xs relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800"
+                      className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                       placeholder={t('agents.workbenchSearchModelsPlaceholder')}
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}

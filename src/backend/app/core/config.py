@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     # File uploads
     upload_dir: str = "../../uploads"
     max_upload_size_mb: int = 50
+    storage_backend: str = "local"  # local | s3 | minio
+    s3_endpoint: str = ""
+    s3_region: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_bucket: str = "mchat-uploads"
+    s3_use_ssl: bool = False
+    s3_public_base_url: str = ""
+    s3_force_path_style: bool = True
 
     # Speech-to-text (STT)
     stt_enabled: bool = True

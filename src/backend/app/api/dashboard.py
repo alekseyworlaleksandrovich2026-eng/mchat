@@ -18,7 +18,8 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
 ):
     service = DashboardService(db)
-    return await service.get_stats(user_id=current_user.id)
+    user_scope = None if current_user.role == "admin" else current_user.id
+    return await service.get_stats(user_id=user_scope)
 
 
 @router.get("/activities", response_model=list[DashboardActivity])
@@ -27,4 +28,5 @@ async def get_dashboard_activities(
     db: AsyncSession = Depends(get_db),
 ):
     service = DashboardService(db)
-    return await service.get_activities(user_id=current_user.id)
+    user_scope = None if current_user.role == "admin" else current_user.id
+    return await service.get_activities(user_id=user_scope)

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { cn } from '@/lib/utils'
+import { cn, parseDate } from '@/lib/utils'
 import { Message } from '@/stores/chat'
 import { Avatar } from '@/components/ui/Avatar'
 import { createMarkdownComponents } from './markdownComponents'
@@ -52,17 +52,58 @@ export function MessageBubble({
   const assistantText = prepareAssistantMarkdown(throttledContent)
 
   type Attachment = { url?: string; name?: string; mime?: string }
+  type OutboundAsset = {
+    url?: string
+    name?: string
+    mime?: string
+    type?: string
+    title?: string
+    source?: string
+  }
   const attachments = (message.extra_data?.attachments as Attachment[] | undefined) ?? []
+  const isVideo = (item: { url?: string; mime?: string; name?: string; type?: string }) => {
+    const mime = String(item.mime || '').toLowerCase()
+    if (mime.startsWith('video/')) return true
+    const url = String(item.url || item.name || '').toLowerCase()
+    return ['.mp4', '.mov', '.m4v', '.webm'].some((ext) => url.endsWith(ext))
+  }
   const withResolvedUrl = (att: Attachment) => ({
     ...att,
     url: resolveUploadUrl(att.url),
   })
+  const outboundAssets = ((message.extra_data?.outbound_assets as OutboundAsset[] | undefined) ?? [])
+    .map((asset) => ({
+      ...asset,
+      url: resolveUploadUrl(asset.url),
+    }))
+  const knowledgeHits = ((message.extra_data?.knowledge_hits as Array<Record<string, any>> | undefined) ?? [])
+  const autoReplyRuleHits = ((message.extra_data?.auto_reply_rule_hits as Array<Record<string, any>> | undefined) ?? [])
   const imageAttachments = attachments
     .filter((a) => a.url && String(a.mime || '').startsWith('image/'))
     .map(withResolvedUrl)
-  const fileAttachments = attachments
-    .filter((a) => a.url && !String(a.mime || '').startsWith('image/'))
+  const videoAttachments = attachments
+    .filter((a) => a.url && isVideo(a))
     .map(withResolvedUrl)
+  const fileAttachments = attachments
+    .filter((a) => a.url && !String(a.mime || '').startsWith('image/') && !isVideo(a))
+    .map(withResolvedUrl)
+  const attachmentUrls = new Set(
+    [...imageAttachments, ...videoAttachments, ...fileAttachments].map((att) => att.url).filter(Boolean),
+  )
+  const explicitAssets = outboundAssets.filter(
+    (asset) =>
+      !!asset.url &&
+      !attachmentUrls.has(asset.url) &&
+      asset.source !== 'markdown_link' &&
+      asset.source !== 'raw_url',
+  )
+  const imageAssets = explicitAssets.filter(
+    (asset) => asset.type === 'image' || String(asset.mime || '').startsWith('image/'),
+  )
+  const videoAssets = explicitAssets.filter((asset) => isVideo(asset))
+  const fileAndLinkAssets = explicitAssets.filter(
+    (asset) => asset.type !== 'image' && !String(asset.mime || '').startsWith('image/') && !isVideo(asset),
+  )
   const caption =
     attachments.length > 0 &&
     displayContent &&
@@ -129,6 +170,25 @@ export function MessageBubble({
                 {att.name || 'attachment'}
               </a>
             ))}
+            {videoAttachments.map((att, i) => (
+              <video
+                key={`${att.url}-${i}`}
+                src={att.url}
+                controls
+                className="max-w-full max-h-72 rounded-lg"
+              />
+            ))}
+            {fileAndLinkAssets.map((asset, i) => (
+              <a
+                key={`${asset.url}-${i}`}
+                href={asset.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm underline break-all opacity-90"
+              >
+                {asset.title || asset.name || asset.url}
+              </a>
+            ))}
             {caption ? (
               <p className="text-sm whitespace-pre-wrap break-words">{caption}</p>
             ) : null}
@@ -144,6 +204,110 @@ export function MessageBubble({
             >
               {assistantText}
             </ReactMarkdown>
+            {(imageAttachments.length > 0 || imageAssets.length > 0 || videoAttachments.length > 0 || videoAssets.length > 0 || fileAttachments.length > 0 || fileAndLinkAssets.length > 0) && (
+              <div className="mt-3 space-y-2">
+                {imageAttachments.map((asset, i) => (
+                  <a
+                    key={`${asset.url}-${i}`}
+                    href={asset.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <img
+                      src={asset.url}
+                      alt={asset.name || 'image'}
+                      className="max-w-full max-h-64 rounded-lg object-contain border border-gray-200 dark:border-gray-700"
+                    />
+                  </a>
+                ))}
+                {imageAssets.map((asset, i) => (
+                  <a
+                    key={`${asset.url}-explicit-${i}`}
+                    href={asset.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <img
+                      src={asset.url}
+                      alt={asset.name || asset.title || 'image'}
+                      className="max-w-full max-h-64 rounded-lg object-contain border border-gray-200 dark:border-gray-700"
+                    />
+                  </a>
+                ))}
+                {videoAttachments.map((asset, i) => (
+                  <video
+                    key={`${asset.url}-${i}`}
+                    src={asset.url}
+                    controls
+                    className="max-w-full max-h-72 rounded-lg border border-gray-200 dark:border-gray-700"
+                  />
+                ))}
+                {videoAssets.map((asset, i) => (
+                  <video
+                    key={`${asset.url}-explicit-${i}`}
+                    src={asset.url}
+                    controls
+                    className="max-w-full max-h-72 rounded-lg border border-gray-200 dark:border-gray-700"
+                  />
+                ))}
+                {fileAttachments.map((asset, i) => (
+                  <a
+                    key={`${asset.url}-${i}`}
+                    href={asset.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    {asset.name || asset.url}
+                  </a>
+                ))}
+                {fileAndLinkAssets.map((asset, i) => (
+                  <a
+                    key={`${asset.url}-explicit-${i}`}
+                    href={asset.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    {asset.title || asset.name || asset.url}
+                  </a>
+                ))}
+              </div>
+            )}
+            {(knowledgeHits.length > 0 || autoReplyRuleHits.length > 0) && (
+              <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/20 px-3 py-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
+                {knowledgeHits.length > 0 && (
+                  <div>
+                    <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.knowledgeHits')}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {knowledgeHits.map((hit, index) => (
+                        <span
+                          key={`${hit.document_id || hit.title}-${index}`}
+                          className="rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5"
+                        >
+                          {hit.title || t('chat.knowledgeHitFallback')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {autoReplyRuleHits.length > 0 && (
+                  <div>
+                    <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.autoReplyHits')}</p>
+                    <div className="flex flex-col gap-1 mt-1">
+                      {autoReplyRuleHits.map((hit, index) => (
+                        <span key={`${hit.rule_id || hit.rule_name}-${index}`}>
+                          {hit.rule_name || t('chat.autoReplyHitFallback')}
+                          {hit.asset_name ? ` · ${hit.asset_name}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {isStreaming && (
               <span className="cursor-blink inline-block w-[2px] h-4 bg-current ml-0.5 align-middle" />
             )}
@@ -160,7 +324,7 @@ export function MessageBubble({
               : 'text-gray-500 dark:text-gray-400',
           )}
         >
-          {new Date(message.created_at).toLocaleTimeString(timeLocale, {
+          {parseDate(message.created_at).toLocaleTimeString(timeLocale, {
             hour: '2-digit',
             minute: '2-digit',
           })}

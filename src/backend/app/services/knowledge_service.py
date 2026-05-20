@@ -1,15 +1,16 @@
 """Knowledge service - business logic for knowledge management."""
 
+import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.knowledge.importer import DocumentImporter
 from app.knowledge.rag import RagService
 from app.models.knowledge import Document, KnowledgeBase
+from app.services.storage_service import storage_service
 from app.schemas.knowledge import (
     DocumentCreate,
     DocumentListItem,
@@ -170,7 +171,7 @@ class KnowledgeService:
         # Index in Milvus
         try:
             importer = DocumentImporter()
-            chunk_count = await importer.index_document(doc)
+            chunk_count = await importer.index_document(doc, user_id=kb.user_id)
             doc.status = "indexed"
             doc.chunk_count = chunk_count
         except Exception:
@@ -233,19 +234,29 @@ class KnowledgeService:
                 detail="Knowledge base not found",
             )
 
-        # Save uploaded file
-        upload_dir = settings.upload_path
-        upload_dir.mkdir(parents=True, exist_ok=True)
-
-        file_path = upload_dir / (file.filename or "upload.dat")
         content = await file.read()
-        file_path.write_bytes(content)
+        stored = storage_service.save_bytes(
+            content,
+            filename=file.filename or "upload.dat",
+            content_type=file.content_type,
+            prefix="knowledge",
+        )
+
+        temp_path: Path | None = None
+        file_path = stored.local_path
+        if file_path is None:
+            suffix = Path(file.filename or "upload.dat").suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+                f.write(content)
+                temp_path = Path(f.name)
+            file_path = temp_path
 
         # Import and index
         importer = DocumentImporter()
         try:
             doc = await importer.import_file(
                 kb_id=kb_id,
+                user_id=kb.user_id,
                 file_path=file_path,
                 original_filename=file.filename or "unknown",
             )
@@ -259,6 +270,9 @@ class KnowledgeService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to import file: {e}",
             )
+        finally:
+            if temp_path and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
 
     async def import_url(
         self, kb_id: str, user_id: str, url: str
@@ -280,7 +294,11 @@ class KnowledgeService:
 
         importer = DocumentImporter()
         try:
-            doc = await importer.import_url(kb_id=kb_id, url=url)
+            doc = await importer.import_url(
+                kb_id=kb_id,
+                user_id=kb.user_id,
+                url=url,
+            )
             doc.knowledge_base_id = kb_id
             self.db.add(doc)
             await self.db.flush()

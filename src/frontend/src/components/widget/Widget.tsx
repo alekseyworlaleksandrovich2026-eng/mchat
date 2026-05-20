@@ -18,6 +18,17 @@ interface WidgetProps {
   primaryColor?: string
   welcomeMessage?: string
   botName?: string
+  skillId?: string
+  launcherIcon?: string
+  launcherText?: string
+  themeOverride?: {
+    position?: 'right' | 'left'
+    primaryColor?: string
+    welcomeMessage?: string
+    botName?: string
+    launcherIcon?: string
+    launcherText?: string
+  }
 }
 
 export function Widget({
@@ -30,6 +41,10 @@ export function Widget({
   primaryColor = '#3b82f6',
   welcomeMessage,
   botName,
+  skillId,
+  launcherIcon = 'chat',
+  launcherText = '',
+  themeOverride,
 }: WidgetProps) {
   const { t } = useTranslation()
   const isPage = variant === 'page'
@@ -41,15 +56,44 @@ export function Widget({
 
   const resolved = useMemo(
     () => ({
-      position: (remoteConfig?.position as 'right' | 'left') || position,
-      primaryColor: remoteConfig?.theme?.primaryColor || primaryColor,
-      welcomeMessage: remoteConfig?.welcome_message || defaultWelcome,
-      botName: remoteConfig?.theme?.botName || defaultBotName,
+      position:
+        themeOverride?.position ??
+        (remoteConfig?.position as 'right' | 'left') ??
+        position,
+      primaryColor:
+        themeOverride?.primaryColor ??
+        remoteConfig?.theme?.primaryColor ??
+        primaryColor,
+      welcomeMessage:
+        themeOverride?.welcomeMessage ??
+        remoteConfig?.welcome_message ??
+        defaultWelcome,
+      botName:
+        themeOverride?.botName ??
+        remoteConfig?.theme?.botName ??
+        defaultBotName,
+      launcherIcon:
+        themeOverride?.launcherIcon ??
+        remoteConfig?.theme?.launcherIcon ??
+        launcherIcon,
+      launcherText:
+        themeOverride?.launcherText ??
+        remoteConfig?.theme?.launcherText ??
+        launcherText,
     }),
-    [remoteConfig, position, primaryColor, defaultWelcome, defaultBotName],
+    [
+      remoteConfig,
+      position,
+      primaryColor,
+      defaultWelcome,
+      defaultBotName,
+      launcherIcon,
+      launcherText,
+      themeOverride,
+    ],
   )
 
-  const chat = useWidgetChat(agentId, apiUrl, resolved.welcomeMessage)
+  const chat = useWidgetChat(agentId, apiUrl, resolved.welcomeMessage, skillId)
 
   const [isOpen, setIsOpen] = useState(isPage || isIframe || defaultOpen)
 
@@ -107,7 +151,7 @@ export function Widget({
       messages={chat.messages}
       isStreaming={chat.isStreaming}
       streamingContent={chat.streamingContent}
-      onSend={chat.sendMessage}
+      onSend={(content, options) => chat.sendMessage(content, options?.file)}
       title={isPage ? resolved.botName : undefined}
       emptyMessage={resolved.welcomeMessage}
       disabled={chat.isLoading || chat.isStreaming || configLoading}
@@ -311,6 +355,8 @@ export function Widget({
         }}
         position={resolved.position}
         primaryColor={resolved.primaryColor}
+        launcherIcon={resolved.launcherIcon}
+        launcherText={resolved.launcherText}
       />
       )}
     </>

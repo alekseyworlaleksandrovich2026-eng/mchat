@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_factory, get_db
 from app.models.customer import CustomerConfig
 from app.models.conversation import Conversation
+from app.models.skill import Skill
 from app.schemas.agent import CustomerConfigResponse
 from app.schemas.chat import ConversationResponse, InitConversationRequest
 from app.schemas.speech import SpeechConfigResponse, TranscribeResponse
@@ -23,6 +24,7 @@ from app.services.widget_chat_service import (
     widget_contact_info,
 )
 from app.utils.chat_upload import save_chat_attachment
+from app.utils.request import extract_client_ip
 
 
 def _conversation_belongs_to_customer(
@@ -45,6 +47,40 @@ def _conversation_belongs_to_customer(
     return False
 
 
+def _normalize_id_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        sid = str(item).strip()
+        if sid:
+            out.append(sid)
+    return out
+
+
+async def _resolve_skill_override_ids(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    skill_id: str | None,
+) -> list[str] | None:
+    sid = (skill_id or "").strip()
+    if not sid:
+        return None
+
+    result = await db.execute(
+        select(Skill).where(
+            Skill.id == sid,
+            Skill.user_id == user_id,
+            Skill.enabled == True,
+        )
+    )
+    skill = result.scalar_one_or_none()
+    if skill is None:
+        raise HTTPException(status_code=400, detail="指定技能不存在或已禁用")
+    return [skill.id]
+
+
 class WidgetChatRequest(BaseModel):
     """Request body for widget chat endpoint."""
     message: str = Field(..., min_length=1, max_length=4000)
@@ -55,6 +91,7 @@ class WidgetChatRequest(BaseModel):
         max_length=64,
         description="Per-browser-tab visitor id; must match conversation owner",
     )
+    skill_id: str | None = Field(None, alias="skillId")
 
     model_config = {"populate_by_name": True}
 
@@ -122,14 +159,144 @@ async def get_widget_config_full(
             "primaryColor": theme.get("primaryColor", "#3b82f6"),
             "botName": theme.get("botName", config.name),
             "widgetTitle": theme.get("widgetTitle", config.name),
+            "launcherIcon": theme.get("launcherIcon", "chat"),
+            "launcherText": theme.get("launcherText", ""),
+            "showcaseSkillIds": _normalize_id_list(theme.get("showcaseSkillIds")),
         },
         "enabled": config.enabled,
     }
 
 
+@router.get("/config/{customer_id}/showcase")
+async def get_widget_showcase_config(
+    customer_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get skill showcase config for rendering multi-skill chat panels."""
+    result = await db.execute(
+        select(CustomerConfig).where(
+            CustomerConfig.id == customer_id,
+            CustomerConfig.enabled == True,
+        )
+    )
+    config = result.scalar_one_or_none()
+    if config is None:
+        raise HTTPException(status_code=404, detail="Widget config not found")
+
+    ensure_widget_domain_allowed(config, request)
+
+    theme = config.theme or {}
+    showcase_ids = _normalize_id_list(theme.get("showcaseSkillIds"))
+    showcase_set = set(showcase_ids)
+
+    allowed_skill_ids = set(_normalize_id_list(config.skill_ids))
+
+    result = await db.execute(
+        select(Skill).where(
+            Skill.user_id == config.user_id,
+            Skill.enabled == True,
+        )
+    )
+    all_skills = list(result.scalars().all())
+
+    visible_skills = []
+    for skill in all_skills:
+        if skill.id not in allowed_skill_ids:
+            continue
+        if showcase_set and skill.id not in showcase_set:
+            continue
+        visible_skills.append(skill)
+
+    return {
+        "customer_id": config.id,
+        "name": config.name,
+        "welcome_message": config.welcome_message or "你好！有什么可以帮助你的？",
+        "theme": {
+            "primaryColor": theme.get("primaryColor", "#3b82f6"),
+            "botName": theme.get("botName", config.name),
+            "widgetTitle": theme.get("widgetTitle", config.name),
+            "launcherIcon": theme.get("launcherIcon", "chat"),
+            "launcherText": theme.get("launcherText", ""),
+            "showcaseSkillIds": showcase_ids,
+        },
+        "skills": [
+            {
+                "id": skill.id,
+                "name": skill.name,
+                "description": skill.description,
+            }
+            for skill in visible_skills
+        ],
+    }
+
+
+@router.get("/showcases")
+async def list_public_showcases(
+    db: AsyncSession = Depends(get_db),
+):
+    """List enabled customer agents that expose at least one showcase skill."""
+    result = await db.execute(
+        select(CustomerConfig).where(CustomerConfig.enabled == True)
+    )
+    configs = list(result.scalars().all())
+
+    showcases: list[dict] = []
+    for config in configs:
+        theme = config.theme or {}
+        showcase_ids = _normalize_id_list(theme.get("showcaseSkillIds"))
+        allowed_skill_ids = set(_normalize_id_list(config.skill_ids))
+
+        result = await db.execute(
+            select(Skill).where(
+                Skill.user_id == config.user_id,
+                Skill.enabled == True,
+            )
+        )
+        all_skills = list(result.scalars().all())
+
+        visible_skills = []
+        for skill in all_skills:
+            if skill.id not in allowed_skill_ids:
+                continue
+            if showcase_ids and skill.id not in showcase_ids:
+                continue
+            visible_skills.append(skill)
+
+        if not visible_skills:
+            continue
+
+        showcases.append(
+            {
+                "customer_id": config.id,
+                "name": config.name,
+                "welcome_message": config.welcome_message or "你好！有什么可以帮助你的？",
+                "theme": {
+                    "primaryColor": theme.get("primaryColor", "#3b82f6"),
+                    "botName": theme.get("botName", config.name),
+                    "widgetTitle": theme.get("widgetTitle", config.name),
+                    "launcherIcon": theme.get("launcherIcon", "chat"),
+                    "launcherText": theme.get("launcherText", ""),
+                },
+                "skill_count": len(visible_skills),
+                "skills": [
+                    {
+                        "id": skill.id,
+                        "name": skill.name,
+                        "description": skill.description,
+                    }
+                    for skill in visible_skills[:6]
+                ],
+            }
+        )
+
+    return {"items": showcases}
+
+
 @router.post("/conversation", response_model=ConversationResponse)
 async def create_visitor_conversation(
     request: InitConversationRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Create a visitor conversation (no auth)."""
@@ -139,6 +306,7 @@ async def create_visitor_conversation(
         title=request.title,
         ai_config_id=request.ai_config_id,
         contact_info=request.contact_info,
+        client_ip=extract_client_ip(http_request),
     )
     return conversation
 
@@ -150,6 +318,7 @@ async def widget_upload_attachment(
     file: UploadFile = File(...),
     conversation_id: str | None = Form(None, alias="conversationId"),
     visitor_token: str | None = Form(None, alias="visitorToken"),
+    skill_id: str | None = Form(None, alias="skillId"),
     content: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -168,6 +337,12 @@ async def widget_upload_attachment(
         )
         from app.bot.engine import process_message
 
+        skill_ids_override = await _resolve_skill_override_ids(
+            db,
+            user_id=ctx.customer.user_id,
+            skill_id=skill_id,
+        )
+
         full_response = ""
         async for token in process_message(
             ctx.conversation,
@@ -175,6 +350,7 @@ async def widget_upload_attachment(
             ctx.ai_config,
             db,
             customer_config=ctx.customer,
+            skill_ids_override=skill_ids_override,
         ):
             full_response += token
 
@@ -218,6 +394,12 @@ async def widget_chat(
         )
         from app.bot.engine import process_message
 
+        skill_ids_override = await _resolve_skill_override_ids(
+            db,
+            user_id=ctx.customer.user_id,
+            skill_id=body.skill_id,
+        )
+
         full_response = ""
         async for token in process_message(
             ctx.conversation,
@@ -225,6 +407,7 @@ async def widget_chat(
             ctx.ai_config,
             db,
             customer_config=ctx.customer,
+            skill_ids_override=skill_ids_override,
         ):
             full_response += token
 
@@ -269,6 +452,11 @@ async def widget_chat_stream(
                     http_request,
                     visitor_token=body.visitor_token,
                 )
+                skill_ids_override = await _resolve_skill_override_ids(
+                    db,
+                    user_id=ctx.customer.user_id,
+                    skill_id=body.skill_id,
+                )
                 full_response = ""
                 async for token in process_message(
                     ctx.conversation,
@@ -276,6 +464,7 @@ async def widget_chat_stream(
                     ctx.ai_config,
                     db,
                     customer_config=ctx.customer,
+                    skill_ids_override=skill_ids_override,
                 ):
                     full_response += token
                     yield sse_line("token", {"content": token})

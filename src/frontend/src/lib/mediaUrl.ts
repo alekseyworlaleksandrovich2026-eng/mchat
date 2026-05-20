@@ -10,18 +10,31 @@ export function resolveUploadUrl(url?: string): string | undefined {
 }
 
 type AttachmentMeta = { url?: string; name?: string; mime?: string; pending?: boolean }
+type OutboundAssetMeta = {
+  url?: string
+  name?: string
+  mime?: string
+  type?: string
+  title?: string
+  source?: string
+}
 
 export function normalizeMessageMedia(message: Message): Message {
   const attachments = message.extra_data?.attachments as AttachmentMeta[] | undefined
-  if (!attachments?.length) return message
+  const outboundAssets = message.extra_data?.outbound_assets as OutboundAssetMeta[] | undefined
+  if (!attachments?.length && !outboundAssets?.length) return message
 
   return {
     ...message,
     extra_data: {
       ...message.extra_data,
-      attachments: attachments.map((att) => ({
+      attachments: attachments?.map((att) => ({
         ...att,
         url: resolveUploadUrl(att.url),
+      })),
+      outbound_assets: outboundAssets?.map((asset) => ({
+        ...asset,
+        url: resolveUploadUrl(asset.url),
       })),
     },
   }

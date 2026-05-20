@@ -6,17 +6,22 @@ import type { Message } from '@/stores/chat'
 const VISITOR_KEY_PREFIX = 'mchat_widget_visitor_'
 const CONV_KEY_PREFIX = 'mchat_widget_conv_'
 
-function visitorStorageKey(agentId: string) {
-  return `${VISITOR_KEY_PREFIX}${agentId}`
+function widgetScope(agentId: string, skillId?: string) {
+  const sid = (skillId || '').trim()
+  return sid ? `${agentId}:${sid}` : agentId
 }
 
-function conversationStorageKey(agentId: string) {
-  return `${CONV_KEY_PREFIX}${agentId}`
+function visitorStorageKey(scope: string) {
+  return `${VISITOR_KEY_PREFIX}${scope}`
+}
+
+function conversationStorageKey(scope: string) {
+  return `${CONV_KEY_PREFIX}${scope}`
 }
 
 /** Stable per browser tab; cleared when tab closes — visitors do not share sessions. */
-function getOrCreateVisitorToken(agentId: string): string {
-  const key = visitorStorageKey(agentId)
+function getOrCreateVisitorToken(scope: string): string {
+  const key = visitorStorageKey(scope)
   let token = sessionStorage.getItem(key)
   if (!token) {
     token =
@@ -104,7 +109,12 @@ function welcomeOnlyMessage(welcomeMessage: string): Message {
   }
 }
 
-export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: string) {
+export function useWidgetChat(
+  agentId: string,
+  apiUrl: string,
+  welcomeMessage: string,
+  skillId?: string,
+) {
   const [messages, setMessages] = useState<Message[]>(() =>
     welcomeMessage ? [welcomeOnlyMessage(welcomeMessage)] : [],
   )
@@ -115,12 +125,13 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
   const [error, setError] = useState<string | null>(null)
 
   const base = apiUrl.replace(/\/$/, '')
+  const scope = widgetScope(agentId, skillId)
 
   const loadHistory = useCallback(async () => {
     if (!agentId) return
 
-    const visitorToken = getOrCreateVisitorToken(agentId)
-    const convId = sessionStorage.getItem(conversationStorageKey(agentId))
+    const visitorToken = getOrCreateVisitorToken(scope)
+    const convId = sessionStorage.getItem(conversationStorageKey(scope))
 
     if (!convId) {
       setMessages([welcomeOnlyMessage(welcomeMessage)])
@@ -136,7 +147,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       )
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
-          sessionStorage.removeItem(conversationStorageKey(agentId))
+          sessionStorage.removeItem(conversationStorageKey(scope))
           setMessages([welcomeOnlyMessage(welcomeMessage)])
           return
         }
@@ -191,7 +202,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
     } finally {
       setHistoryLoading(false)
     }
-  }, [agentId, base, welcomeMessage])
+  }, [agentId, base, welcomeMessage, scope])
 
   useEffect(() => {
     if (!agentId) return
@@ -203,7 +214,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       if (!agentId || isLoading || isStreaming) return
       if (!file && !content.trim()) return
 
-      const visitorToken = getOrCreateVisitorToken(agentId)
+      const visitorToken = getOrCreateVisitorToken(scope)
       const text = content.trim() || file?.name || ''
       const previewUrl =
         file && file.type.startsWith('image/')
@@ -212,7 +223,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       const tempId = `user-${Date.now()}`
       const userMessage: Message = {
         id: tempId,
-        conversation_id: sessionStorage.getItem(conversationStorageKey(agentId)) || '',
+        conversation_id: sessionStorage.getItem(conversationStorageKey(scope)) || '',
         role: 'user',
         content: text,
         content_type: file?.type.startsWith('image/') ? 'image' : file ? 'file' : 'text',
@@ -239,7 +250,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
       setStreamingContent('')
       setError(null)
 
-      const convId = sessionStorage.getItem(conversationStorageKey(agentId))
+      const convId = sessionStorage.getItem(conversationStorageKey(scope))
 
       try {
         let result: {
@@ -254,6 +265,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
           form.append('file', file)
           if (convId) form.append('conversationId', convId)
           form.append('visitorToken', visitorToken)
+          if (skillId?.trim()) form.append('skillId', skillId.trim())
           if (content.trim()) form.append('content', content.trim())
 
           const uploadRes = await fetch(`${base}/widget/${agentId}/upload`, {
@@ -281,6 +293,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
           message: text,
           conversationId: convId,
           visitorToken,
+          skillId,
         })
 
         const streamRes = await fetch(`${base}/widget/${agentId}/chat/stream`, {
@@ -321,7 +334,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
 
         if (result.conversationId) {
           sessionStorage.setItem(
-            conversationStorageKey(agentId),
+            conversationStorageKey(scope),
             result.conversationId,
           )
         }
@@ -371,7 +384,7 @@ export function useWidgetChat(agentId: string, apiUrl: string, welcomeMessage: s
         setStreamingContent('')
       }
     },
-    [agentId, base, isLoading, isStreaming],
+    [agentId, base, isLoading, isStreaming, skillId, scope],
   )
 
   return {

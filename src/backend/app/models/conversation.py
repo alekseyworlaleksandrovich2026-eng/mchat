@@ -25,6 +25,9 @@ class Conversation(Base):
     visitor_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, index=True
     )
+    client_ip: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active"

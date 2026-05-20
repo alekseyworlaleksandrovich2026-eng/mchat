@@ -1,9 +1,10 @@
 """Chat service - business logic for conversations and messages."""
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.event_bus import event_bus
@@ -11,6 +12,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.user import User
 from app.schemas.chat import ConversationResponse, MessageResponse
+from app.utils.outbound_assets import enrich_message_extra_data
 
 
 class ChatService:
@@ -25,6 +27,7 @@ class ChatService:
         title: str | None = None,
         ai_config_id: str | None = None,
         contact_info: str | None = None,
+        client_ip: str | None = None,
     ) -> ConversationResponse:
         """Initialize a conversation for a visitor (no auth)."""
         import uuid
@@ -35,6 +38,7 @@ class ChatService:
             ai_config_id=ai_config_id,
             title=title or "Visitor Chat",
             contact_info=contact_info,
+            client_ip=client_ip,
             status="active",
         )
         self.db.add(conversation)
@@ -54,6 +58,8 @@ class ChatService:
         extra_data: dict | None = None,
     ) -> MessageResponse:
         """Send a message and trigger AI response processing."""
+        normalized_extra_data = enrich_message_extra_data(content, extra_data)
+
         # Find or create conversation
         if conversation_id:
             result = await self.db.execute(
@@ -85,7 +91,7 @@ class ChatService:
             user_id=user.id if user else None,
             role=role,
             content=content,
-            extra_data=extra_data,
+            extra_data=normalized_extra_data,
         )
         self.db.add(message)
         await self.db.flush()
@@ -98,13 +104,14 @@ class ChatService:
         # this message and update the conversation without lock contention.
         await self.db.commit()
 
-        # Publish event for bot engine to process
-        await event_bus.publish(
-            "message_created",
-            message=message,
-            conversation=conversation,
-            user=user,
-        )
+        # Only user messages should trigger the bot engine.
+        if role == "user":
+            await event_bus.publish(
+                "message_created",
+                message=message,
+                conversation=conversation,
+                user=user,
+            )
 
         return MessageResponse.model_validate(message)
 
@@ -114,6 +121,7 @@ class ChatService:
         skip: int = 0,
         limit: int = 20,
         status: str | None = None,
+        search: str | None = None,
     ) -> tuple[list[ConversationResponse], int]:
         """List conversations (optionally filtered by user)."""
         query = select(Conversation)
@@ -126,6 +134,12 @@ class ChatService:
         if status:
             query = query.where(Conversation.status == status)
             count_query = count_query.where(Conversation.status == status)
+
+        normalized_search = (search or "").strip()
+        if normalized_search:
+            search_filter = self._conversation_search_filter(normalized_search)
+            query = query.where(search_filter)
+            count_query = count_query.where(search_filter)
 
         query = (
             query
@@ -140,9 +154,79 @@ class ChatService:
         count_result = await self.db.execute(count_query)
         total = count_result.scalar() or 0
 
+        counts = await self._message_counts_by_conversation(
+            [c.id for c in conversations]
+        )
+        previews = await self._first_user_message_previews(
+            [c.id for c in conversations]
+        )
+
         return [
-            ConversationResponse.model_validate(c) for c in conversations
+            self._conversation_response_with_counts(conversation, counts, previews)
+            for conversation in conversations
         ], total
+
+    def _conversation_search_filter(self, search: str):
+        like = f"%{search}%"
+        lowered = search.lower()
+
+        filters: list[Any] = [
+            Conversation.title.ilike(like),
+            Conversation.visitor_id.ilike(like),
+            Conversation.contact_info.ilike(like),
+            Conversation.id.in_(
+                select(Message.conversation_id).where(
+                    Message.role == "user",
+                    Message.content.ilike(like),
+                )
+            ),
+        ]
+
+        if lowered in {"widget", "网站", "网站widget", "website", "site"}:
+            filters.append(
+                or_(
+                    Conversation.contact_info.ilike("widget_customer:%"),
+                    Conversation.title.ilike("Widget:%"),
+                )
+            )
+        if lowered in {"wechat", "微信", "公众号", "微信公众号"}:
+            filters.append(Conversation.contact_info.ilike("wechat_channel:%"))
+        if lowered in {"visitor", "访客"}:
+            filters.append(Conversation.visitor_id.is_not(None))
+        if lowered in {"admin", "后台"}:
+            filters.append(Conversation.user_id.is_not(None))
+
+        return or_(*filters)
+
+    async def get_conversation_stats(
+        self,
+        user_id: str | None = None,
+    ) -> dict[str, int]:
+        """Return aggregate conversation counts."""
+        base_query = select(func.count()).select_from(Conversation)
+
+        total_query = base_query
+        active_query = base_query.where(Conversation.status == "active")
+        closed_query = base_query.where(Conversation.status == "closed")
+
+        if user_id:
+            total_query = total_query.where(Conversation.user_id == user_id)
+            active_query = active_query.where(Conversation.user_id == user_id)
+            closed_query = closed_query.where(Conversation.user_id == user_id)
+
+        total = await self._count(total_query)
+        active = await self._count(active_query)
+        closed = await self._count(closed_query)
+
+        return {
+            "total": total,
+            "active": active,
+            "closed": closed,
+        }
+
+    async def _count(self, query) -> int:
+        result = await self.db.execute(query)
+        return result.scalar() or 0
 
     async def get_conversation(
         self,
@@ -161,8 +245,106 @@ class ChatService:
 
         if conversation is None:
             return None
+        counts = await self._message_counts_by_conversation([conversation.id])
+        previews = await self._first_user_message_previews([conversation.id])
+        return self._conversation_response_with_counts(conversation, counts, previews)
 
-        return ConversationResponse.model_validate(conversation)
+    async def _message_counts_by_conversation(
+        self, conversation_ids: list[str]
+    ) -> dict[str, dict[str, int]]:
+        if not conversation_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(
+                Message.conversation_id.label("conversation_id"),
+                func.count(Message.id).label("total_count"),
+                func.sum(
+                    case((Message.role == "user", 1), else_=0)
+                ).label("user_count"),
+                func.sum(
+                    case((Message.role == "assistant", 1), else_=0)
+                ).label("ai_count"),
+            )
+            .where(Message.conversation_id.in_(conversation_ids))
+            .group_by(Message.conversation_id)
+        )
+
+        counts: dict[str, dict[str, int]] = {}
+        for row in result:
+            counts[str(row.conversation_id)] = {
+                "user": int(row.user_count or 0),
+                "ai": int(row.ai_count or 0),
+                "total": int(row.total_count or 0),
+            }
+        return counts
+
+    def _conversation_response_with_counts(
+        self,
+        conversation: Conversation,
+        counts: dict[str, dict[str, int]],
+        previews: dict[str, str],
+    ) -> ConversationResponse:
+        payload = ConversationResponse.model_validate(conversation).model_dump()
+        metrics = counts.get(conversation.id, {"user": 0, "ai": 0, "total": 0})
+        payload["user_message_count"] = metrics["user"]
+        payload["ai_message_count"] = metrics["ai"]
+        payload["total_message_count"] = metrics["total"]
+        payload["conversation_type"] = self._conversation_type(conversation)
+        payload["first_user_message_preview"] = previews.get(conversation.id)
+        return ConversationResponse(**payload)
+
+    async def _first_user_message_previews(
+        self, conversation_ids: list[str]
+    ) -> dict[str, str]:
+        if not conversation_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id.in_(conversation_ids),
+                Message.role == "user",
+            )
+            .order_by(Message.conversation_id.asc(), Message.created_at.asc())
+        )
+
+        previews: dict[str, str] = {}
+        for message in result.scalars().all():
+            conversation_id = str(message.conversation_id)
+            if conversation_id in previews:
+                continue
+            previews[conversation_id] = self._message_preview(message)
+        return previews
+
+    def _message_preview(self, message: Message) -> str:
+        content = (message.content or "").strip()
+        extra_data = message.extra_data or {}
+        attachments = extra_data.get("attachments") or []
+        if attachments:
+            attachment = attachments[0] if isinstance(attachments[0], dict) else {}
+            name = str(attachment.get("name") or "").strip() or "attachment"
+            mime = str(attachment.get("mime") or "").strip().lower()
+            if mime.startswith("image/"):
+                return content or f"[图片] {name}"
+            if mime.startswith("video/"):
+                return content or f"[视频] {name}"
+            return content or f"[文件] {name}"
+        return content or "-"
+
+    def _conversation_type(self, conversation: Conversation) -> str:
+        contact = (conversation.contact_info or "").strip().lower()
+        title = (conversation.title or "").strip().lower()
+
+        if contact.startswith("widget_customer:") or title.startswith("widget:"):
+            return "widget"
+        if contact.startswith("wechat_channel:"):
+            return "wechat"
+        if conversation.visitor_id:
+            return "visitor"
+        if conversation.user_id:
+            return "admin"
+        return "chat"
 
     async def create_conversation(
         self,

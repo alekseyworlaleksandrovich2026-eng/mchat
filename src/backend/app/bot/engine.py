@@ -30,6 +30,12 @@ from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
 from app.models.skill import Skill
+from app.utils.outbound_assets import enrich_message_extra_data
+from app.bot.auto_reply_rules import (
+    build_auto_reply_note,
+    detect_message_channel,
+    match_auto_reply_rules,
+)
 
 _PATENT_SEARCH_PRESENTATION_NUDGE = (
     "（用户看不到本条消息。）\n"
@@ -60,6 +66,7 @@ _PATENT_SEARCH_OBSERVATION_NUDGE = (
 )
 _ENABLE_PATENT_SEARCH_PRESENTATION = True
 _ENABLE_PATENT_SEARCH_SUMMARY = False
+_HISTORY_MESSAGE_LIMIT = 60
 
 
 def _is_patent_search_success(
@@ -108,7 +115,7 @@ async def _append_rag_context(
     query: str,
     user_id: str,
     customer_config: CustomerConfig | None,
-) -> str:
+) -> tuple[str, list[dict[str, Any]]]:
     kb_ids = knowledge_base_ids_for_chat(customer_config)
     rag = RagService()
     all_results = []
@@ -132,29 +139,38 @@ async def _append_rag_context(
             all_results.extend(search_results.results)
     except Exception as e:
         logger.warning(f"RAG search failed: {e}")
-        return system_prompt
+        return system_prompt, []
 
     if not all_results:
-        return system_prompt
+        return system_prompt, []
 
     seen: set[str] = set()
     context_parts: list[str] = []
+    hit_items: list[dict[str, Any]] = []
     for r in all_results:
         key = f"{r.document_id}:{r.content[:80]}"
         if key in seen:
             continue
         seen.add(key)
         context_parts.append(f"[Source: {r.title}]\n{r.content}")
+        hit_items.append(
+            {
+                "document_id": r.document_id,
+                "title": r.title,
+                "knowledge_base_id": r.knowledge_base_id,
+                "score": round(float(r.score), 4),
+            }
+        )
 
     if not context_parts:
-        return system_prompt
+        return system_prompt, []
 
     return (
         system_prompt
         + "\n\n## Knowledge Base Context\n"
         "Use the following information to help answer the user's question:\n\n"
         + "\n\n".join(context_parts)
-    )
+    ), hit_items
 
 
 async def process_message(
@@ -163,6 +179,7 @@ async def process_message(
     ai_config: AIConfig | None,
     db_session: AsyncSession,
     customer_config: CustomerConfig | None = None,
+    skill_ids_override: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Process a user message through the bot pipeline."""
     try:
@@ -182,6 +199,7 @@ async def process_message(
             db_session,
             user_id=ai_config.user_id,
             customer_config=customer_config,
+            skill_ids_override=skill_ids_override,
         )
         skill_section = build_prompt_skill_section(prompt_skills)
         if skill_section:
@@ -198,11 +216,17 @@ async def process_message(
                 template=str(patent_links["template"]),
             )
 
-        system_prompt = await _append_rag_context(
+        system_prompt, knowledge_hits = await _append_rag_context(
             system_prompt,
             message.content,
             ai_config.user_id,
             customer_config,
+        )
+
+        auto_reply_matches = await match_auto_reply_rules(
+            message.content,
+            getattr(customer_config, "auto_reply_rules", None),
+            channel=detect_message_channel(getattr(conversation, "contact_info", None)),
         )
 
         messages_list: list[dict[str, Any]] = [
@@ -212,10 +236,10 @@ async def process_message(
         history_result = await db_session.execute(
             select(Message)
             .where(Message.conversation_id == conversation.id)
-            .order_by(Message.created_at.asc())
-            .limit(20)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(_HISTORY_MESSAGE_LIMIT)
         )
-        history = history_result.scalars().all()
+        history = list(reversed(history_result.scalars().all()))
 
         history_payload = []
         for hist_msg in history:
@@ -378,16 +402,41 @@ async def process_message(
                     full_response += summary_text
                     yield summary_text
 
+        auto_reply_note = build_auto_reply_note(auto_reply_matches)
+        if auto_reply_note:
+            note_chunk = f"\n\n{auto_reply_note}" if full_response.strip() else auto_reply_note
+            full_response += note_chunk
+            yield note_chunk
+
         if full_response:
             full_response = _with_patent_links(full_response)
+            auto_reply_assets = [match["asset"] for match in auto_reply_matches]
+            assistant_extra_data = enrich_message_extra_data(
+                full_response,
+                {
+                    "model": ai_config.model,
+                    "provider": ai_config.provider,
+                    "knowledge_hits": knowledge_hits,
+                    "auto_reply_rule_hits": [
+                        {
+                            "rule_id": match["rule_id"],
+                            "rule_name": match["rule_name"],
+                            "score": round(float(match["score"]), 4),
+                            "asset_name": match["asset"].get("title")
+                            or match["asset"].get("name")
+                            or match["asset"].get("url"),
+                            "matched_keywords": match.get("matched_keywords") or [],
+                        }
+                        for match in auto_reply_matches
+                    ],
+                    "outbound_assets": auto_reply_assets,
+                },
+            )
             assistant_msg = Message(
                 conversation_id=conversation.id,
                 role="assistant",
                 content=full_response,
-                extra_data={
-                    "model": ai_config.model,
-                    "provider": ai_config.provider,
-                },
+                extra_data=assistant_extra_data,
             )
             db_session.add(assistant_msg)
             conversation.updated_at = datetime.now(timezone.utc)

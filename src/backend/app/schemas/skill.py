@@ -26,3 +26,25 @@ class SkillUpdate(BaseModel):
     config: dict | None = None
     name: str | None = Field(None, max_length=100)
     description: str | None = None
+
+
+class SkillInstallUrlRequest(BaseModel):
+    """Request body for installing a skill from URL."""
+    url: str = Field(..., min_length=8, max_length=2000)
+    name: str | None = Field(None, max_length=100)
+
+
+class SkillCatalogItem(BaseModel):
+    """Remote skill catalog item."""
+    name: str
+    title: str
+    description: str | None = None
+    source: str = "clawhub"
+    homepage: str | None = None
+    download_url: str | None = None
+
+
+class SkillCatalogResponse(BaseModel):
+    """Catalog list response."""
+    source: str = "clawhub"
+    items: list[SkillCatalogItem]

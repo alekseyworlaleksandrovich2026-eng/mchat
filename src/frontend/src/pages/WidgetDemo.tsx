@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   MessageCircle,
@@ -31,6 +31,10 @@ export function WidgetDemo() {
   const [agentId, setAgentId] = useState(searchParams.get('agentId') || '')
   const [customerConfigs, setCustomerConfigs] = useState<CustomerOption[]>([])
   const [widgetKey, setWidgetKey] = useState(0)
+  const [previewPosition, setPreviewPosition] = useState<'right' | 'left'>('right')
+  const [previewColor, setPreviewColor] = useState('#3b82f6')
+  const [previewLauncherIcon, setPreviewLauncherIcon] = useState('chat')
+  const [previewLauncherText, setPreviewLauncherText] = useState('')
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const apiBase = `${origin}/api`
@@ -66,12 +70,14 @@ export function WidgetDemo() {
   src="${origin}/widget-loader.js?v=8"
   data-mchat-url="${apiBase}"
   data-agent-id="${agentId}"
-  data-position="right"
-  data-primary-color="#3b82f6"
+  data-position="${previewPosition}"
+  data-primary-color="${previewColor}"
   data-welcome-message="${t('widgetDemo.embedWelcome')}"
   data-bot-name="${t('widgetDemo.embedBotName')}"
+  data-launcher-icon="${previewLauncherIcon}"
+  data-launcher-text="${previewLauncherText.replace(/"/g, '&quot;')}"
 ></script>`
-  }, [agentId, origin, apiBase, t])
+  }, [agentId, origin, apiBase, previewPosition, previewColor, previewLauncherIcon, previewLauncherText, t])
 
   const copyEmbed = async () => {
     if (!embedScript) {
@@ -119,11 +125,23 @@ export function WidgetDemo() {
           apiUrl="/api"
           wsUrl="/ws"
           variant="floating"
+          themeOverride={{
+            position: previewPosition,
+            primaryColor: previewColor,
+            launcherIcon: previewLauncherIcon,
+            launcherText: previewLauncherText,
+          }}
         />
       )}
 
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400 transition-colors"
+          >
+            {t('common.home')}
+          </Link>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
             {t('widgetDemo.pageTitle')}
           </h1>
@@ -168,6 +186,46 @@ export function WidgetDemo() {
                 >
                   {t('widgetDemo.apply')}
                 </Button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Select
+                  label={t('customerAgents.widgetPosition')}
+                  options={[
+                    { value: 'right', label: t('customerAgents.positionBottomRight') },
+                    { value: 'left', label: t('customerAgents.positionBottomLeft') },
+                  ]}
+                  value={previewPosition}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                    setPreviewPosition(e.target.value as 'right' | 'left')
+                  }
+                />
+                <Select
+                  label={t('customerAgents.launcherIconLabel')}
+                  options={[
+                    { value: 'chat', label: t('customerAgents.launcherIconChat') },
+                    { value: 'bot', label: t('customerAgents.launcherIconBot') },
+                    { value: 'spark', label: t('customerAgents.launcherIconSpark') },
+                    { value: 'support', label: t('customerAgents.launcherIconSupport') },
+                  ]}
+                  value={previewLauncherIcon}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                    setPreviewLauncherIcon(e.target.value)
+                  }
+                />
+                <Input
+                  label={t('customerAgents.launcherTextLabel')}
+                  value={previewLauncherText}
+                  onChange={(e) => setPreviewLauncherText(e.target.value)}
+                  placeholder={t('customerAgents.launcherTextPlaceholder')}
+                />
+                <Input
+                  label={t('customerAgents.themeColor')}
+                  type="text"
+                  value={previewColor}
+                  onChange={(e) => setPreviewColor(e.target.value || '#3b82f6')}
+                  placeholder="#3b82f6"
+                />
               </div>
             </div>
 

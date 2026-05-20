@@ -123,6 +123,7 @@ class AgentService:
             ai_config_id=data.ai_config_id,
             skill_ids=data.skill_ids,
             knowledge_base_ids=data.knowledge_base_ids,
+            auto_reply_rules=[rule.model_dump() for rule in data.auto_reply_rules],
             welcome_message=data.welcome_message,
             offline_message=data.offline_message,
             theme=data.theme,
@@ -178,6 +179,8 @@ class AgentService:
 
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
+            if key == "auto_reply_rules":
+                value = [rule.model_dump() for rule in data.auto_reply_rules]
             setattr(config, key, value)
 
         await self.db.flush()

@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Puzzle, Upload, Trash2, Search, Loader2, RefreshCw } from 'lucide-react'
+import {
+  Puzzle,
+  Upload,
+  Trash2,
+  Search,
+  Loader2,
+  RefreshCw,
+  Link2,
+  Download,
+  ExternalLink,
+} from 'lucide-react'
 import api from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -27,6 +37,15 @@ interface Skill {
   updated_at: string
 }
 
+interface CatalogItem {
+  name: string
+  title: string
+  description?: string | null
+  homepage?: string | null
+  download_url?: string | null
+  source?: string
+}
+
 export function SkillManager() {
   const { t } = useTranslation()
   const [skills, setSkills] = useState<Skill[]>([])
@@ -40,6 +59,13 @@ export function SkillManager() {
   const [savingSecrets, setSavingSecrets] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [descriptionEdit, setDescriptionEdit] = useState('')
+  const [installOpen, setInstallOpen] = useState(false)
+  const [installSource, setInstallSource] = useState('')
+  const [installName, setInstallName] = useState('')
+  const [installing, setInstalling] = useState(false)
+  const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -79,6 +105,52 @@ export function SkillManager() {
       toast(t('skills.toastSyncFailed'), { type: 'error', message: err.message })
     } finally {
       setReloading(false)
+    }
+  }
+
+  const loadCatalog = async (query = '') => {
+    setCatalogLoading(true)
+    try {
+      const data = await api.get<{ source: string; items: CatalogItem[] }>('/skills/catalog', {
+        query,
+        limit: '24',
+      })
+      setCatalogItems(data.items || [])
+    } catch (err: any) {
+      toast(t('skills.toastCatalogLoadFailed'), { type: 'error', message: err.message })
+    } finally {
+      setCatalogLoading(false)
+    }
+  }
+
+  const openInstallDialog = async () => {
+    setInstallOpen(true)
+    if (catalogItems.length === 0) {
+      await loadCatalog('')
+    }
+  }
+
+  const installFromSource = async (source: string, nameHint?: string) => {
+    const src = source.trim()
+    if (!src) {
+      toast(t('skills.toastInstallNeedSource'), { type: 'error' })
+      return
+    }
+    setInstalling(true)
+    try {
+      await api.post<Skill>('/skills/install-url', {
+        url: src,
+        name: (nameHint || installName || '').trim() || undefined,
+      })
+      toast(t('skills.toastInstalled'), { type: 'success' })
+      setInstallSource('')
+      setInstallName('')
+      setInstallOpen(false)
+      await loadSkills()
+    } catch (err: any) {
+      toast(t('skills.toastInstallFailed'), { type: 'error', message: err.message })
+    } finally {
+      setInstalling(false)
     }
   }
 
@@ -152,6 +224,13 @@ export function SkillManager() {
         <div className="flex gap-2">
           <Button
             variant="secondary"
+            leftIcon={<Link2 className="w-4 h-4" />}
+            onClick={openInstallDialog}
+          >
+            {t('skills.installFromUrl')}
+          </Button>
+          <Button
+            variant="secondary"
             leftIcon={<RefreshCw className="w-4 h-4" />}
             onClick={reloadFromDisk}
             isLoading={reloading}
@@ -172,6 +251,7 @@ export function SkillManager() {
         ref={fileInputRef}
         type="file"
         accept=".zip"
+        aria-label={t('skills.uploadOverwrite')}
         className="hidden"
         onChange={handleUpload}
       />
@@ -243,6 +323,8 @@ export function SkillManager() {
                   {skill.skill_type !== 'builtin' && (
                     <button
                       onClick={() => deleteSkill(skill.id)}
+                      aria-label={t('common.delete')}
+                      title={t('common.delete')}
                       className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -278,7 +360,8 @@ export function SkillManager() {
                   {t('common.description')}
                 </label>
                 <textarea
-                  className="w-full h-20 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-2"
+                  aria-label={t('common.description')}
+                  className="w-full h-20 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-2"
                   value={descriptionEdit}
                   onChange={(e) => setDescriptionEdit(e.target.value)}
                 />
@@ -321,7 +404,8 @@ export function SkillManager() {
                   </code>
                 </p>
                 <textarea
-                  className="w-full h-28 text-xs font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-3"
+                  aria-label={t('skills.secretsTitle')}
+                  className="w-full h-28 text-xs font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-3"
                   value={secretsJson}
                   onChange={(e) => setSecretsJson(e.target.value)}
                   placeholder='{"API_KEY": "your-key"}'
@@ -370,6 +454,124 @@ export function SkillManager() {
             </p>
           </div>
         )}
+      </Dialog>
+
+      {/* Upload Dialog */}
+      <Dialog
+        open={installOpen}
+        onClose={() => setInstallOpen(false)}
+        title={t('skills.dialogInstallTitle')}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {t('skills.installHint')}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-3 items-end">
+            <Input
+              label={t('skills.installSourceLabel')}
+              value={installSource}
+              onChange={(e) => setInstallSource(e.target.value)}
+              placeholder={t('skills.installSourcePlaceholder')}
+            />
+            <Input
+              label={t('skills.installNameHintLabel')}
+              value={installName}
+              onChange={(e) => setInstallName(e.target.value)}
+              placeholder={t('skills.installNameHintPlaceholder')}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              leftIcon={<Download className="w-4 h-4" />}
+              onClick={() => installFromSource(installSource)}
+              isLoading={installing}
+              disabled={!installSource.trim()}
+            >
+              {t('skills.installNow')}
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-3 space-y-3">
+            <div className="flex gap-2 items-end">
+              <Input
+                label={t('skills.catalogSearchLabel')}
+                value={catalogQuery}
+                onChange={(e) => setCatalogQuery(e.target.value)}
+                placeholder={t('skills.catalogSearchPlaceholder')}
+              />
+              <Button
+                variant="secondary"
+                size="action"
+                leftIcon={<Search className="w-4 h-4" />}
+                onClick={() => loadCatalog(catalogQuery)}
+                isLoading={catalogLoading}
+              >
+                {t('skills.catalogSearchAction')}
+              </Button>
+            </div>
+
+            {catalogLoading ? (
+              <div className="flex items-center justify-center py-8 text-gray-500">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                {t('skills.catalogLoading')}
+              </div>
+            ) : catalogItems.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 py-3 text-center">
+                {t('skills.catalogEmpty')}
+              </p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                {catalogItems.map((item) => (
+                  <div
+                    key={`${item.source || 'clawhub'}-${item.name}`}
+                    className="rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {item.title || item.name}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {item.description || item.name}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.homepage && (
+                          <a
+                            href={item.homepage}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 rounded text-gray-500 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20"
+                            title={t('skills.openCatalogLink')}
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                        <Button
+                          size="sm"
+                          leftIcon={<Download className="w-4 h-4" />}
+                          onClick={() => installFromSource(item.download_url || item.name, item.name)}
+                          isLoading={installing}
+                        >
+                          {t('skills.installAction')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setInstallOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+          </div>
+        </div>
       </Dialog>
 
       {/* Upload Dialog */}

@@ -349,13 +349,13 @@ export function AgentConfig() {
                   label={t('agents.maxTokens')}
                   type="number"
                   min={1}
-                  max={128000}
+                  max={131072}
                   step={1}
                   value={config.max_tokens ?? 2048}
                   onChange={(e: any) =>
                     setConfig({
                       ...config,
-                      max_tokens: parseInt(e.target.value),
+                      max_tokens: Math.min(131072, Math.max(1, parseInt(e.target.value, 10) || 1)),
                     })
                   }
                 />

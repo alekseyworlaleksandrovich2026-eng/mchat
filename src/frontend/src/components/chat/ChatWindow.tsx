@@ -4,14 +4,14 @@ import { MessageSquare } from 'lucide-react'
 import { GithubLink } from '@/components/common/GithubLink'
 import { MessageBubble } from './MessageBubble'
 import { ChatInput } from './ChatInput'
-import { Message } from '@/stores/chat'
+import { ChatSendOptions, Message } from '@/stores/chat'
 import { cn } from '@/lib/utils'
 
 interface ChatWindowProps {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
-  onSend: (content: string, file?: File) => void
+  onSend: (content: string, options?: ChatSendOptions) => void
   title?: string
   emptyMessage?: string
   disabled?: boolean
@@ -23,6 +23,9 @@ interface ChatWindowProps {
   speechTranscribeUrl?: string
   speechConfigUrl?: string
   showGithubLink?: boolean
+  allowAssistantMode?: boolean
+  allowOutboundLinks?: boolean
+  defaultSendRole?: 'user' | 'assistant'
 }
 
 export function ChatWindow({
@@ -40,6 +43,9 @@ export function ChatWindow({
   speechTranscribeUrl,
   speechConfigUrl,
   showGithubLink = true,
+  allowAssistantMode = false,
+  allowOutboundLinks = false,
+  defaultSendRole = 'user',
 }: ChatWindowProps) {
   const { t } = useTranslation()
   const resolvedEmpty = emptyMessage ?? t('chat.emptyStart')
@@ -126,6 +132,9 @@ export function ChatWindow({
         singleLine={embedded}
         speechTranscribeUrl={speechTranscribeUrl}
         speechConfigUrl={speechConfigUrl}
+        allowAssistantMode={allowAssistantMode}
+        allowOutboundLinks={allowOutboundLinks}
+        defaultSendRole={defaultSendRole}
       />
     </div>
   )

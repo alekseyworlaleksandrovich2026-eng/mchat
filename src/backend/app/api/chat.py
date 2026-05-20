@@ -1,6 +1,8 @@
 """Chat API router."""
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+import json
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -9,6 +11,7 @@ from app.models.user import User
 from app.schemas.chat import (
     ConversationList,
     ConversationResponse,
+    ConversationStatsResponse,
     CreateConversationRequest,
     InitConversationRequest,
     MessageCreate,
@@ -16,6 +19,7 @@ from app.schemas.chat import (
 )
 from app.services.chat_service import ChatService
 from app.utils.chat_upload import save_chat_attachment
+from app.utils.request import extract_client_ip
 
 router = APIRouter()
 
@@ -25,20 +29,48 @@ async def upload_chat_attachment(
     conversation_id: str = Form(...),
     file: UploadFile = File(...),
     content: str | None = Form(None),
+    role: str = Form("user"),
+    extra_data_raw: str | None = Form(None, alias="extraData"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload an image or file and send it as a user message."""
+    if role not in {"user", "assistant", "system"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid role",
+        )
+
+    parsed_extra_data: dict | None = None
+    if extra_data_raw and extra_data_raw.strip():
+        try:
+            parsed_extra_data = json.loads(extra_data_raw)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid extraData JSON: {e.msg}",
+            ) from e
+        if not isinstance(parsed_extra_data, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="extraData must be a JSON object",
+            )
+
     attachment = await save_chat_attachment(file)
     display = (content or "").strip() or attachment["name"]
     chat_service = ChatService(db)
+    extra_data = dict(parsed_extra_data or {})
+    attachments = list(extra_data.get("attachments") or [])
+    attachments.append(attachment)
+    extra_data["attachments"] = attachments
+
     try:
         return await chat_service.send_message(
             conversation_id=conversation_id,
             content=display,
-            role="user",
+            role=role,
             user=current_user,
-            extra_data={"attachments": [attachment]},
+            extra_data=extra_data,
         )
     except HTTPException:
         raise
@@ -63,6 +95,7 @@ async def send_message(
             content=request.content,
             role=request.role,
             user=current_user,
+            extra_data=request.extra_data,
         )
         return result
     except HTTPException:
@@ -79,6 +112,7 @@ async def list_conversations(
     skip: int = 0,
     limit: int = 20,
     status_filter: str | None = None,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -90,8 +124,21 @@ async def list_conversations(
         skip=skip,
         limit=limit,
         status=status_filter,
+        search=search,
     )
     return ConversationList(items=conversations, total=total)
+
+
+@router.get("/conversations/stats", response_model=ConversationStatsResponse)
+async def get_conversation_stats(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get aggregate conversation stats for admin/agent scope."""
+    chat_service = ChatService(db)
+    user_id = None if current_user.role == "admin" else current_user.id
+    stats = await chat_service.get_conversation_stats(user_id=user_id)
+    return ConversationStatsResponse(**stats)
 
 
 @router.post("/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -156,6 +203,7 @@ async def close_conversation(
 @router.post("/conversations/init", response_model=ConversationResponse)
 async def init_conversation(
     request: InitConversationRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Initialize a visitor conversation (no auth required)."""
@@ -165,5 +213,6 @@ async def init_conversation(
         title=request.title,
         ai_config_id=request.ai_config_id,
         contact_info=request.contact_info,
+        client_ip=extract_client_ip(http_request),
     )
     return conversation

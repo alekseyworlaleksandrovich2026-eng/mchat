@@ -1,39 +1,54 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, MessageSquare, MoreVertical, Plus } from 'lucide-react'
+import { Search, MessageSquare, Plus, RotateCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
-import { Conversation } from '@/stores/chat'
+import { Conversation, Message } from '@/stores/chat'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { DropdownMenu } from '@/components/ui/DropdownMenu'
 import { Dialog } from '@/components/ui/Dialog'
-import { formatDate, truncate } from '@/lib/utils'
+import { formatDate, parseDate, truncate } from '@/lib/utils'
 import { toast } from '@/components/ui/Toast'
+import { MessageBubble } from '@/components/chat/MessageBubble'
+import { normalizeMessageMedia } from '@/lib/mediaUrl'
 
 interface ConversationListProps {
   onSelect?: (conversation: Conversation) => void
+  onStatsChange?: (stats: ConversationStats) => void
 }
 
-export function ConversationList({ onSelect }: ConversationListProps) {
+export interface ConversationStats {
+  total: number
+  active: number
+  closed: number
+}
+
+export function ConversationList({ onSelect, onStatsChange }: ConversationListProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [creating, setCreating] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyConversation, setHistoryConversation] = useState<Conversation | null>(null)
+  const [historyMessages, setHistoryMessages] = useState<Message[]>([])
 
   const statusOptions = useMemo(
     () => [
       { value: '', label: t('conversations.statusAll') },
       { value: 'active', label: t('conversations.statusActive') },
-      { value: 'waiting', label: t('conversations.statusWaiting') },
       { value: 'closed', label: t('conversations.statusClosed') },
     ],
     [t],
@@ -42,25 +57,66 @@ export function ConversationList({ onSelect }: ConversationListProps) {
   const statusLabels = useMemo(
     (): Record<string, { label: string; variant: 'success' | 'warning' | 'default' }> => ({
       active: { label: t('conversations.statusActive'), variant: 'success' },
-      waiting: { label: t('conversations.statusWaiting'), variant: 'warning' },
       closed: { label: t('conversations.statusClosed'), variant: 'default' },
     }),
     [t],
   )
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
   useEffect(() => {
     loadConversations()
-  }, [])
+  }, [page, pageSize, statusFilter, search])
 
-  const loadConversations = async () => {
+  useEffect(() => {
+    setPage(1)
+  }, [search])
+
+  const loadConversations = async (showLoading = true) => {
+    if (showLoading) {
+      setLoading(true)
+    } else {
+      setRefreshing(true)
+    }
     try {
-      const data = await api.get<{ items: Conversation[]; total: number }>('/chat/conversations')
+      const params = new URLSearchParams()
+      params.set('skip', String((page - 1) * pageSize))
+      params.set('limit', String(pageSize))
+      if (statusFilter) {
+        params.set('status_filter', statusFilter)
+      }
+      if (search.trim()) {
+        params.set('search', search.trim())
+      }
+
+      const [data, stats] = await Promise.all([
+        api.get<{ items: Conversation[]; total: number }>(`/chat/conversations?${params.toString()}`),
+        api.get<ConversationStats>('/chat/conversations/stats'),
+      ])
+
+      const totalCount = data.total || 0
+      const maxPage = Math.max(1, Math.ceil(totalCount / pageSize))
+      if (page > maxPage) {
+        setPage(maxPage)
+        return
+      }
+
       setConversations(data.items || [])
+      setTotal(totalCount)
+      onStatsChange?.(stats)
     } catch (err) {
       console.error('Failed to load conversations:', err)
     } finally {
-      setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+      } else {
+        setRefreshing(false)
+      }
     }
+  }
+
+  const handleRefresh = async () => {
+    await loadConversations(false)
   }
 
   const handleCreate = async () => {
@@ -71,7 +127,7 @@ export function ConversationList({ onSelect }: ConversationListProps) {
       toast(t('conversations.toastCreateSuccess'), { type: 'success' })
       setShowCreate(false)
       setNewTitle('')
-      setConversations([conv, ...conversations])
+      setPage(1)
       navigate(`/chat/${conv.id}`)
     } catch (err: any) {
       toast(t('conversations.toastCreateFailed'), { type: 'error', message: err.message })
@@ -80,14 +136,48 @@ export function ConversationList({ onSelect }: ConversationListProps) {
     }
   }
 
-  const filtered = conversations.filter((c) => {
-    const matchesSearch =
-      !search ||
-      c.title?.toLowerCase().includes(search.toLowerCase()) ||
-      c.visitor_id?.toLowerCase().includes(search.toLowerCase())
-    const matchesStatus = !statusFilter || c.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  const openHistory = async (conv: Conversation) => {
+    setHistoryOpen(true)
+    setHistoryLoading(true)
+    setHistoryConversation(conv)
+    try {
+      const detail = await api.get<Conversation & { messages?: Message[] }>(`/chat/conversations/${conv.id}`)
+      setHistoryMessages((detail.messages || []).map(normalizeMessageMedia))
+      setHistoryConversation(detail)
+    } catch (err: any) {
+      toast(t('conversations.toastLoadHistoryFailed'), { type: 'error', message: err?.message })
+      setHistoryMessages([])
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  const handleCloseConversation = async (convId: string) => {
+    try {
+      await api.post(`/chat/conversations/${convId}/close`)
+      toast(t('conversations.toastCloseSuccess'), { type: 'success' })
+      await loadConversations()
+      if (historyConversation?.id === convId) {
+        setHistoryOpen(false)
+      }
+    } catch (err: any) {
+      toast(t('conversations.toastCloseFailed'), { type: 'error', message: err?.message })
+    }
+  }
+
+  const filtered = [...conversations].sort(
+    (a, b) =>
+      parseDate(b.updated_at || b.created_at).getTime() -
+      parseDate(a.updated_at || a.created_at).getTime(),
+  )
+
+  const typeLabel = (type?: string) => {
+    if (type === 'widget') return t('conversations.typeWidget')
+    if (type === 'wechat') return t('conversations.typeWechat')
+    if (type === 'visitor') return t('conversations.typeVisitor')
+    if (type === 'admin') return t('conversations.typeAdmin')
+    return t('conversations.typeChat')
+  }
 
   if (loading) {
     return (
@@ -112,10 +202,22 @@ export function ConversationList({ onSelect }: ConversationListProps) {
           <Select
             options={statusOptions}
             value={statusFilter}
-            onChange={(e: any) => setStatusFilter(e.target.value)}
+            onChange={(e: any) => {
+              setStatusFilter(e.target.value)
+              setPage(1)
+            }}
             placeholder={t('conversations.statusAll')}
           />
         </div>
+        <Button
+          variant="secondary"
+          size="action"
+          leftIcon={<RotateCw className="w-4 h-4" />}
+          onClick={handleRefresh}
+          isLoading={refreshing}
+        >
+          {t('common.refresh')}
+        </Button>
         <Button leftIcon={<Plus className="w-4 h-4" />} onClick={() => setShowCreate(true)}>
           {t('conversations.createConversation')}
         </Button>
@@ -135,7 +237,12 @@ export function ConversationList({ onSelect }: ConversationListProps) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {filtered.map((conv) => (
+          {filtered.map((conv) => {
+            const userCount = conv.user_message_count ?? 0
+            const aiCount = conv.ai_message_count ?? 0
+            const totalCount = conv.total_message_count ?? userCount + aiCount
+
+            return (
             <Card
               key={conv.id}
               hover
@@ -146,6 +253,9 @@ export function ConversationList({ onSelect }: ConversationListProps) {
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
+                        <Badge variant="default" size="sm">
+                          {typeLabel(conv.conversation_type)}
+                        </Badge>
                         <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                           {conv.title || conv.visitor_id || t('conversations.untitled')}
                         </h3>
@@ -161,6 +271,11 @@ export function ConversationList({ onSelect }: ConversationListProps) {
                           {truncate(conv.contact_info, 40)}
                         </p>
                       )}
+                      {conv.first_user_message_preview && (
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 truncate">
+                          {conv.first_user_message_preview}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -170,33 +285,104 @@ export function ConversationList({ onSelect }: ConversationListProps) {
                         {conv.visitor_id.slice(0, 12)}…
                       </span>
                     )}
+                    {conv.client_ip && (
+                      <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        {t('conversations.ipTag', { ip: conv.client_ip })}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                      {t('conversations.messageCountSummary', {
+                        user: userCount,
+                        ai: aiCount,
+                        total: totalCount,
+                      })}
+                    </span>
                     <span className="text-xs text-gray-400 whitespace-nowrap">
                       {formatDate(conv.updated_at || conv.created_at)}
                     </span>
-                    <DropdownMenu
-                      trigger={
-                        <button className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                      }
-                      items={[
-                        {
-                          label: t('conversations.openChat'),
-                          onClick: () => navigate(`/chat/${conv.id}`),
-                        },
-                        {
-                          label: t('conversations.closeConversation'),
-                          onClick: () => {
-                            api.post(`/chat/conversations/${conv.id}/close`).then(() => loadConversations())
-                          },
-                        },
-                      ]}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openHistory(conv)
+                        }}
+                      >
+                        {t('conversations.viewHistory')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/chat/${conv.id}`)
+                        }}
+                      >
+                        {t('conversations.openChat')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleCloseConversation(conv.id)
+                        }}
+                        disabled={conv.status === 'closed'}
+                      >
+                        {t('conversations.closeConversation')}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
+        </div>
+      )}
+
+      {total > 0 && (
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {t('conversations.pageSummary', {
+              current: page,
+              totalPages,
+              total,
+            })}
+          </p>
+          <div className="flex items-center gap-2">
+            <div className="w-24">
+              <Select
+                value={String(pageSize)}
+                options={[
+                  { value: '20', label: '20' },
+                  { value: '50', label: '50' },
+                  { value: '100', label: '100' },
+                ]}
+                onChange={(e: any) => {
+                  setPageSize(parseInt(e.target.value, 10))
+                  setPage(1)
+                }}
+              />
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              {t('conversations.prevPage')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              {t('conversations.nextPage')}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -221,6 +407,45 @@ export function ConversationList({ onSelect }: ConversationListProps) {
               {t('common.create')}
             </Button>
           </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={historyOpen}
+        onClose={() => {
+          setHistoryOpen(false)
+          setHistoryMessages([])
+          setHistoryConversation(null)
+        }}
+        title={historyConversation?.title || t('conversations.historyTitle')}
+        size="xl"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-3">
+              <span>{t('conversations.historyConversationId', { id: historyConversation?.id || '-' })}</span>
+              {historyConversation?.client_ip && (
+                <span>{t('conversations.ipTag', { ip: historyConversation.client_ip })}</span>
+              )}
+            </div>
+            <span>{t('conversations.historyMessageCount', { count: historyMessages.length })}</span>
+          </div>
+
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : historyMessages.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
+              {t('conversations.emptyHistory')}
+            </p>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {historyMessages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} compact />
+              ))}
+            </div>
+          )}
         </div>
       </Dialog>
     </div>

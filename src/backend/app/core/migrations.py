@@ -52,6 +52,22 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                     )
                 )
             applied.append("customer_configs.knowledge_base_ids")
+        if "auto_reply_rules" not in cols:
+            if dialect == "mysql":
+                conn.execute(
+                    text(
+                        "ALTER TABLE customer_configs "
+                        "ADD COLUMN auto_reply_rules JSON NULL"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE customer_configs "
+                        "ADD COLUMN auto_reply_rules TEXT NULL"
+                    )
+                )
+            applied.append("customer_configs.auto_reply_rules")
         if "widget_session_ttl_hours" not in cols:
             conn.execute(
                 text(
@@ -60,6 +76,17 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
             )
             applied.append("customer_configs.widget_session_ttl_hours")
+
+    if "conversations" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "conversations")
+        if "client_ip" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE conversations "
+                    "ADD COLUMN client_ip VARCHAR(64) NULL"
+                )
+            )
+            applied.append("conversations.client_ip")
 
     # Ensure any new tables from models exist
     Base.metadata.create_all(conn)

@@ -25,10 +25,13 @@ class CustomerConfig(Base):
     )
     skill_ids: Mapped[list | None] = mapped_column(
         JSON, nullable=True
-    )  # enabled skill ids for this agent; null/[] = all user skills
+    )  # enabled skill ids for this agent; null/[] = none selected
     knowledge_base_ids: Mapped[list | None] = mapped_column(
         JSON, nullable=True
-    )  # knowledge bases for RAG; null/[] = all user KBs
+    )  # knowledge bases for RAG; null/[] = none selected
+    auto_reply_rules: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # semantic/keyword rules that auto-send files, links, or videos
     welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     offline_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme: Mapped[dict | None] = mapped_column(JSON, nullable=True)

@@ -10,6 +10,9 @@ export interface WidgetRemoteConfig {
     primaryColor?: string
     botName?: string
     widgetTitle?: string
+    launcherIcon?: string
+    launcherText?: string
+    showcaseSkillIds?: string[]
   }
   enabled: boolean
 }

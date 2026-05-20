@@ -15,6 +15,7 @@ from app.models.ai_config import AIConfig
 from app.models.customer import CustomerConfig
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.utils.request import extract_client_ip
 from app.utils.domain import is_domain_allowed
 
 WIDGET_CUSTOMER_PREFIX = "widget_customer:"
@@ -124,6 +125,7 @@ async def prepare_widget_chat(
         conversation = Conversation(
             id=str(uuid.uuid4()),
             visitor_id=vid,
+            client_ip=extract_client_ip(request),
             ai_config_id=customer.ai_config_id,
             title=f"Widget: {customer.name}",
             contact_info=widget_contact_info(customer_id),
@@ -143,6 +145,10 @@ async def prepare_widget_chat(
     )
     db.add(user_message)
     await db.flush()
+
+    now = datetime.now(timezone.utc)
+    conversation.updated_at = now
+    conversation.last_seen_at = now
 
     ai_config = None
     if customer.ai_config_id:

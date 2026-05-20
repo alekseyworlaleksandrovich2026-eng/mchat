@@ -12,6 +12,7 @@ import { ChannelsPage } from './pages/ChannelsPage'
 import { ChatPage } from './pages/ChatPage'
 import { WidgetDemo } from './pages/WidgetDemo'
 import { WidgetPage } from './pages/WidgetPage'
+import { SkillShowcasePage } from './pages/SkillShowcasePage'
 import { LandingPage } from './pages/LandingPage'
 import { UsersPage } from './pages/UsersPage'
 import { DocumentTitle } from './components/common/DocumentTitle'
@@ -98,6 +99,7 @@ export default function App() {
       <Route path="/chat/:conversationId" element={<ChatPage />} />
       <Route path="/widget/demo" element={<WidgetDemo />} />
       <Route path="/widget" element={<WidgetPage />} />
+      <Route path="/showcase" element={<SkillShowcasePage />} />
     </Routes>
     </>
   )

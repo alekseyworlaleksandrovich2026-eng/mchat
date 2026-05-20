@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_admin
 from app.models.user import User
 from app.schemas.channel import (
     ChannelCreate,
@@ -18,6 +18,7 @@ from app.schemas.channel import (
     ChannelUpdate,
 )
 from app.services.channel_service import ChannelService
+from app.utils.request import extract_client_ip
 
 router = APIRouter()
 
@@ -89,6 +90,7 @@ async def wechat_webhook_receive(
             nonce=nonce,
             encrypt_type=encrypt_type,
             msg_signature=msg_signature,
+            client_ip=extract_client_ip(request),
             db=db,
         )
     except HTTPException:
@@ -106,12 +108,12 @@ async def wechat_webhook_receive(
 async def get_channel_webhook_info(
     channel_id: str,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Return callback URL for channel types that need external webhook configuration."""
     service = ChannelService(db)
-    channel = await service.get_channel(channel_id=channel_id, user_id=current_user.id)
+    channel = await service.get_channel(channel_id=channel_id, user_id=admin.id)
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
 
@@ -130,24 +132,24 @@ async def get_channel_webhook_info(
 
 @router.get("", response_model=list[ChannelResponse])
 async def list_channels(
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List all channels."""
     service = ChannelService(db)
-    return await service.list_channels(user_id=current_user.id)
+    return await service.list_channels(user_id=admin.id)
 
 
 @router.get("/{channel_id}", response_model=ChannelResponse)
 async def get_channel(
     channel_id: str,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a channel."""
     service = ChannelService(db)
     channel = await service.get_channel(
-        channel_id=channel_id, user_id=current_user.id
+        channel_id=channel_id, user_id=admin.id
     )
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -157,13 +159,13 @@ async def get_channel(
 @router.post("", response_model=ChannelResponse, status_code=status.HTTP_201_CREATED)
 async def create_channel(
     request: ChannelCreate,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new channel."""
     service = ChannelService(db)
     return await service.create_channel(
-        user_id=current_user.id, data=request
+        user_id=admin.id, data=request
     )
 
 
@@ -171,13 +173,13 @@ async def create_channel(
 async def update_channel(
     channel_id: str,
     request: ChannelUpdate,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a channel."""
     service = ChannelService(db)
     channel = await service.update_channel(
-        channel_id=channel_id, user_id=current_user.id, data=request
+        channel_id=channel_id, user_id=admin.id, data=request
     )
     if channel is None:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -187,13 +189,13 @@ async def update_channel(
 @router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(
     channel_id: str,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a channel."""
     service = ChannelService(db)
     success = await service.delete_channel(
-        channel_id=channel_id, user_id=current_user.id
+        channel_id=channel_id, user_id=admin.id
     )
     if not success:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -203,13 +205,13 @@ async def delete_channel(
 @router.post("/test", response_model=dict)
 async def test_channel(
     request: ChannelTestRequest,
-    current_user: User = Depends(get_current_user),
+    admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Test a channel connection."""
     service = ChannelService(db)
     return await service.test_channel(
-        user_id=current_user.id,
+        user_id=admin.id,
         channel_type=request.channel_type,
         config=request.config,
     )

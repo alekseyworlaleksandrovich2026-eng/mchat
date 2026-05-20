@@ -156,11 +156,25 @@ class ChannelService:
                         "ok": False,
                         "message": "安全模式需安装 wechatpy：pip install wechatpy",
                     }
+            try:
+                from app.services.wechat_channel_service import _fetch_wechat_access_token
+
+                await _fetch_wechat_access_token(
+                    str(config.get("app_id") or "").strip(),
+                    str(config.get("app_secret") or "").strip(),
+                    force_refresh=True,
+                )
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "message": f"微信公众号配置未通过 access_token 校验：{e}",
+                }
             return {
                 "ok": True,
                 "message": (
-                    "微信公众号配置完整。请在公众平台配置服务器 URL，"
-                    "并确保已绑定客服 Agent。"
+                    "微信公众号配置完整。当前默认使用客服消息主动下发模式"
+                    "（App ID + App Secret 获取 access_token）。"
+                    "请在公众平台配置服务器 URL，并确保已绑定客服 Agent。"
                 ),
             }
 

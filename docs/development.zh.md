@@ -76,7 +76,7 @@ npm run dev  # 启动在 http://localhost:5173
 
 ### Git 提交规范
 
-```
+```raw
 feat: 新功能
 fix: 修复 Bug
 docs: 文档更新
@@ -149,7 +149,7 @@ class MyProvider(LLMProvider):
 
 ### 组件结构
 
-```
+```raw
 src/
 ├── components/
 │   ├── ui/           # 基础 UI 组件
@@ -201,7 +201,7 @@ export const useExampleStore = create<ExampleState>((set) => ({
 
 ### 技能结构
 
-```
+```raw
 skills/my-skill/
 └── SKILL.md
 ```
@@ -236,6 +236,27 @@ prompts:
 
 详细的使用说明和示例。
 ```
+### OpenClaw 兼容格式
+
+MChat 也支持 OpenClaw 风格的 `SKILL.md` 多语言 blocks，可与标准 frontmatter 共存。示例：
+
+```markdown
+[[ _meta ]]
+name = "patent-search"
+description = "专利检索技能"
+
+[[ locales.zh ]]
+prompt = "你是一个专利分析助手..."
+
+[[ locales.en ]]
+prompt = "You are a patent analysis assistant..."
+```
+
+可通过以下方式安装：
+
+- 管理后台上传 zip
+- 管理后台 URL 安装：`POST /api/skills/install-url`
+- CLI：`mchat skill install patent-search` 或 `mchat skill install <zip_url>`
 
 ### 技能工具处理函数
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import httpx
@@ -21,6 +22,7 @@ class DocumentImporter:
     async def import_file(
         self,
         kb_id: str,
+        user_id: str,
         file_path: Path,
         original_filename: str,
     ) -> Document:
@@ -29,6 +31,7 @@ class DocumentImporter:
         source = file_path.suffix.lower().lstrip(".")
 
         doc = Document(
+            id=str(uuid.uuid4()),
             knowledge_base_id=kb_id,
             title=original_filename,
             content=content,
@@ -51,13 +54,13 @@ class DocumentImporter:
             )
             return doc
 
-        chunk_count = await self.index_document(doc)
+        chunk_count = await self.index_document(doc, user_id=user_id)
         doc.chunk_count = chunk_count
         doc.status = "indexed" if chunk_count > 0 else "failed"
 
         return doc
 
-    async def import_url(self, kb_id: str, url: str) -> Document:
+    async def import_url(self, kb_id: str, user_id: str, url: str) -> Document:
         """Import content from a URL."""
         try:
             async with httpx.AsyncClient(
@@ -68,6 +71,7 @@ class DocumentImporter:
                 content = response.text
 
             doc = Document(
+                id=str(uuid.uuid4()),
                 knowledge_base_id=kb_id,
                 title=url,
                 content=content,
@@ -82,7 +86,7 @@ class DocumentImporter:
                 doc.status = "indexed" if content.strip() else "failed"
                 return doc
 
-            chunk_count = await self.index_document(doc)
+            chunk_count = await self.index_document(doc, user_id=user_id)
             doc.chunk_count = chunk_count
             doc.status = "indexed" if chunk_count > 0 else "failed"
 
@@ -91,7 +95,7 @@ class DocumentImporter:
             logger.error(f"URL import failed for {url}: {e}")
             raise
 
-    async def index_document(self, doc: Document) -> int:
+    async def index_document(self, doc: Document, *, user_id: str) -> int:
         """Chunk and index a document's content into Milvus."""
         # Skip if Milvus is not enabled
         if not milvus_client._connected:
@@ -110,7 +114,7 @@ class DocumentImporter:
             chunk_count = await milvus_client.insert_vectors(
                 document_id=doc.id,
                 kb_id=doc.knowledge_base_id,
-                user_id="",  # Will be set by caller
+                user_id=user_id,
                 chunks=chunks,
                 embeddings=embeddings,
             )
@@ -156,6 +160,9 @@ class DocumentImporter:
             if chunk:
                 chunks.append(chunk)
 
+            if end >= text_len:
+                break
+
             start = end - self.CHUNK_OVERLAP
             if start < 0:
                 start = 0
@@ -166,12 +173,27 @@ class DocumentImporter:
         """Read file content based on extension."""
         suffix = file_path.suffix.lower()
 
-        if suffix == ".txt":
+        if suffix in {".txt", ".md", ".html", ".htm"}:
             return file_path.read_text(encoding="utf-8", errors="replace")
-        elif suffix == ".md":
-            return file_path.read_text(encoding="utf-8", errors="replace")
-        elif suffix == ".html" or suffix == ".htm":
-            return file_path.read_text(encoding="utf-8", errors="replace")
+        elif suffix == ".docx":
+            try:
+                from docx import Document as DocxDocument
+            except ImportError as exc:
+                raise RuntimeError(
+                    "DOCX parsing requires python-docx"
+                ) from exc
+
+            document = DocxDocument(file_path)
+            parts = [
+                paragraph.text.strip()
+                for paragraph in document.paragraphs
+                if paragraph.text and paragraph.text.strip()
+            ]
+            return "\n\n".join(parts)
+        elif suffix == ".doc":
+            raise ValueError(
+                "Legacy .doc files are not supported; please resave the file as .docx, .pdf, .md, or .txt"
+            )
         elif suffix == ".pdf":
             # Basic PDF text extraction fallback
             try:

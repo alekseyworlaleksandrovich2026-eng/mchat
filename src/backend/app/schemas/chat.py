@@ -10,6 +10,7 @@ class MessageCreate(BaseModel):
     conversation_id: str | None = Field(None, description="Existing conversation ID")
     content: str = Field(..., min_length=1, max_length=10000)
     role: str = Field("user", pattern=r"^(user|assistant|system)$")
+    extra_data: dict | None = Field(None, description="Optional message metadata such as attachments or outbound assets")
 
 
 class MessageResponse(BaseModel):
@@ -29,11 +30,17 @@ class ConversationResponse(BaseModel):
     id: str
     title: str | None = None
     status: str
+    conversation_type: str = "chat"
+    first_user_message_preview: str | None = None
     visitor_id: str | None = None
+    client_ip: str | None = None
     contact_info: str | None = None
     created_at: datetime
     updated_at: datetime
     last_seen_at: datetime
+    user_message_count: int = 0
+    ai_message_count: int = 0
+    total_message_count: int = 0
     messages: list[MessageResponse] | None = None
 
     model_config = {"from_attributes": True}
@@ -43,6 +50,13 @@ class ConversationList(BaseModel):
     """Paginated conversation list."""
     items: list[ConversationResponse]
     total: int
+
+
+class ConversationStatsResponse(BaseModel):
+    """Conversation aggregate stats."""
+    total: int
+    active: int
+    closed: int
 
 
 class InitConversationRequest(BaseModel):

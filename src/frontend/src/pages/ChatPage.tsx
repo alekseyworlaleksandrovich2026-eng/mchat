@@ -6,6 +6,7 @@ import { GithubLink } from '@/components/common/GithubLink'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
 import { ChatWindow } from '@/components/chat/ChatWindow'
 import { useChat } from '@/hooks/useChat'
+import { ChatSendOptions } from '@/stores/chat'
 
 export function ChatPage() {
   const { t } = useTranslation()
@@ -13,9 +14,9 @@ export function ChatPage() {
   const navigate = useNavigate()
   const chat = useChat(conversationId)
 
-  const handleSend = (content: string, file?: File) => {
+  const handleSend = (content: string, options?: ChatSendOptions) => {
     if (conversationId) {
-      chat.sendMessage(conversationId, content, file)
+      chat.sendMessage(conversationId, content, options)
     }
   }
 
@@ -25,6 +26,8 @@ export function ChatPage() {
         <button
           onClick={() => navigate('/admin/conversations')}
           className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          title={t('chat.backToConversations')}
+          aria-label={t('chat.backToConversations')}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -62,6 +65,9 @@ export function ChatPage() {
           emptyMessage={t('chat.emptyMessage')}
           speechConfigUrl="/api/speech/config"
           speechTranscribeUrl="/api/speech/transcribe"
+          allowAssistantMode
+          allowOutboundLinks
+          defaultSendRole="assistant"
         />
       </div>
     </div>

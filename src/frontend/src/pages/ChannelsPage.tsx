@@ -403,6 +403,11 @@ export function ChannelsPage() {
               selectedType,
             ),
           )}
+          {selectedType === 'wechat' && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {t('channels.wechatActivePushHint')}
+            </p>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>
               {t('common.cancel')}
@@ -438,6 +443,11 @@ export function ChannelsPage() {
                 (key, value) => setEditConfig({ ...editConfig, [key]: value }),
                 editingChannel.channel_type,
               ),
+            )}
+            {editingChannel.channel_type === 'wechat' && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                {t('channels.wechatActivePushHint')}
+              </p>
             )}
             {editingChannel.channel_type === 'wechat' && webhookInfo && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-3 space-y-2 text-xs">

@@ -1,30 +1,51 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
+const ISO_WITHOUT_TIMEZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export function parseDate(value: string | Date | number): Date {
+  if (value instanceof Date) return new Date(value.getTime())
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (ISO_WITHOUT_TIMEZONE.test(trimmed)) {
+      return new Date(`${trimmed}Z`)
+    }
+  }
+  return new Date(value)
+}
+
 export function formatDate(date: string | Date): string {
-  const d = new Date(date)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
+  const d = parseDate(date)
+  if (Number.isNaN(d.getTime())) return ''
 
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
+  const locale =
+    document.documentElement.lang ||
+    localStorage.getItem('mchat_lang') ||
+    navigator.language ||
+    'en-US'
 
-  return d.toLocaleDateString('zh-CN', {
+  const now = Date.now()
+  const diffMs = d.getTime() - now
+  const absMs = Math.abs(diffMs)
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+
+  if (absMs < 60_000) return rtf.format(Math.round(diffMs / 1000), 'second')
+  if (absMs < 3_600_000) return rtf.format(Math.round(diffMs / 60_000), 'minute')
+  if (absMs < 86_400_000) return rtf.format(Math.round(diffMs / 3_600_000), 'hour')
+  if (absMs < 7 * 86_400_000) return rtf.format(Math.round(diffMs / 86_400_000), 'day')
+
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-  })
+    hour12: false,
+  }).format(d)
 }
 
 export function truncate(str: string, length: number): string {

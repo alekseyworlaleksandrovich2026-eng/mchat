@@ -28,6 +28,28 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     }
   }, [isLoading, isAuthenticated, navigate, location.pathname])
 
+  useEffect(() => {
+    if (isLoading || !isAuthenticated || user?.role === 'admin') return
+
+    const adminOnlyPrefixes = [
+      '/admin/knowledge',
+      '/admin/skills',
+      '/admin/agents',
+      '/admin/customer-agents',
+      '/admin/settings',
+      '/admin/channels',
+      '/admin/users',
+    ]
+
+    const blocked = adminOnlyPrefixes.some(
+      (prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
+    )
+
+    if (blocked) {
+      navigate('/admin', { replace: true })
+    }
+  }, [isLoading, isAuthenticated, user?.role, location.pathname, navigate])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -66,6 +88,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 lg:px-6 shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
+            aria-label="Menu"
+            title="Menu"
             className="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
           >
             <Menu className="w-5 h-5" />

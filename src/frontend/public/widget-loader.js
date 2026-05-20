@@ -27,6 +27,8 @@
       script.getAttribute('data-welcome-message') ||
       '你好！我是智能客服助手，有什么可以帮助你的？',
     botName: script.getAttribute('data-bot-name') || '智能助手',
+    launcherIcon: script.getAttribute('data-launcher-icon') || 'chat',
+    launcherText: script.getAttribute('data-launcher-text') || '',
   }
 
   if (!config.agentId) {
@@ -89,8 +91,114 @@
       primaryColor: config.primaryColor,
       welcomeMessage: config.welcomeMessage,
       botName: config.botName,
+      launcherIcon: config.launcherIcon,
+      launcherText: config.launcherText,
     })
     return widgetOrigin + '/widget.html?' + q.toString()
+  }
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  function launcherSvg(name, size) {
+    var n = String(name || 'chat').toLowerCase()
+    var s = size || 24
+    if (n === 'bot' || n === 'robot') {
+      return (
+        '<svg width="' +
+        s +
+        '" height="' +
+        s +
+        '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<rect x="3" y="11" width="18" height="10" rx="2"/>' +
+        '<circle cx="8" cy="16" r="1"/><circle cx="16" cy="16" r="1"/>' +
+        '<path d="M12 11V7"/><path d="M8 7h8"/>' +
+        '</svg>'
+      )
+    }
+    if (n === 'spark' || n === 'sparkles') {
+      return (
+        '<svg width="' +
+        s +
+        '" height="' +
+        s +
+        '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15l-1.7-4.3L6 9l4.3-1.7L12 3z"/>' +
+        '<path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>' +
+        '</svg>'
+      )
+    }
+    if (n === 'support' || n === 'headset') {
+      return (
+        '<svg width="' +
+        s +
+        '" height="' +
+        s +
+        '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<path d="M4 13a8 8 0 0 1 16 0"/>' +
+        '<rect x="2" y="12" width="4" height="7" rx="1"/>' +
+        '<rect x="18" y="12" width="4" height="7" rx="1"/>' +
+        '<path d="M18 19a4 4 0 0 1-4 4h-2"/>' +
+        '</svg>'
+      )
+    }
+    return (
+      '<svg width="' +
+      s +
+      '" height="' +
+      s +
+      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' +
+      '</svg>'
+    )
+  }
+
+  function closeSvg() {
+    return (
+      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>' +
+      '</svg>'
+    )
+  }
+
+  function applyLauncherButton(open) {
+    if (!elements.button) return
+
+    var label = String(config.launcherText || '').trim()
+    var hasText = !open && label.length > 0
+    var baseStyle =
+      'position:fixed;bottom:24px;' +
+      posSide +
+      ':24px;z-index:2147483646;border:none;background-color:' +
+      config.primaryColor +
+      ';color:#fff;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.18);display:flex;align-items:center;justify-content:center;transition:transform 0.2s ease, box-shadow 0.2s ease;'
+
+    elements.button.style.cssText = hasText
+      ? baseStyle +
+        'height:48px;padding:0 16px;border-radius:999px;gap:8px;'
+      : baseStyle + 'width:56px;height:56px;border-radius:50%;'
+
+    if (open) {
+      elements.button.innerHTML = closeSvg()
+      return
+    }
+
+    if (hasText) {
+      elements.button.innerHTML =
+        launcherSvg(config.launcherIcon, 20) +
+        '<span style="font-size:14px;font-weight:600;line-height:1;white-space:nowrap;">' +
+        escapeHtml(label) +
+        '</span>'
+      return
+    }
+
+    elements.button.innerHTML = launcherSvg(config.launcherIcon, 26)
   }
 
   function startResize(event) {
@@ -148,14 +256,6 @@
     button.type = 'button'
     button.id = 'mchat-widget-button'
     button.setAttribute('aria-label', 'Open chat')
-    button.style.cssText =
-      'position:fixed;bottom:24px;' +
-      posSide +
-      ':24px;z-index:2147483646;width:56px;height:56px;border-radius:50%;border:none;background-color:' +
-      config.primaryColor +
-      ';color:#fff;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.18);display:flex;align-items:center;justify-content:center;transition:transform 0.2s ease, box-shadow 0.2s ease;'
-    button.innerHTML =
-      '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
     button.onmouseover = function () {
       button.style.transform = 'scale(1.08)'
     }
@@ -205,6 +305,7 @@
     elements.panel = panel
     elements.iframe = iframe
     elements.resizeHandle = resizeHandle
+    applyLauncherButton(false)
     applyPanelLayout()
   }
 
@@ -212,9 +313,7 @@
     state.isOpen = open
     if (!open) state.isExpanded = false
     applyPanelLayout()
-    elements.button.innerHTML = open
-      ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
-      : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    applyLauncherButton(open)
   }
 
   function setExpanded(expanded) {
