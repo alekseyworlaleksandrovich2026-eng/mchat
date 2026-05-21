@@ -245,26 +245,41 @@ export function KnowledgeManager() {
     <div className="space-y-4 h-full flex flex-col">
       <Card>
         <CardContent className="py-4 space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
+          <div className="flex items-center justify-between gap-4 flex-wrap lg:flex-nowrap">
+            <div className="min-w-0 shrink-0">
               <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('knowledge.milvusTitle')}</h3>
               <p className="text-xs text-gray-500 mt-0.5">
                 {t('knowledge.milvusHint')}
               </p>
             </div>
-            <Switch checked={milvusEnabled} onChange={setMilvusEnabled} />
-          </div>
-          {milvusEnabled && (
-            <div className="flex flex-wrap gap-3 items-end">
-              <Input label={t('knowledge.host')} value={milvusHost} onChange={(e) => setMilvusHost(e.target.value)} className="w-56" />
-              <Input label={t('knowledge.port')} value={milvusPort} onChange={(e) => setMilvusPort(e.target.value)} className="w-28" />
-              <Button variant="secondary" size="sm" onClick={testMilvus} isLoading={milvusTesting}>{t('knowledge.testConnection')}</Button>
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 ml-auto">
+              <div className="shrink-0">
+                <Switch checked={milvusEnabled} onChange={setMilvusEnabled} />
+              </div>
+              {milvusEnabled && (
+                <>
+                  <input
+                    aria-label={t('knowledge.host')}
+                    title={t('knowledge.host')}
+                    value={milvusHost}
+                    onChange={(e) => setMilvusHost(e.target.value)}
+                    placeholder={t('knowledge.host')}
+                    className="h-10 w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                  />
+                  <input
+                    aria-label={t('knowledge.port')}
+                    title={t('knowledge.port')}
+                    value={milvusPort}
+                    onChange={(e) => setMilvusPort(e.target.value.replace(/[^\d]/g, ''))}
+                    placeholder={t('knowledge.port')}
+                    className="h-10 w-28 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                  />
+                  <Button variant="secondary" size="sm" onClick={testMilvus} isLoading={milvusTesting}>{t('knowledge.testConnection')}</Button>
+                </>
+              )}
               <Button size="sm" onClick={saveMilvusSettings} isLoading={milvusSaving}>{t('common.save')}</Button>
             </div>
-          )}
-          {!milvusEnabled && (
-            <Button size="sm" variant="secondary" onClick={saveMilvusSettings} isLoading={milvusSaving}>{t('common.save')}</Button>
-          )}
+          </div>
         </CardContent>
       </Card>
       <div className="flex gap-6 flex-1 min-h-0">
@@ -310,6 +325,8 @@ export function KnowledgeManager() {
                         e.stopPropagation()
                         handleDeleteKB(kb.id)
                       }}
+                      aria-label={t('common.delete')}
+                      title={t('common.delete')}
                       className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -356,6 +373,8 @@ export function KnowledgeManager() {
               type="file"
               multiple
               className="hidden"
+              aria-label={t('knowledge.uploadDocument')}
+              title={t('knowledge.uploadDocument')}
               onChange={handleUpload}
               accept=".txt,.pdf,.doc,.docx,.md"
             />
@@ -401,6 +420,8 @@ export function KnowledgeManager() {
                           </Badge>
                           <button
                             onClick={() => handleDelete(doc.id)}
+                            aria-label={t('common.delete')}
+                            title={t('common.delete')}
                             className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                           >
                             <Trash2 className="w-4 h-4" />

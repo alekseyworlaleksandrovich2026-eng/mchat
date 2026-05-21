@@ -4,9 +4,39 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Node 20+](https://img.shields.io/badge/node-20+-green.svg)](https://nodejs.org/)
 
-**[中文文档](README.zh-CN.md)** · **[GitHub](https://github.com/windinwing/mchat)**
+**[中文文档](README.zh.md)** · **[GitHub](https://github.com/windinwing/mchat)**
 
 MChat is a **lightweight, embeddable, multi-tenant AI customer service platform**. It combines a streaming Bot engine, RAG knowledge base, Skill plugin system, and an embeddable chat Widget — with support for **10+ LLM providers** and multi-channel connectivity (Web Widget, WebSocket, REST API, WeChat Official Account, and more).
+
+## Live websites
+
+- [English main site](http://mchat.chat)
+- [Chinese main site](https://mchat.9235.net)
+- [Full screenshot tour](docs/product-tour.en.md)
+
+## UI preview
+
+Click any screenshot to open the full image.
+
+### Homepage and admin zones
+
+[![MChat homepage and admin zones](docs/images/mchat.home.zone.en.png)](docs/images/mchat.home.zone.en.png)
+
+### Conversation management
+
+[![Conversation management](docs/images/mchat.conversations.en.png)](docs/images/mchat.conversations.en.png)
+
+### Customer agent configuration
+
+[![Customer agent configuration](docs/images/mchat.customer.en.png)](docs/images/mchat.customer.en.png)
+
+### Knowledge base
+
+[![Knowledge base](docs/images/mchat.knowledge.en.png)](docs/images/mchat.knowledge.en.png)
+
+### Widget demo
+
+[![Widget demo](docs/images/mchat.widget.en.png)](docs/images/mchat.widget.en.png)
 
 ## Features
 

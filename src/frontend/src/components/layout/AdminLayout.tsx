@@ -98,12 +98,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           <div className="flex-1" />
 
           <div className="flex items-center gap-3">
-            <LanguageSwitcher variant="ghost" />
-            <div className="text-sm text-right">
-              <p className="font-medium text-gray-900 dark:text-gray-100">
+            <LanguageSwitcher className="shrink-0" />
+            <div className="min-h-[42px] px-4 py-1.5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/50 text-sm text-right flex flex-col justify-center">
+              <p className="font-medium text-gray-900 dark:text-gray-100 leading-tight">
                 {user?.username || t('common.admin')}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 leading-tight mt-0.5">
                 {user?.display_name || user?.role}
               </p>
             </div>

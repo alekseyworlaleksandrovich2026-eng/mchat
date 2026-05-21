@@ -181,6 +181,7 @@ export function CustomerConfig() {
   const [config, setConfig] = useState<CustomerServiceConfig>(() => emptyCustomerConfig())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [widgetSessionTtlInput, setWidgetSessionTtlInput] = useState('24')
   const [uploadingRuleId, setUploadingRuleId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('capabilities')
   const [domainInput, setDomainInput] = useState('')
@@ -218,6 +219,10 @@ export function CustomerConfig() {
     loadSkills()
     loadKnowledgeBases()
   }, [])
+
+  useEffect(() => {
+    setWidgetSessionTtlInput(String(config.widget_session_ttl_hours ?? 24))
+  }, [config.id, config.widget_session_ttl_hours])
 
   const loadAiConfigs = async () => {
     try {
@@ -605,19 +610,23 @@ export function CustomerConfig() {
             <div className="space-y-6">
               <Input
                 label={t('customerAgents.widgetSessionTtl')}
-                type="number"
-                min={0}
-                max={8760}
-                value={config.widget_session_ttl_hours ?? 24}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                type="text"
+                inputMode="numeric"
+                value={widgetSessionTtlInput}
+                onFocus={(e: React.ChangeEvent<HTMLInputElement> | any) => e.target.select()}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  const raw = e.target.value.replace(/[^\d]/g, '')
+                  setWidgetSessionTtlInput(raw)
                   setConfig({
                     ...config,
-                    widget_session_ttl_hours: Math.max(
-                      0,
-                      parseInt(e.target.value, 10) || 0,
-                    ),
+                    widget_session_ttl_hours: raw === ''
+                      ? 0
+                      : Math.min(8760, Math.max(0, parseInt(raw, 10) || 0)),
                   })
-                }
+                }}
+                onBlur={() => {
+                  setWidgetSessionTtlInput(String(config.widget_session_ttl_hours ?? 0))
+                }}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 -mt-4">
                 {t('customerAgents.widgetSessionHint')}

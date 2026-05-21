@@ -8,7 +8,6 @@ import {
   Globe,
   Layers,
   Github,
-  ArrowRight,
   Sparkles,
   Zap,
   Code2,
@@ -28,23 +27,7 @@ const featureKeys = [
 ] as const
 
 export function LandingPage() {
-  const { t, i18n } = useTranslation()
-  const locale = i18n.language?.startsWith('zh') ? 'zh' : 'en'
-  const heroPreview = `/landing/mchat.home.zone.${locale}.png`
-  const previewCards = [
-    {
-      title: t('landing.previewCardConversations'),
-      src: `/landing/mchat.conversations.${locale}.png`,
-    },
-    {
-      title: t('landing.previewCardKnowledge'),
-      src: `/landing/mchat.knowledge.${locale}.png`,
-    },
-    {
-      title: t('landing.previewCardWidget'),
-      src: `/landing/mchat.widget.${locale}.png`,
-    },
-  ]
+  const { t } = useTranslation()
 
   return (
     <div className="min-h-screen bg-[#fafbfc] dark:bg-gray-950 text-gray-900 dark:text-gray-100">
@@ -153,107 +136,6 @@ export function LandingPage() {
                 <p className="text-xs sm:text-sm text-gray-500 mt-1">{t(s.k)}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-18 sm:py-24">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 grid lg:grid-cols-[0.95fr_1.25fr] gap-8 items-start">
-          <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 text-xs font-medium">
-              <Globe className="w-3.5 h-3.5" />
-              {t('landing.previewBadge')}
-            </div>
-            <div>
-              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">{t('landing.previewTitle')}</h2>
-              <p className="mt-4 text-base sm:text-lg text-gray-600 dark:text-gray-400 leading-relaxed">
-                {t('landing.previewSubtitle')}
-              </p>
-            </div>
-            <div className="space-y-3">
-              {[
-                t('landing.previewPoint1'),
-                t('landing.previewPoint2'),
-                t('landing.previewPoint3'),
-              ].map((point) => (
-                <div
-                  key={point}
-                  className="flex items-start gap-3 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3"
-                >
-                  <div className="mt-0.5 w-2.5 h-2.5 rounded-full bg-primary-500 shrink-0" />
-                  <p className="text-sm sm:text-base text-gray-700 dark:text-gray-300">{point}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-3xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <h3 className="text-lg font-semibold">{t('landing.liveSitesTitle')}</h3>
-                <a
-                  href={GITHUB_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
-                >
-                  {t('landing.ctaGithub')}
-                </a>
-              </div>
-              <div className="mt-4 grid sm:grid-cols-2 gap-4">
-                <a
-                  href="http://mchat.chat"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-4 bg-gray-50/80 dark:bg-gray-800/40 hover:border-primary-400 transition-colors"
-                >
-                  <p className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('landing.liveSiteEnLabel')}
-                  </p>
-                  <p className="mt-2 text-base font-semibold">mchat.chat</p>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('landing.liveSiteEnDesc')}
-                  </p>
-                </a>
-                <a
-                  href="https://mchat.9235.net"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-4 bg-gray-50/80 dark:bg-gray-800/40 hover:border-primary-400 transition-colors"
-                >
-                  <p className="text-xs uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                    {t('landing.liveSiteZhLabel')}
-                  </p>
-                  <p className="mt-2 text-base font-semibold">mchat.9235.net</p>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('landing.liveSiteZhDesc')}
-                  </p>
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl shadow-gray-900/5 dark:shadow-black/20">
-            <div className="border-b border-gray-200 dark:border-gray-700 px-5 py-4 bg-gray-50/80 dark:bg-gray-900/80">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t('landing.previewFrameTitle')}</p>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('landing.previewFrameDesc')}</p>
-            </div>
-            <div className="p-4 sm:p-5 bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900">
-              <img
-                src={heroPreview}
-                alt={t('landing.previewMainAlt')}
-                className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg"
-              />
-              <div className="mt-4 grid sm:grid-cols-3 gap-3">
-                {previewCards.map((card) => (
-                  <div
-                    key={card.title}
-                    className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 overflow-hidden"
-                  >
-                    <img src={card.src} alt={card.title} className="w-full aspect-[4/3] object-cover" />
-                    <div className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{card.title}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </section>

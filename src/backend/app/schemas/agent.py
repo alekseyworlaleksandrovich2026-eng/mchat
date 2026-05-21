@@ -56,7 +56,7 @@ class AIConfigCreate(BaseModel):
     api_base: str | None = Field(None, max_length=500)
     system_prompt: str | None = None
     temperature: float = Field(0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(2048, ge=1, le=131072)
+    max_tokens: int = Field(2048, ge=1)
     is_default: bool = False
 
 
@@ -69,7 +69,7 @@ class AIConfigUpdate(BaseModel):
     api_base: str | None = Field(None, max_length=500)
     system_prompt: str | None = None
     temperature: float | None = Field(None, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(None, ge=1, le=131072)
+    max_tokens: int | None = Field(None, ge=1)
     is_default: bool | None = None
 
 
