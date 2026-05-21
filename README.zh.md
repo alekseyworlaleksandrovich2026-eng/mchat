@@ -38,6 +38,10 @@ MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流
 
 [![Widget 演示](docs/images/mchat.widget.zh.png)](docs/images/mchat.widget.zh.png)
 
+### Widget 聊天界面
+
+[![Widget 聊天界面](docs/images/mchat.chat.zh.png)](docs/images/mchat.chat.zh.png)
+
 ## 特性
 
 - **Bot 引擎** — 流式 LLM 推理与工具调用，支持 OpenAI、Anthropic、Google、DeepSeek、Ollama、Groq 等

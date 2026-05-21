@@ -38,6 +38,10 @@ Click any screenshot to open the full image.
 
 [![Widget demo](docs/images/mchat.widget.en.png)](docs/images/mchat.widget.en.png)
 
+### Widget chat panel
+
+[![Widget chat panel](docs/images/mchat.chat.en.png)](docs/images/mchat.chat.en.png)
+
 ## Features
 
 - **Bot engine** — Streaming LLM inference + tool calling; OpenAI, Anthropic, Google, DeepSeek, Ollama, Groq, and more
