@@ -99,23 +99,23 @@ export function Widget({
 
   const [isMinimized, setIsMinimized] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
-  const [widgetHeight, setWidgetHeight] = useState<number | null>(null)
-  const resizeRef = useRef<{ startY: number; startH: number } | null>(null)
+  const [widgetWidth, setWidgetWidth] = useState<number | null>(null)
+  const resizeRef = useRef<{ startX: number; startW: number; edge: 'left' | 'right' } | null>(null)
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  const handleResizeStart = useCallback((e: React.MouseEvent, edge: 'left' | 'right') => {
     e.preventDefault()
     e.stopPropagation()
-    const panel = (e.currentTarget as HTMLElement).closest('[data-widget-panel]')
+    const panel = (e.currentTarget as HTMLElement).closest('[data-widget-panel]') as HTMLElement | null
     if (!panel) return
-    const startY = e.clientY
-    const startH = panel.getBoundingClientRect().height
-    resizeRef.current = { startY, startH }
+    const rect = panel.getBoundingClientRect()
+    resizeRef.current = { startX: e.clientX, startW: rect.width, edge }
 
     const onMove = (ev: MouseEvent) => {
       if (!resizeRef.current) return
-      const dy = resizeRef.current.startY - ev.clientY
-      const newH = Math.max(320, Math.min(900, resizeRef.current.startH + dy))
-      setWidgetHeight(newH)
+      const dx = ev.clientX - resizeRef.current.startX
+      const delta = resizeRef.current.edge === 'right' ? dx : -dx
+      const newW = Math.max(300, Math.min(window.innerWidth - 32, resizeRef.current.startW + delta))
+      setWidgetWidth(newW)
     }
     const onUp = () => {
       resizeRef.current = null
@@ -275,10 +275,13 @@ export function Widget({
               : cn(
                   'bottom-24 rounded-2xl',
                   resolved.position === 'right' ? 'right-4' : 'left-4',
-                  'w-[min(calc(100vw-2rem),440px)]',
                 ),
           )}
-          style={!isExpanded && widgetHeight ? { height: widgetHeight } : isExpanded ? undefined : { height: 'min(80vh,720px)' }}
+          style={
+            !isExpanded
+              ? { width: widgetWidth || 'min(calc(100vw - 2rem), 440px)', height: 'min(80vh, 720px)' }
+              : undefined
+          }
         >
           <div
             className="shrink-0 flex items-center justify-between px-4 py-3 text-white"
@@ -335,14 +338,22 @@ export function Widget({
           </div>
           {!isExpanded && (
             <div
-              onMouseDown={handleResizeStart}
-              className="shrink-0 h-2 bg-transparent hover:bg-gray-200 dark:hover:bg-gray-600 cursor-ns-resize flex items-center justify-center group transition-colors"
+              onMouseDown={(e) => handleResizeStart(e, resolved.position === 'right' ? 'left' : 'right')}
+              className={cn(
+                'absolute top-0 bottom-0 w-2 -mt-[1px] -mb-[1px] cursor-ew-resize flex items-center group z-10',
+                resolved.position === 'right' ? '-left-[5px] rounded-l-xl' : '-right-[5px] rounded-r-xl',
+              )}
               title="Drag to resize"
             >
-              <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="w-1 h-1 rounded-full bg-gray-400" />
-                <span className="w-1 h-1 rounded-full bg-gray-400" />
-                <span className="w-1 h-1 rounded-full bg-gray-400" />
+              <div className={cn(
+                'opacity-0 group-hover:opacity-100 transition-opacity absolute top-1/2 -translate-y-1/2',
+                resolved.position === 'right' ? 'left-0.5' : 'right-0.5',
+              )}>
+                <div className="flex flex-col gap-1">
+                  <span className="w-1 h-1 rounded-full bg-gray-400" />
+                  <span className="w-1 h-1 rounded-full bg-gray-400" />
+                  <span className="w-1 h-1 rounded-full bg-gray-400" />
+                </div>
               </div>
             </div>
           )}
