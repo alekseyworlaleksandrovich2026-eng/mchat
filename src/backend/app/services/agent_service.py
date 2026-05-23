@@ -119,6 +119,7 @@ class AgentService:
         """Create a new customer config."""
         config = CustomerConfig(
             name=data.name,
+            short_code=(data.short_code.strip() if data.short_code else None),
             user_id=user_id,
             ai_config_id=data.ai_config_id,
             skill_ids=data.skill_ids,

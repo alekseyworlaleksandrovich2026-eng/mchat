@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
@@ -20,6 +20,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown events."""
     # Startup
     logger.info("Starting mchat backend server...")
+
+    if settings.jwt_secret == "change-this-to-a-random-secret-key":
+        logger.warning(
+            "⚠️  JWT_SECRET 为默认值，请在生产环境中修改为随机字符串！"
+        )
 
     # Initialize database
     await init_db()
@@ -92,10 +97,18 @@ def create_app() -> FastAPI:
     )
 
     # CORS middleware
+    cors_origins_raw = settings.cors_origins.strip()
+    if cors_origins_raw == "*":
+        allow_origins = ["*"]
+        allow_credentials = False
+    else:
+        allow_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+        allow_credentials = True
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=allow_origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -138,6 +151,33 @@ def create_app() -> FastAPI:
             "version": "1.0.0",
             "docs": "/docs",
         }
+
+    @app.get("/go/{short_code}")
+    async def redirect_by_short_code(short_code: str, request: Request):
+        """Redirect short code to widget page, e.g. /go/gdz → /widget.html?agentId=xxx"""
+        from urllib.parse import urlencode
+        from fastapi.responses import RedirectResponse, PlainTextResponse
+        from sqlalchemy import select
+        from app.core.database import async_session_factory
+        from app.models.customer import CustomerConfig
+        from app.services.widget_chat_service import ensure_widget_domain_allowed
+
+        sw_code = short_code.strip().lower()
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(CustomerConfig).where(
+                    CustomerConfig.short_code == sw_code,
+                    CustomerConfig.enabled == True,
+                )
+            )
+            config = result.scalar_one_or_none()
+            if config is None:
+                return PlainTextResponse("Not Found", status_code=404)
+
+            ensure_widget_domain_allowed(config, request)
+            params = {"agentId": config.id}
+            widget_url = f"/widget.html?{urlencode(params)}"
+            return RedirectResponse(url=widget_url, status_code=302)
 
     return app
 

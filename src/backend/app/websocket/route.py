@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
+from app.models.conversation import Conversation
 from app.models.user import User
 from app.websocket import ws_manager
 
@@ -30,6 +31,43 @@ async def _authenticate_ws(token: str | None) -> User | None:
             return result.scalar_one_or_none()
     except Exception:
         return None
+
+
+async def _check_subscribe_permission(
+    conversation_id: str,
+    user: User | None,
+    visitor_token: str | None,
+) -> tuple[bool, str]:
+    """Check if this client is allowed to subscribe to the given conversation.
+
+    Returns (allowed, error_code). Error codes:
+    - NOT_FOUND: conversation does not exist
+    - ACCESS_DENIED: user/visitor lacks permission
+    - MISSING_VISITOR_TOKEN: conversation requires visitor token but none provided
+    """
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(Conversation).where(Conversation.id == conversation_id)
+        )
+        conv = result.scalar_one_or_none()
+        if conv is None:
+            return False, "NOT_FOUND"
+
+        if user is not None:
+            if user.role == "admin":
+                return True, ""
+            if conv.user_id == user.id:
+                return True, ""
+            return False, "ACCESS_DENIED"
+
+        if conv.visitor_id and visitor_token and conv.visitor_id == visitor_token:
+            return True, ""
+        if conv.visitor_id and not visitor_token:
+            return False, "MISSING_VISITOR_TOKEN"
+        if conv.visitor_id and visitor_token and conv.visitor_id != visitor_token:
+            return False, "ACCESS_DENIED"
+
+        return True, ""
 
 
 @router.websocket("/ws")
@@ -74,10 +112,23 @@ async def websocket_endpoint(
             elif msg_type == "subscribe":
                 conv_id = data.get("conversation_id") or data.get("conversationId")
                 if conv_id:
-                    # Unsubscribe from previous
+                    visitor_token = data.get("visitor_token")
+                    allowed, error_code = await _check_subscribe_permission(
+                        conv_id, user, visitor_token
+                    )
+                    if not allowed:
+                        logger.warning(
+                            f"WebSocket subscribe denied for conversation {conv_id}: {error_code}"
+                        )
+                        await websocket.send_json({
+                            "type": "error",
+                            "code": error_code,
+                            "message": error_code.replace("_", " ").title(),
+                        })
+                        continue
+
                     if current_conversation:
                         ws_manager.disconnect(websocket)
-                    # Subscribe to new
                     ws_manager._conversation_connections[conv_id].append(websocket)
                     ws_manager._ws_conversation[websocket] = conv_id
                     current_conversation = conv_id
@@ -89,7 +140,6 @@ async def websocket_endpoint(
                 current_conversation = None
 
             elif msg_type == "chat:message":
-                # Process chat message via WebSocket (same as HTTP POST /api/chat/send)
                 conv_id = data.get("conversationId") or data.get("conversation_id")
                 content = data.get("content", "")
                 if conv_id and content:
@@ -106,8 +156,9 @@ async def websocket_endpoint(
                     except Exception as e:
                         logger.error(f"WebSocket chat:message error: {e}")
                         await websocket.send_json({
-                            "type": "chat:error",
-                            "message": f"发送失败: {e}",
+                            "type": "error",
+                            "code": "SEND_FAILED",
+                            "message": "Failed to send message",
                         })
 
     except WebSocketDisconnect:

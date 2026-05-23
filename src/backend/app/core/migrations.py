@@ -76,6 +76,23 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
             )
             applied.append("customer_configs.widget_session_ttl_hours")
+        if "short_code" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE customer_configs "
+                    "ADD COLUMN short_code VARCHAR(32) NULL"
+                )
+            )
+            try:
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX idx_customer_configs_short_code "
+                        "ON customer_configs(short_code)"
+                    )
+                )
+            except Exception:
+                pass
+            applied.append("customer_configs.short_code")
 
     if "conversations" in inspect(conn).get_table_names():
         cols = _column_names(conn, "conversations")
@@ -87,6 +104,24 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
             )
             applied.append("conversations.client_ip")
+        if "customer_id" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE conversations "
+                    "ADD COLUMN customer_id VARCHAR(36) NULL"
+                )
+            )
+            applied.append("conversations.customer_id")
+        # Create index separately (MySQL does not support IF NOT EXISTS)
+        try:
+            conn.execute(
+                text(
+                    "CREATE INDEX idx_conversations_customer_id "
+                    "ON conversations(customer_id)"
+                )
+            )
+        except Exception:
+            pass
 
     # Ensure any new tables from models exist
     Base.metadata.create_all(conn)

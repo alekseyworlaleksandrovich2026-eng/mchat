@@ -66,6 +66,7 @@ const AUTO_REPLY_CHANNEL_VALUES = ['widget', 'wechat', 'admin'] as const
 interface CustomerServiceConfig {
   id: string
   name: string
+  short_code: string | null
   user_id?: string
   ai_config_id: string | null
   skill_ids: string[]
@@ -137,6 +138,7 @@ function normalizeCustomerConfig(
   return {
     id: String(raw?.id || ''),
     name: String(raw?.name || i18n.t('customerAgents.defaultConfigName')),
+    short_code: raw?.short_code || null,
     user_id: raw?.user_id,
     ai_config_id: raw?.ai_config_id || null,
     skill_ids: Array.isArray(raw?.skill_ids) ? raw.skill_ids.filter(Boolean).map(String) : [],
@@ -332,6 +334,7 @@ export function CustomerConfig() {
       try {
         const created = await api.post<CustomerServiceConfig>('/agents/customer-configs', {
           name: config.name,
+          short_code: config.short_code || undefined,
           ai_config_id: config.ai_config_id,
           skill_ids: config.skill_ids,
           knowledge_base_ids: config.knowledge_base_ids,
@@ -359,6 +362,7 @@ export function CustomerConfig() {
     try {
       const updated = await api.put<CustomerServiceConfig>(`/agents/customer-configs/${selectedId}`, {
         name: config.name,
+        short_code: config.short_code || undefined,
         ai_config_id: config.ai_config_id,
         skill_ids: config.skill_ids,
         knowledge_base_ids: config.knowledge_base_ids,
@@ -602,6 +606,21 @@ export function CustomerConfig() {
               placeholder={t('customerAgents.configNamePlaceholder')}
               className="w-48"
             />
+            <Input
+              label=""
+              value={config.short_code || ''}
+              onChange={(e: any) => {
+                const v = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                setConfig({ ...config, short_code: v || null })
+              }}
+              placeholder="short code"
+              className="w-32 font-mono text-sm"
+            />
+            {config.short_code && (
+              <span className="text-xs text-gray-400 whitespace-nowrap">
+                → {window.location.origin}/go/{config.short_code}
+              </span>
+            )}
           </div>
           <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
         </CardHeader>
@@ -625,7 +644,7 @@ export function CustomerConfig() {
                   })
                 }}
                 onBlur={() => {
-                  setWidgetSessionTtlInput(String(config.widget_session_ttl_hours ?? 0))
+    setWidgetSessionTtlInput(String(config.widget_session_ttl_hours ?? 24))
                 }}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 -mt-4">

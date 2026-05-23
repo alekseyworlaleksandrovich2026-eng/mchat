@@ -24,6 +24,10 @@ export default defineConfig({
         target: 'ws://localhost:3001',
         ws: true,
       },
+      '/go': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
   build: {
@@ -32,6 +36,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         widget: path.resolve(__dirname, 'widget.html'),
+        'wx-mini': path.resolve(__dirname, 'wx-mini.html'),
       },
     },
   },

@@ -22,6 +22,9 @@ class Conversation(Base):
     ai_config_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("ai_configs.id"), nullable=True
     )
+    customer_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("customer_configs.id"), nullable=True, index=True
+    )
     visitor_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True, index=True
     )

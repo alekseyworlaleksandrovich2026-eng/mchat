@@ -22,13 +22,13 @@ function conversationStorageKey(scope: string) {
 /** Stable per browser tab; cleared when tab closes — visitors do not share sessions. */
 function getOrCreateVisitorToken(scope: string): string {
   const key = visitorStorageKey(scope)
-  let token = sessionStorage.getItem(key)
+  let token = localStorage.getItem(key)
   if (!token) {
     token =
       typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `v_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    sessionStorage.setItem(key, token)
+    localStorage.setItem(key, token)
   }
   return token
 }
@@ -131,7 +131,7 @@ export function useWidgetChat(
     if (!agentId) return
 
     const visitorToken = getOrCreateVisitorToken(scope)
-    const convId = sessionStorage.getItem(conversationStorageKey(scope))
+    const convId = localStorage.getItem(conversationStorageKey(scope))
 
     if (!convId) {
       setMessages([welcomeOnlyMessage(welcomeMessage)])
@@ -147,7 +147,7 @@ export function useWidgetChat(
       )
       if (!res.ok) {
         if (res.status === 404 || res.status === 403) {
-          sessionStorage.removeItem(conversationStorageKey(scope))
+          localStorage.removeItem(conversationStorageKey(scope))
           setMessages([welcomeOnlyMessage(welcomeMessage)])
           return
         }
@@ -223,7 +223,7 @@ export function useWidgetChat(
       const tempId = `user-${Date.now()}`
       const userMessage: Message = {
         id: tempId,
-        conversation_id: sessionStorage.getItem(conversationStorageKey(scope)) || '',
+        conversation_id: localStorage.getItem(conversationStorageKey(scope)) || '',
         role: 'user',
         content: text,
         content_type: file?.type.startsWith('image/') ? 'image' : file ? 'file' : 'text',
@@ -250,7 +250,7 @@ export function useWidgetChat(
       setStreamingContent('')
       setError(null)
 
-      const convId = sessionStorage.getItem(conversationStorageKey(scope))
+      const convId = localStorage.getItem(conversationStorageKey(scope))
 
       try {
         let result: {
@@ -333,7 +333,7 @@ export function useWidgetChat(
         if (previewUrl) URL.revokeObjectURL(previewUrl)
 
         if (result.conversationId) {
-          sessionStorage.setItem(
+          localStorage.setItem(
             conversationStorageKey(scope),
             result.conversationId,
           )

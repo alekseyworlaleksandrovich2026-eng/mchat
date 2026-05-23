@@ -95,6 +95,22 @@ class AIConfigResponse(BaseModel):
 class CustomerConfigCreate(BaseModel):
     """Request body for creating a customer config."""
     name: str = Field(..., min_length=1, max_length=200)
+    short_code: str | None = Field(
+        None, max_length=32,
+        description="Url-safe short alias, e.g. 'gdz' → /go/gdz"
+    )
+
+    @field_validator("short_code", mode="before")
+    @classmethod
+    def normalize_short_code(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned or cleaned in ("none", "null"):
+            return None
+        if not cleaned[0].isalnum():
+            raise ValueError("Must start with a letter or digit")
+        return cleaned
     ai_config_id: str | None = None
     skill_ids: list[str] = Field(default_factory=list)
     knowledge_base_ids: list[str] = Field(default_factory=list)
@@ -139,6 +155,7 @@ class CustomerConfigResponse(BaseModel):
     """Customer config response schema."""
     id: str
     name: str
+    short_code: str | None = None
     user_id: str
     ai_config_id: str | None = None
     skill_ids: list[str] | None = None

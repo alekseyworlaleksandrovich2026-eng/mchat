@@ -52,7 +52,7 @@ def _session_expired(conversation: Conversation, ttl_hours: int) -> bool:
 
 def _visitor_matches(conversation: Conversation, visitor_token: str | None) -> bool:
     if not visitor_token:
-        return True
+        return False
     if not conversation.visitor_id:
         return True
     return conversation.visitor_id == visitor_token
@@ -73,9 +73,9 @@ def _can_resume_widget_conversation(
     ttl = getattr(customer, "widget_session_ttl_hours", 24) or 24
     if _session_expired(conversation, ttl):
         return False
-    if conversation.contact_info == widget_contact_info(customer_id):
+    if conversation.customer_id == customer_id:
         return True
-    if conversation.title and conversation.title == f"Widget: {customer.name}":
+    if conversation.contact_info == widget_contact_info(customer_id):
         return True
     return False
 
@@ -125,6 +125,7 @@ async def prepare_widget_chat(
         conversation = Conversation(
             id=str(uuid.uuid4()),
             visitor_id=vid,
+            customer_id=customer_id,
             client_ip=extract_client_ip(request),
             ai_config_id=customer.ai_config_id,
             title=f"Widget: {customer.name}",

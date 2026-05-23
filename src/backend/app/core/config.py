@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     admin_password: str = "admin123"
     show_bootstrap_credentials: bool = True
 
+    # CORS
+    cors_origins: str = "*"
+
     # Server
     server_host: str = "0.0.0.0"
     server_port: int = 3001

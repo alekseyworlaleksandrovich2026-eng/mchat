@@ -113,13 +113,39 @@ export function createMarkdownComponents(
       )
     },
     a({ href, children }) {
+      const isMpLink = href?.startsWith('#小程序://') || href?.includes('/mini-program?')
+      const handleMpLink = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (!isMpLink) return
+        e.preventDefault()
+        const url = href!
+        const isWechat = /MicroMessenger/i.test(navigator.userAgent)
+        if (isWechat || url.includes('/mini-program?')) {
+          window.location.href = url
+          return
+        }
+        if (typeof (window as any).wx?.miniProgram?.postMessage === 'function') {
+          ;(window as any).wx.miniProgram.postMessage({ data: { action: 'launchMiniProgram', url } })
+          return
+        }
+        window.location.href = url
+      }
       return (
         <a
           href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary-600 dark:text-primary-400 underline hover:no-underline"
+          onClick={handleMpLink}
+          target={isMpLink ? undefined : '_blank'}
+          rel={isMpLink ? undefined : 'noopener noreferrer'}
+          className={
+            isMpLink
+              ? 'inline-flex items-center gap-1 text-green-600 dark:text-green-400 underline hover:no-underline font-medium cursor-pointer'
+              : 'text-primary-600 dark:text-primary-400 underline hover:no-underline'
+          }
         >
+          {isMpLink && (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clipRule="evenodd" />
+            </svg>
+          )}
           {children}
         </a>
       )

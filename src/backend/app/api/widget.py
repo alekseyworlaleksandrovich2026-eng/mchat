@@ -40,9 +40,9 @@ def _conversation_belongs_to_customer(
         return False
     if not _visitor_matches(conversation, visitor_token):
         return False
-    if conversation.contact_info == widget_contact_info(customer_id):
+    if conversation.customer_id == customer_id:
         return True
-    if conversation.title and conversation.title == f"Widget: {customer.name}":
+    if conversation.contact_info == widget_contact_info(customer_id):
         return True
     return False
 
