@@ -244,7 +244,7 @@ export function Widget({
           className={cn(
             'fixed z-[9999] flex flex-col overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 widget-enter',
             isExpanded
-              ? 'inset-3 rounded-2xl'
+              ? 'inset-0 rounded-none'
               : cn(
                   'bottom-24 rounded-2xl',
                   resolved.position === 'right' ? 'right-4' : 'left-4',

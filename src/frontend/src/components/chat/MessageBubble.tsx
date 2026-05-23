@@ -81,25 +81,17 @@ export function MessageBubble({
   const knowledgeHitLabels = useMemo(() => {
     const seen = new Set<string>()
     const labels: string[] = []
-    let fallbackCount = 0
 
     for (const hit of knowledgeHits) {
       const rawTitle = String(hit.title || '').trim()
-      if (rawTitle && !/^chunk\s+\d+$/i.test(rawTitle)) {
-        if (seen.has(rawTitle)) continue
-        seen.add(rawTitle)
-        labels.push(rawTitle)
-      } else {
-        fallbackCount++
-      }
-    }
-
-    if (fallbackCount > 0 && !seen.has(t('chat.knowledgeHitFallback'))) {
-      labels.push(t('chat.knowledgeHitFallback'))
+      if (!rawTitle || /^chunk\s+\d+$/i.test(rawTitle)) continue
+      if (seen.has(rawTitle)) continue
+      seen.add(rawTitle)
+      labels.push(rawTitle)
     }
 
     return labels
-  }, [knowledgeHits, t])
+  }, [knowledgeHits])
   const imageAttachments = attachments
     .filter((a) => a.url && String(a.mime || '').startsWith('image/'))
     .map(withResolvedUrl)
