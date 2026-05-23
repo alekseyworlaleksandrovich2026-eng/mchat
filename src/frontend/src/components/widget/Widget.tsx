@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Minus, MessageCircle, Loader2, Maximize2, Minimize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -99,6 +99,32 @@ export function Widget({
 
   const [isMinimized, setIsMinimized] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [widgetHeight, setWidgetHeight] = useState<number | null>(null)
+  const resizeRef = useRef<{ startY: number; startH: number } | null>(null)
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const panel = (e.currentTarget as HTMLElement).closest('[data-widget-panel]')
+    if (!panel) return
+    const startY = e.clientY
+    const startH = panel.getBoundingClientRect().height
+    resizeRef.current = { startY, startH }
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return
+      const dy = resizeRef.current.startY - ev.clientY
+      const newH = Math.max(320, Math.min(900, resizeRef.current.startH + dy))
+      setWidgetHeight(newH)
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
 
   const postPanelResize = (expanded: boolean) => {
     if (!isIframe) return
@@ -241,6 +267,7 @@ export function Widget({
     <>
       {isOpen && !isMinimized && (
         <div
+          data-widget-panel
           className={cn(
             'fixed z-[9999] flex flex-col overflow-hidden shadow-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 widget-enter',
             isExpanded
@@ -248,9 +275,10 @@ export function Widget({
               : cn(
                   'bottom-24 rounded-2xl',
                   resolved.position === 'right' ? 'right-4' : 'left-4',
-                  'w-[min(calc(100vw-2rem),440px)] h-[min(80vh,720px)]',
+                  'w-[min(calc(100vw-2rem),440px)]',
                 ),
           )}
+          style={!isExpanded && widgetHeight ? { height: widgetHeight } : isExpanded ? undefined : { height: 'min(80vh,720px)' }}
         >
           <div
             className="shrink-0 flex items-center justify-between px-4 py-3 text-white"
@@ -305,6 +333,19 @@ export function Widget({
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
             {chatBody}
           </div>
+          {!isExpanded && (
+            <div
+              onMouseDown={handleResizeStart}
+              className="shrink-0 h-2 bg-transparent hover:bg-gray-200 dark:hover:bg-gray-600 cursor-ns-resize flex items-center justify-center group transition-colors"
+              title="Drag to resize"
+            >
+              <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="w-1 h-1 rounded-full bg-gray-400" />
+                <span className="w-1 h-1 rounded-full bg-gray-400" />
+                <span className="w-1 h-1 rounded-full bg-gray-400" />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
