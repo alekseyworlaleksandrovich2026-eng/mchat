@@ -81,17 +81,21 @@ export function MessageBubble({
   const knowledgeHitLabels = useMemo(() => {
     const seen = new Set<string>()
     const labels: string[] = []
+    let fallbackCount = 0
 
     for (const hit of knowledgeHits) {
       const rawTitle = String(hit.title || '').trim()
-      const label = rawTitle && !/^chunk\s+\d+$/i.test(rawTitle)
-        ? rawTitle
-        : t('chat.knowledgeHitFallback')
-      if (seen.has(label)) {
-        continue
+      if (rawTitle && !/^chunk\s+\d+$/i.test(rawTitle)) {
+        if (seen.has(rawTitle)) continue
+        seen.add(rawTitle)
+        labels.push(rawTitle)
+      } else {
+        fallbackCount++
       }
-      seen.add(label)
-      labels.push(label)
+    }
+
+    if (fallbackCount > 0 && !seen.has(t('chat.knowledgeHitFallback'))) {
+      labels.push(t('chat.knowledgeHitFallback'))
     }
 
     return labels
@@ -294,36 +298,34 @@ export function MessageBubble({
                 ))}
               </div>
             )}
-            {(knowledgeHits.length > 0 || autoReplyRuleHits.length > 0) && (
+            {knowledgeHitLabels.length > 0 && (
               <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/20 px-3 py-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
-                {knowledgeHitLabels.length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.knowledgeHits')}</p>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {knowledgeHitLabels.map((label, index) => (
-                        <span
-                          key={`${label}-${index}`}
-                          className="rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5"
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {knowledgeHitLabels.length > 1 && (
+                  <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.knowledgeHits')}</p>
                 )}
-                {autoReplyRuleHits.length > 0 && (
-                  <div>
-                    <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.autoReplyHits')}</p>
-                    <div className="flex flex-col gap-1 mt-1">
-                      {autoReplyRuleHits.map((hit, index) => (
-                        <span key={`${hit.rule_id || hit.rule_name}-${index}`}>
-                          {hit.rule_name || t('chat.autoReplyHitFallback')}
-                          {hit.asset_name ? ` · ${hit.asset_name}` : ''}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-1">
+                  {knowledgeHitLabels.map((label, index) => (
+                    <span
+                      key={`${label}-${index}`}
+                      className="rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2 py-0.5"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {autoReplyRuleHits.length > 0 && (
+              <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/20 px-3 py-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
+                <p className="font-medium text-gray-700 dark:text-gray-200">{t('chat.autoReplyHits')}</p>
+                <div className="flex flex-col gap-1 mt-1">
+                  {autoReplyRuleHits.map((hit, index) => (
+                    <span key={`${hit.rule_id || hit.rule_name}-${index}`}>
+                      {hit.rule_name || t('chat.autoReplyHitFallback')}
+                      {hit.asset_name ? ` · ${hit.asset_name}` : ''}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
             {isStreaming && (
