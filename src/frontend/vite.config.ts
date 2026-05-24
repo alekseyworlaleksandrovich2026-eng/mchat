@@ -38,6 +38,13 @@ export default defineConfig({
         widget: path.resolve(__dirname, 'widget.html'),
         'wx-mini': path.resolve(__dirname, 'wx-mini.html'),
       },
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          markdown: ['react-markdown', 'remark-gfm', 'react-syntax-highlighter'],
+        },
+      },
     },
   },
 })

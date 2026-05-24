@@ -24,6 +24,7 @@ import api from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Spinner } from '@/components/ui/Spinner'
 import { formatDate } from '@/lib/utils'
 
 interface DashboardStats {
@@ -172,7 +173,7 @@ export function AdminDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="lg" />
       </div>
     )
   }

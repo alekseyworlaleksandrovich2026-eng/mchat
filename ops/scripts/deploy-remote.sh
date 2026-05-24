@@ -69,10 +69,19 @@ fi
 echo "==> Fix frontend dist permissions on server"
 ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist 2>/dev/null || true"
 
+if [ -d "$PROJECT_DIR/skills/mchat-help" ]; then
+  echo "==> Sync skills/mchat-help (other server skills untouched)"
+  ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/skills/mchat-help"
+  rsync -avz \
+    "$PROJECT_DIR/skills/mchat-help/" \
+    "${REMOTE}:${REMOTE_DIR}/skills/mchat-help/"
+fi
+
 echo "==> Remote setup (pip, db migrate, restart services)"
 ssh "$REMOTE" "chmod +x ${REMOTE_DIR}/ops/deploy/remote-setup.sh && bash ${REMOTE_DIR}/ops/deploy/remote-setup.sh"
 
 echo ""
 echo "Deployed to http://10.98.8.15:5180/admin"
 echo "API: http://10.98.8.15:3001/docs"
-echo "Database: migrate only (no data wipe). Existing .env on server unchanged."
+echo "Database: migrate only (no data wipe). Existing .env, uploads, and other skills unchanged."
+echo "Skill: skills/mchat-help synced; backend restart reloads skills from disk."

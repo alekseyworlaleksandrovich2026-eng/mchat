@@ -51,17 +51,22 @@ class RateLimiter:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """FastAPI middleware for rate limiting."""
+    """FastAPI middleware for rate limiting with per-path limits."""
 
     def __init__(
         self,
         app,
         rate: int = 60,
         per_seconds: int = 60,
+        path_limits: dict[str, tuple[int, int]] | None = None,
         exclude_paths: list[str] | None = None,
     ) -> None:
         super().__init__(app)
-        self.limiter = RateLimiter(rate=rate, per_seconds=per_seconds)
+        self.default_limiter = RateLimiter(rate=rate, per_seconds=per_seconds)
+        self.path_limits: dict[str, RateLimiter] = {}
+        if path_limits:
+            for path, (r, s) in path_limits.items():
+                self.path_limits[path] = RateLimiter(rate=r, per_seconds=s)
         self.exclude_paths = exclude_paths or [
             "/docs",
             "/openapi.json",
@@ -69,18 +74,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/api/health",
         ]
 
+    def _get_client_key(self, request: Request) -> str:
+        """Derive a rate-limit key: client IP for unauthenticated, user+IP for auth."""
+        client_ip = request.client.host if request.client else "unknown"
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header:
+            return f"{client_ip}:token"
+        return client_ip
+
     async def dispatch(self, request: Request, call_next) -> Response:
         # Skip excluded paths
         for path in self.exclude_paths:
             if request.url.path.startswith(path):
                 return await call_next(request)
 
-        # Use client IP or auth token as key
-        client_ip = request.client.host if request.client else "unknown"
-        auth_header = request.headers.get("Authorization", "")
-        key = auth_header if auth_header else client_ip
+        key = self._get_client_key(request)
 
-        if not self.limiter.is_allowed(key):
+        # Check per-path limits first (stricter), then default
+        limiter = self.default_limiter
+        for path_prefix, path_limiter in self.path_limits.items():
+            if request.url.path.startswith(path_prefix):
+                limiter = path_limiter
+                break
+
+        if not limiter.is_allowed(key):
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Too many requests. Please try again later."},

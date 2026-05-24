@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Tabs, TabPanel } from '@/components/ui/Tabs'
 import { Select } from '@/components/ui/Select'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface SkillOption {
   id: string
@@ -559,7 +560,7 @@ export function CustomerConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="md" />
       </div>
     )
   }

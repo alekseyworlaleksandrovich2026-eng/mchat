@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/Switch'
 import { Tabs, TabPanel } from '@/components/ui/Tabs'
 import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import {
   applyProviderDefaults,
   getDefaultModel,
@@ -201,7 +202,7 @@ export function AgentConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="md" />
       </div>
     )
   }

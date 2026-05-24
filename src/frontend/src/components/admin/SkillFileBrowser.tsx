@@ -7,6 +7,7 @@ import api from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface SkillFile {
   path: string
@@ -141,7 +142,7 @@ export function SkillFileBrowser({ skillId, skillName, open, onClose }: Props) {
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 border-3 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <Spinner size="sm" />
             </div>
           ) : files.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">

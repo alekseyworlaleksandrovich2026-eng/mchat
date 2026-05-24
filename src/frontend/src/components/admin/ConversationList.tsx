@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/Select'
 import { Dialog } from '@/components/ui/Dialog'
 import { formatDate, parseDate, truncate } from '@/lib/utils'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { MessageBubble } from '@/components/chat/MessageBubble'
 import { normalizeMessageMedia } from '@/lib/mediaUrl'
 
@@ -188,7 +189,7 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="md" />
       </div>
     )
   }
@@ -452,7 +453,7 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
 
           {historyLoading ? (
             <div className="flex items-center justify-center py-10">
-              <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <Spinner size="md" />
             </div>
           ) : historyMessages.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">

@@ -5,6 +5,7 @@ import { Menu } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { useAuthStore } from '@/stores/auth'
 import { ToastContainer } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
 
 interface AdminLayoutProps {
@@ -55,7 +56,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+          <Spinner size="lg" />
           <p className="text-sm text-gray-500">{t('common.loading')}</p>
         </div>
       </div>

@@ -2,7 +2,19 @@
 
 import asyncio
 import os
+import sys
 from collections.abc import AsyncGenerator
+from pathlib import Path
+
+# Ensure project root is on sys.path so tests.* imports work
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# Also ensure backend src is importable
+_backend_src = _project_root / "src" / "backend"
+if str(_backend_src) not in sys.path:
+    sys.path.insert(0, str(_backend_src))
 
 # Use in-memory SQLite for tests — must be set BEFORE app imports so the
 # application-level engine (database.py) also uses SQLite instead of MySQL.

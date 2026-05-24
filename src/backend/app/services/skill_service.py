@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import ipaddress
 import re
 import shutil
+import socket
 import zipfile
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -20,6 +22,44 @@ from app.models.skill import Skill
 from app.schemas.skill import SkillCatalogItem, SkillResponse, SkillUpdate
 from app.skill.loader import SkillLoader
 from app.skill.zip_utils import extract_skill_zip, read_skill_meta_from_zip
+
+
+_BLOCKED_CIDR = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("224.0.0.0/4"),
+    ipaddress.ip_network("240.0.0.0/4"),
+]
+
+
+def _is_url_safe(url: str) -> bool:
+    """Check that a URL doesn't point to internal/private IPs (SSRF protection)."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        if not host:
+            return False
+        addr = ipaddress.ip_address(host)
+        for net in _BLOCKED_CIDR:
+            if addr in net:
+                return False
+        return True
+    except ValueError:
+        try:
+            resolved = socket.getaddrinfo(host, None)
+            for _, _, _, _, sockaddr in resolved:
+                addr_str = sockaddr[0]
+                addr = ipaddress.ip_address(addr_str)
+                for net in _BLOCKED_CIDR:
+                    if addr in net:
+                        return False
+        except (OSError, ValueError):
+            return False
+        return True
 
 
 class SkillService:
@@ -377,6 +417,11 @@ class SkillService:
             if "html" in content_type or not self._looks_like_zip(content):
                 archive_url = self._extract_clawhub_download_url(resp.text, str(resp.url))
                 if archive_url and archive_url != url:
+                    if not _is_url_safe(archive_url):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="不允许访问内网地址或保留 IP 地址",
+                        )
                     archive_resp = await client.get(archive_url)
                     if archive_resp.status_code >= 400:
                         raise HTTPException(
@@ -404,6 +449,11 @@ class SkillService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="URL 必须以 http:// 或 https:// 开头",
+            )
+        if not _is_url_safe(target_url):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不允许访问内网地址或保留 IP 地址",
             )
 
         content = await self._download_archive(target_url)

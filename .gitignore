@@ -58,6 +58,8 @@ src/backend/logs/
 # Local skill packages (install via admin UI or copy manually)
 skills/*
 !skills/.gitkeep
+!skills/mchat-help/
+!skills/mchat-help/**
 src/backend/skills/*
 !src/backend/skills/.gitkeep
 

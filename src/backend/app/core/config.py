@@ -51,9 +51,11 @@ class Settings(BaseSettings):
     server_port: int = 3001
 
     # Rate limiting
-    rate_limit_enabled: bool = False
+    rate_limit_enabled: bool = True
     rate_limit_requests: int = 60
     rate_limit_period: int = 60
+    login_rate_limit: int = 5
+    login_rate_limit_period: int = 60
 
     # Skills
     skills_dir: str = "../../skills"

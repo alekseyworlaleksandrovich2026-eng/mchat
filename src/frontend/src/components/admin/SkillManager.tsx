@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
 import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { formatDate } from '@/lib/utils'
 import { SkillFileBrowser } from '@/components/admin/SkillFileBrowser'
 
@@ -239,7 +240,7 @@ export function SkillManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="md" />
       </div>
     )
   }

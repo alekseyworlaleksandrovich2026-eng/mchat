@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
 import { Switch } from '@/components/ui/Switch'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { formatDate } from '@/lib/utils'
 
 /** Shared form styles for RAG settings (dark-mode safe + compact). */
@@ -424,7 +425,7 @@ export function KnowledgeManager() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="md" />
       </div>
     )
   }

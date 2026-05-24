@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import '@/i18n'
 import { Widget } from './components/widget/Widget'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import './styles/index.css'
 
 const params = new URLSearchParams(window.location.search)
@@ -36,19 +37,21 @@ if (!rootEl) {
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <Widget
-      variant={isEmbed ? 'iframe' : 'page'}
-      defaultOpen={isEmbed}
-      agentId={config.agentId}
-      apiUrl={config.apiUrl}
-      wsUrl={config.wsUrl}
-      position={config.position}
-      primaryColor={config.primaryColor}
-      welcomeMessage={config.welcomeMessage}
-      botName={config.botName}
-      skillId={config.skillId}
-      launcherIcon={config.launcherIcon}
-      launcherText={config.launcherText}
-    />
+    <ErrorBoundary>
+      <Widget
+        variant={isEmbed ? 'iframe' : 'page'}
+        defaultOpen={isEmbed}
+        agentId={config.agentId}
+        apiUrl={config.apiUrl}
+        wsUrl={config.wsUrl}
+        position={config.position}
+        primaryColor={config.primaryColor}
+        welcomeMessage={config.welcomeMessage}
+        botName={config.botName}
+        skillId={config.skillId}
+        launcherIcon={config.launcherIcon}
+        launcherText={config.launcherText}
+      />
+    </ErrorBoundary>
   </React.StrictMode>,
 )

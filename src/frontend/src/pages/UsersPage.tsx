@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm'
 import { formatDate } from '@/lib/utils'
 import { ALL_PERMISSIONS, PERMISSION_LABELS, FALLBACK_ROLE_PERMISSIONS } from '@/lib/permissions'
@@ -221,7 +222,7 @@ export function UsersPage() {
         <CardContent>
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <Spinner size="md" />
             </div>
           ) : users.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">{t('users.empty')}</p>

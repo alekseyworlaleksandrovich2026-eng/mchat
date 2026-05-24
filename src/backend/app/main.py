@@ -4,13 +4,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.core.event_bus import event_bus
+from app.exceptions import MChatError
 from app.knowledge.milvus_client import milvus_client
 from app.utils.logger import setup_logger
 
@@ -140,6 +144,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Security headers middleware
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
     # Rate limiting (when enabled)
     if settings.rate_limit_enabled:
         from app.middleware.ratelimit import RateLimitMiddleware
@@ -147,6 +163,65 @@ def create_app() -> FastAPI:
             RateLimitMiddleware,
             rate=settings.rate_limit_requests,
             per_seconds=settings.rate_limit_period,
+            path_limits={
+                "/api/auth/login": (
+                    settings.login_rate_limit,
+                    settings.login_rate_limit_period,
+                ),
+                "/api/auth/register": (
+                    settings.login_rate_limit,
+                    settings.login_rate_limit_period,
+                ),
+            },
+        )
+
+    # Global exception handlers
+    @app.exception_handler(MChatError)
+    async def mchat_exception_handler(request: Request, exc: MChatError):
+        logger.warning(
+            "MChatError: {} (status={}) path={}",
+            exc.message, exc.status_code, request.url.path,
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message, "error": type(exc).__name__},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        logger.warning(
+            "RequestValidationError: {} errors path={}",
+            len(errors), request.url.path,
+        )
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "Request validation failed",
+                "errors": [
+                    {"loc": e.get("loc", []), "msg": e.get("msg", "")}
+                    for e in errors
+                ],
+            },
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.error(
+            "Unhandled exception on {} {}: {}",
+            request.method, request.url.path, str(exc),
+            exc_info=True,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
         )
 
     # Static files mount

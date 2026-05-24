@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/Switch'
 import { Tabs, TabPanel } from '@/components/ui/Tabs'
 import { Select } from '@/components/ui/Select'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 
 interface AppSettings {
   site_name: string
@@ -132,7 +133,7 @@ export function SettingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        <Spinner size="lg" />
       </div>
     )
   }

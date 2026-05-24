@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Switch } from '@/components/ui/Switch'
 import { toast } from '@/components/ui/Toast'
+import { Spinner } from '@/components/ui/Spinner'
 import { ALL_PERMISSIONS, PERMISSION_LABELS, FALLBACK_ROLE_PERMISSIONS } from '@/lib/permissions'
 
 export function RolesPage() {
@@ -131,7 +132,7 @@ export function RolesPage() {
         <CardContent>
           {!permsLoaded ? (
             <div className="flex justify-center py-4">
-              <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+              <Spinner size="sm" />
             </div>
           ) : (
             <div className="space-y-6">
