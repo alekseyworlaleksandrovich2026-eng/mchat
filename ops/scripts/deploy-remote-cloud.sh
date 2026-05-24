@@ -7,9 +7,29 @@ REMOTE="${1:-xiaoxiao@10.98.8.15}"
 REMOTE_DIR="/opt/xiaoxiao/mchat"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
-echo "==> Build frontend (local)"
+echo "==> Build frontend (Cloud edition)"
 cd "$PROJECT_DIR/src/frontend"
-npm run build
+INDEX_BAK="$(mktemp)"
+cp index.html "$INDEX_BAK"
+trap 'mv -f "$INDEX_BAK" index.html 2>/dev/null || true' EXIT
+cat > index.html <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MChat Cloud</title>
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main-portal.tsx"></script>
+  </body>
+</html>
+HTMLEOF
+VITE_MCHAT_EDITION=cloud npm run build:cloud
+mv -f "$INDEX_BAK" index.html
+trap - EXIT
 
 echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
 rsync -avz --delete \

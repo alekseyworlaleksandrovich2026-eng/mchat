@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { isCloudEdition } from '@/lib/edition'
 import { AdminLayout } from './components/layout/AdminLayout'
-import { UserLayout } from './components/layout/UserLayout'
 import { Spinner } from './components/ui/Spinner'
 import { DocumentTitle } from './components/common/DocumentTitle'
 
@@ -31,15 +30,6 @@ const HelpPage = lazyNamed(() => import('./pages/HelpPage'), 'HelpPage')
 const UsersPage = lazyNamed(() => import('./pages/UsersPage'), 'UsersPage')
 const RolesPage = lazyNamed(() => import('./pages/RolesPage'), 'RolesPage')
 const TemplateManagerPage = lazyNamed(() => import('./pages/admin/TemplateManagerPage'), 'TemplateManagerPage')
-
-// Portal pages (only used in Cloud mode)
-export const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'RegisterPage')
-export const PortalDashboard = lazyNamed(() => import('./pages/portal/DashboardPage'), 'DashboardPage')
-export const PortalTemplates = lazyNamed(() => import('./pages/portal/TemplatesPage'), 'TemplatesPage')
-export const PortalTemplateDetail = lazyNamed(() => import('./pages/portal/TemplateDetailPage'), 'TemplateDetailPage')
-export const PortalMyChannels = lazyNamed(() => import('./pages/portal/MyChannelsPage'), 'MyChannelsPage')
-export const PortalChannelDetail = lazyNamed(() => import('./pages/portal/ChannelDetailPage'), 'ChannelDetailPage')
-export const PortalChannelKnowledge = lazyNamed(() => import('./pages/portal/ChannelKnowledgePage'), 'ChannelKnowledgePage')
 
 export function PageSuspense({ children }: { children: React.ReactNode }) {
   return (
@@ -86,20 +76,5 @@ export function CoreRoutes() {
         <Route path="/showcase" element={<PageSuspense><SkillShowcasePage /></PageSuspense>} />
       </Routes>
     </>
-  )
-}
-
-export function PortalRoutes() {
-  return (
-    <Routes>
-      <Route path="/register" element={<PageSuspense><RegisterPage /></PageSuspense>} />
-      <Route path="/portal" element={<UserLayout><PageSuspense><PortalDashboard /></PageSuspense></UserLayout>} />
-      <Route path="/portal/dashboard" element={<UserLayout><PageSuspense><PortalDashboard /></PageSuspense></UserLayout>} />
-      <Route path="/portal/templates" element={<UserLayout><PageSuspense><PortalTemplates /></PageSuspense></UserLayout>} />
-      <Route path="/portal/templates/:id" element={<UserLayout><PageSuspense><PortalTemplateDetail /></PageSuspense></UserLayout>} />
-      <Route path="/portal/channels" element={<UserLayout><PageSuspense><PortalMyChannels /></PageSuspense></UserLayout>} />
-      <Route path="/portal/channels/:id" element={<UserLayout><PageSuspense><PortalChannelDetail /></PageSuspense></UserLayout>} />
-      <Route path="/portal/channels/:id/knowledge" element={<UserLayout><PageSuspense><PortalChannelKnowledge /></PageSuspense></UserLayout>} />
-    </Routes>
   )
 }
