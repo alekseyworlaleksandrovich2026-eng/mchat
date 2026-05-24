@@ -20,9 +20,19 @@ kill_port() {
   fi
 }
 
+cleanup() {
+  echo ""
+  echo "→ Restoring index.html (Core entry)"
+  if [ -f "$ROOT/src/frontend/index.html.bak" ]; then
+    mv "$ROOT/src/frontend/index.html.bak" "$ROOT/src/frontend/index.html"
+  fi
+}
+trap cleanup EXIT
+
 kill_port "$BACKEND_PORT"
 kill_port "$FRONTEND_PORT"
 
+# ---- Backend (Cloud: cloud.main:app) ----
 cd "$ROOT/src/backend"
 if [ ! -d venv ]; then
   echo "Missing venv. Run: make install"
@@ -50,10 +60,30 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.5
 done
 
+# ---- Frontend (swap index.html so SPA fallback loads Cloud app) ----
 cd "$ROOT/src/frontend"
+echo "→ Swapping index.html → Cloud entry (main-portal.tsx)"
+cp index.html index.html.bak
+cat > index.html <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MChat Cloud</title>
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main-portal.tsx"></script>
+  </body>
+</html>
+HTMLEOF
+
 echo "→ Starting frontend http://127.0.0.1:${FRONTEND_PORT}"
-echo "  Core (admin):     http://127.0.0.1:${FRONTEND_PORT}/"
-echo "  Cloud (portal):   http://127.0.0.1:${FRONTEND_PORT}/portal.html"
-echo "  Register:         http://127.0.0.1:${FRONTEND_PORT}/register"
-echo "  Login:            admin / admin123"
+echo "  Admin:     http://127.0.0.1:${FRONTEND_PORT}/admin"
+echo "  Portal:    http://127.0.0.1:${FRONTEND_PORT}/portal/dashboard"
+echo "  Templates: http://127.0.0.1:${FRONTEND_PORT}/portal/templates"
+echo "  Register:  http://127.0.0.1:${FRONTEND_PORT}/register"
+echo "  Login:     admin / admin123"
 exec npm run dev

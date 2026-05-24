@@ -17,6 +17,7 @@ import { useState } from 'react'
 
 const navItems = [
   { path: '/portal/dashboard', label: 'portal.dashboard', icon: LayoutDashboard },
+  { path: '/portal/conversations', label: 'nav.conversations', icon: MessageSquare },
   { path: '/portal/templates', label: 'portal.templates', icon: ShoppingBag },
   { path: '/portal/channels', label: 'portal.myChannels', icon: MessageSquare },
 ]
