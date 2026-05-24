@@ -236,6 +236,18 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
                 applied.append(f"messages.{col_name}")
 
+    # ---- channel_templates: new columns ----
+    if "channel_templates" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "channel_templates")
+        if "default_ai_config_id" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE channel_templates "
+                    "ADD COLUMN default_ai_config_id VARCHAR(36) NULL"
+                )
+            )
+            applied.append("channel_templates.default_ai_config_id")
+
     # document_chunks migration
     if "document_chunks" in inspect(conn).get_table_names():
         cols = _column_names(conn, "document_chunks")
