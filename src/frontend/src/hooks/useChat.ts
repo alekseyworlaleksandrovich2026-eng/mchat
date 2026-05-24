@@ -44,7 +44,6 @@ export function useChat(conversationId?: string) {
       if (data.type === 'chat:stream:end') {
         if (!data.conversation_id || data.conversation_id === conversationId) {
           const existingContent = useChatStore.getState().streamingContent
-          // Only add if we actually streamed content (avoid duplicates with existing messages)
           const exists = useChatStore.getState().messages.some(
             m => m.id === (data.id || '') && m.role === 'assistant'
           )
@@ -58,6 +57,9 @@ export function useChat(conversationId?: string) {
               created_at: new Date().toISOString(),
             }
             addMessage(fullMessage)
+          } else {
+            // Always end stream even if message already exists
+            endStream()
           }
         }
         return

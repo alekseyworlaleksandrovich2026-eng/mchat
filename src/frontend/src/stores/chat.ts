@@ -218,6 +218,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: state.messages.map((m) => (m.id === tempId ? persisted : m)),
           isStreaming: shouldStream,
         }))
+        // Safety timeout: end stream after 30s if no response received
+        if (shouldStream) {
+          setTimeout(() => {
+            const s = useChatStore.getState()
+            if (s.isStreaming && !s.streamingContent) {
+              s.endStream()
+            }
+          }, 30000)
+        }
       }
     } catch (apiErr: any) {
       if (previewUrl) URL.revokeObjectURL(previewUrl)
