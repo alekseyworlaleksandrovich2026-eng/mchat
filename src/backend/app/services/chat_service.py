@@ -11,7 +11,12 @@ from app.core.event_bus import event_bus
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.user import User
-from app.schemas.chat import ConversationResponse, MessageResponse
+from app.schemas.chat import (
+    ConversationResponse,
+    MessageResponse,
+    ModelCapabilitiesResponse,
+)
+from app.services.model_capabilities import model_capabilities
 from app.utils.outbound_assets import enrich_message_extra_data
 
 
@@ -104,26 +109,24 @@ class ChatService:
         # this message and update the conversation without lock contention.
         await self.db.commit()
 
-        # Increment usage counters for the associated channel
-        if user is not None:
+        # Increment usage only when conversation is bound to a specific channel
+        if user is not None and role == "user":
             from app.models.customer import CustomerConfig
-            customer_id = getattr(conversation, 'customer_id', None)
+
+            customer_id = getattr(conversation, "customer_id", None)
             if customer_id:
                 result = await self.db.execute(
-                    select(CustomerConfig).where(CustomerConfig.id == customer_id)
-                )
-            else:
-                # Fallback: increment the user's first active channel
-                result = await self.db.execute(
                     select(CustomerConfig).where(
+                        CustomerConfig.id == customer_id,
                         CustomerConfig.user_id == user.id,
-                        CustomerConfig.enabled == True,
-                    ).limit(1)
+                    )
                 )
-            config = result.scalar_one_or_none()
-            if config is not None:
-                config.usage_messages_month = (config.usage_messages_month or 0) + 1
-                await self.db.flush()
+                config = result.scalar_one_or_none()
+                if config is not None:
+                    config.usage_messages_month = (
+                        config.usage_messages_month or 0
+                    ) + 1
+                    await self.db.commit()
 
         # Only user messages should trigger the bot engine.
         if role == "user":
@@ -143,6 +146,7 @@ class ChatService:
         limit: int = 20,
         status: str | None = None,
         search: str | None = None,
+        customer_id: str | None = None,
     ) -> tuple[list[ConversationResponse], int]:
         """List conversations (optionally filtered by user)."""
         query = select(Conversation)
@@ -151,6 +155,10 @@ class ChatService:
         if user_id:
             query = query.where(Conversation.user_id == user_id)
             count_query = count_query.where(Conversation.user_id == user_id)
+
+        if customer_id:
+            query = query.where(Conversation.customer_id == customer_id)
+            count_query = count_query.where(Conversation.customer_id == customer_id)
 
         if status:
             query = query.where(Conversation.status == status)
@@ -191,10 +199,14 @@ class ChatService:
             )
             usernames = {row[0]: row[1] for row in user_result.all()}
 
-        return [
-            self._conversation_response_with_counts(conversation, counts, previews, usernames)
-            for conversation in conversations
-        ], total
+        items: list[ConversationResponse] = []
+        for conversation in conversations:
+            items.append(
+                await self._conversation_response_with_counts(
+                    conversation, counts, previews, usernames
+                )
+            )
+        return items, total
 
     def _conversation_search_filter(self, search: str):
         like = f"%{search}%"
@@ -277,7 +289,18 @@ class ChatService:
             return None
         counts = await self._message_counts_by_conversation([conversation.id])
         previews = await self._first_user_message_previews([conversation.id])
-        return self._conversation_response_with_counts(conversation, counts, previews)
+        response = await self._conversation_response_with_counts(
+            conversation, counts, previews
+        )
+        msg_result = await self.db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc(), Message.id.asc())
+        )
+        messages = [
+            MessageResponse.model_validate(m) for m in msg_result.scalars().all()
+        ]
+        return response.model_copy(update={"messages": messages})
 
     async def _message_counts_by_conversation(
         self, conversation_ids: list[str]
@@ -309,7 +332,44 @@ class ChatService:
             }
         return counts
 
-    def _conversation_response_with_counts(
+    async def _ai_capabilities_for_conversation(
+        self, conversation: Conversation
+    ) -> ModelCapabilitiesResponse | None:
+        from app.models.ai_config import AIConfig
+        from app.models.customer import CustomerConfig
+
+        ai_config_id = conversation.ai_config_id
+        if conversation.customer_id:
+            channel_result = await self.db.execute(
+                select(CustomerConfig).where(
+                    CustomerConfig.id == conversation.customer_id
+                )
+            )
+            channel = channel_result.scalar_one_or_none()
+            if channel is not None and channel.ai_config_id:
+                ai_config_id = channel.ai_config_id
+
+        cfg = None
+        if ai_config_id:
+            cfg_result = await self.db.execute(
+                select(AIConfig).where(AIConfig.id == ai_config_id)
+            )
+            cfg = cfg_result.scalar_one_or_none()
+        if cfg is None:
+            default_result = await self.db.execute(
+                select(AIConfig).where(AIConfig.is_default == True)
+            )
+            cfg = default_result.scalar_one_or_none()
+
+        if cfg is None:
+            return None
+        caps = model_capabilities(cfg.provider, cfg.model)
+        return ModelCapabilitiesResponse(
+            supports_attachments=caps.supports_attachments,
+            supports_vision=caps.supports_vision,
+        )
+
+    async def _conversation_response_with_counts(
         self,
         conversation: Conversation,
         counts: dict[str, dict[str, int]],
@@ -329,6 +389,9 @@ class ChatService:
                 payload["username"] = usernames.get(conversation.user_id)
         if getattr(conversation, 'customer_id', None):
             payload["customer_id"] = getattr(conversation, 'customer_id', None)
+        payload["ai_capabilities"] = await self._ai_capabilities_for_conversation(
+            conversation
+        )
         return ConversationResponse(**payload)
 
     async def _first_user_message_previews(
@@ -389,13 +452,35 @@ class ChatService:
         title: str | None = None,
         ai_config_id: str | None = None,
         visitor_id: str | None = None,
+        customer_id: str | None = None,
     ) -> ConversationResponse:
         """Create a new conversation for an authenticated user."""
         import uuid
+        from app.models.customer import CustomerConfig
+
+        resolved_customer_id = customer_id
+        resolved_ai_config_id = ai_config_id
+        if customer_id:
+            result = await self.db.execute(
+                select(CustomerConfig).where(
+                    CustomerConfig.id == customer_id,
+                    CustomerConfig.user_id == user_id,
+                    CustomerConfig.enabled == True,
+                )
+            )
+            channel = result.scalar_one_or_none()
+            if channel is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Channel not found",
+                )
+            resolved_ai_config_id = channel.ai_config_id or ai_config_id
+
         conversation = Conversation(
             id=str(uuid.uuid4()),
             user_id=user_id,
-            ai_config_id=ai_config_id,
+            customer_id=resolved_customer_id,
+            ai_config_id=resolved_ai_config_id,
             visitor_id=visitor_id,
             title=title or "New Chat",
             status="active",
@@ -404,6 +489,50 @@ class ChatService:
         await self.db.flush()
         await self.db.refresh(conversation)
         return ConversationResponse.model_validate(conversation)
+
+    async def get_or_resume_channel_conversation(
+        self,
+        user_id: str,
+        channel_id: str,
+        title: str | None = None,
+    ) -> ConversationResponse:
+        """Latest active conversation for this user's channel, or create a new one."""
+        from app.models.customer import CustomerConfig
+
+        channel_result = await self.db.execute(
+            select(CustomerConfig).where(
+                CustomerConfig.id == channel_id,
+                CustomerConfig.user_id == user_id,
+                CustomerConfig.enabled == True,
+            )
+        )
+        if channel_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Channel not found",
+            )
+
+        result = await self.db.execute(
+            select(Conversation)
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.customer_id == channel_id,
+                Conversation.status == "active",
+            )
+            .order_by(Conversation.updated_at.desc(), Conversation.created_at.desc())
+            .limit(1)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            loaded = await self.get_conversation(existing.id, user_id=user_id)
+            if loaded is not None:
+                return loaded
+
+        return await self.create_conversation(
+            user_id=user_id,
+            title=title,
+            customer_id=channel_id,
+        )
 
     async def close_conversation(
         self,

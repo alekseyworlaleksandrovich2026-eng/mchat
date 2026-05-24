@@ -76,3 +76,7 @@ coverage/
 tmp/
 temp/
 src/frontend/index.html.bak
+
+# Internal ops docs (local only, not committed)
+docs/core-cloud-split.zh.md
+docs/core-cloud-split.en.md

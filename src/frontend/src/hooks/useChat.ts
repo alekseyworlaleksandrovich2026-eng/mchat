@@ -15,9 +15,10 @@ export function useChat(conversationId?: string) {
     fetchMessages,
     sendMessage,
     createConversation,
-    addMessage,
     appendToStream,
+    finalizeStream,
     endStream,
+    syncMessagesFromServer,
     clearCurrentConversation,
     setError,
   } = useChatStore()
@@ -26,13 +27,11 @@ export function useChat(conversationId?: string) {
 
   const handleMessage = useCallback(
     (data: any) => {
-      // Handle subscribed confirmation
       if (data.type === 'subscribed') {
         subscribedRef.current = true
         return
       }
 
-      // Handle chat:stream (streaming AI tokens)
       if (data.type === 'chat:stream') {
         if (!data.conversation_id || data.conversation_id === conversationId) {
           appendToStream(data.content || '')
@@ -40,36 +39,30 @@ export function useChat(conversationId?: string) {
         return
       }
 
-      // Handle chat:stream:end (streaming complete)
       if (data.type === 'chat:stream:end') {
         if (!data.conversation_id || data.conversation_id === conversationId) {
-          const existingContent = useChatStore.getState().streamingContent
-          const exists = useChatStore.getState().messages.some(
-            m => m.id === (data.id || '') && m.role === 'assistant'
-          )
-          if (!exists && (existingContent || data.content)) {
-            const fullMessage: Message = {
-              id: data.id || `msg-${Date.now()}`,
-              conversation_id: data.conversation_id || conversationId || '',
-              role: 'assistant',
-              content: existingContent || data.content || '',
-              content_type: 'text',
-              created_at: new Date().toISOString(),
-            }
-            addMessage(fullMessage)
-          } else {
-            // Always end stream even if message already exists
-            endStream()
-          }
+          const messageId = data.id || data.message_id
+          const live = useChatStore.getState().streamingContent
+          finalizeStream({
+            id: messageId,
+            conversation_id: data.conversation_id || conversationId,
+            content: data.content || live,
+          })
         }
         return
       }
 
-      // Handle full messages (non-streaming) — skip if already have via streaming
       if (data.type === 'chat:message' || data.type === 'message') {
         const msg = data.message || data
-        // Skip assistant messages for this conversation (they come via streaming)
-        if (msg.role === 'assistant' && msg.conversation_id === conversationId) {
+        if (
+          msg.role === 'assistant' &&
+          (!msg.conversation_id || msg.conversation_id === conversationId)
+        ) {
+          finalizeStream({
+            id: msg.id,
+            conversation_id: msg.conversation_id || conversationId,
+            content: msg.content,
+          })
           return
         }
         const message: Message = {
@@ -81,28 +74,30 @@ export function useChat(conversationId?: string) {
           extra_data: msg.extra_data,
           created_at: msg.created_at || new Date().toISOString(),
         }
-        addMessage(message)
+        useChatStore.getState().addMessage(message)
         return
       }
 
-      // Handle errors
       if (data.type === 'chat:error') {
         setError(data.message || 'Error')
         endStream()
       }
     },
-    [conversationId, addMessage, appendToStream, endStream, setError],
+    [conversationId, appendToStream, finalizeStream, endStream, setError],
   )
 
   useEffect(() => {
     if (!conversationId) return
 
     subscribedRef.current = false
-
-    // Load existing messages
+    useChatStore.setState({
+      messages: [],
+      isStreaming: false,
+      streamingContent: '',
+      currentConversation: null,
+    })
     fetchMessages(conversationId)
 
-    // Connect and subscribe to this conversation
     const ws = getWsClient()
     ws.connect()
 
@@ -110,18 +105,16 @@ export function useChat(conversationId?: string) {
       ws.send({ type: 'subscribe', conversation_id: conversationId })
     }
 
-    // Send subscribe after a short delay (let WS connect)
-    const timer = setTimeout(doSubscribe, 300)
+    doSubscribe()
+    const timer = setTimeout(doSubscribe, 400)
 
-    // Re-subscribe on WebSocket reconnection
     const handleStatus = (status: string) => {
       if (status === 'connected') {
         subscribedRef.current = false
-        setTimeout(doSubscribe, 200)
+        doSubscribe()
       }
     }
     const unsubStatus = ws.on('status', handleStatus)
-
     const unsubscribe = ws.on('message', handleMessage)
 
     return () => {
@@ -133,7 +126,36 @@ export function useChat(conversationId?: string) {
     }
   }, [conversationId, fetchMessages, handleMessage])
 
+  // Fallback when stream:end is missed — poll lightly to avoid hammering the API
+  useEffect(() => {
+    if (!conversationId || !isStreaming) return
+    let polls = 0
+    const maxPolls = 4
+    const interval = window.setInterval(() => {
+      polls += 1
+      if (polls > maxPolls) {
+        clearInterval(interval)
+        return
+      }
+      void syncMessagesFromServer(conversationId)
+    }, 8000)
+    const first = window.setTimeout(() => {
+      void syncMessagesFromServer(conversationId)
+    }, 5000)
+    return () => {
+      clearInterval(interval)
+      clearTimeout(first)
+    }
+  }, [conversationId, isStreaming, syncMessagesFromServer])
 
+  // After stream completes, sync once from server (authoritative ids + content)
+  useEffect(() => {
+    if (!conversationId || isStreaming) return
+    const timer = window.setTimeout(() => {
+      void syncMessagesFromServer(conversationId)
+    }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [conversationId, isStreaming, syncMessagesFromServer])
 
   return {
     conversations,

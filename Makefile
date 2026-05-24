@@ -7,7 +7,7 @@ install: ## Install all dependencies
 	cd src/backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install pytest pytest-asyncio pytest-cov httpx aiosqlite
 	cd src/frontend && npm install
 
-dev: ## Start dev servers (kills old 3001/5173, then backend + frontend)
+dev: ## Start Core dev servers (app.main — no portal/templates API)
 	@bash ops/scripts/dev-start.sh
 
 dev-stop: ## Stop processes on ports 3001 and 5173

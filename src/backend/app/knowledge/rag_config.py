@@ -26,7 +26,11 @@ class EmbeddingConfig(BaseModel):
 
     def resolved_api_base(self) -> str | None:
         base = (self.api_base or settings.embedding_api_base or "").strip()
-        return base or None
+        if base:
+            return base.rstrip("/")
+        if self.resolved_provider() == "ollama":
+            return "http://localhost:11434"
+        return None
 
     def resolved_dimension(self) -> int:
         return int(self.dimension or settings.embedding_dimension)

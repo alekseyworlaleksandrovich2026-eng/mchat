@@ -161,6 +161,8 @@ class RagService:
                 settings=settings,
             )
         elif mode == "vector":
+            if not milvus_client._connected:
+                return []
             return await self._vector_search(
                 query=query,
                 user_id=user_id,
@@ -169,6 +171,14 @@ class RagService:
                 top_k=top_k,
             )
         else:
+            if not milvus_client._connected:
+                return await self._keyword_chunk_search(
+                    query=query,
+                    user_id=user_id,
+                    knowledge_base_id=knowledge_base_id,
+                    top_k=top_k,
+                    settings=settings,
+                )
             vector_hits = await self._vector_search(
                 query=query,
                 user_id=user_id,
@@ -199,6 +209,8 @@ class RagService:
             return []
 
         embedder = embedder_for_config(settings.embedding_config())
+        if not embedder.is_configured():
+            return []
         query_embedding = await embedder.embed_query(query)
         hits = await milvus_client.search(
             query_embedding=query_embedding,
@@ -350,7 +362,7 @@ class RagService:
                 if user_id:
                     stmt = stmt.where(KnowledgeBase.user_id == user_id)
 
-                rows = await db.execute(stmt)
+                rows = await db.execute(stmt.limit(2500))
                 scored: list[tuple[float, RankedChunk]] = []
 
                 for chunk_row, title in rows.all():

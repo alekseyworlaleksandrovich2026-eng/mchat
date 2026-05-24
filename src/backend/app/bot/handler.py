@@ -4,13 +4,17 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.bot.engine import process_message
+from app.services.llm_credentials import ensure_ai_config_api_key, is_usable_api_key
 from app.core.database import async_session_factory
 from app.core.event_bus import event_bus
 from app.models.ai_config import AIConfig
 from app.models.conversation import Conversation
+from app.models.customer import CustomerConfig
 from app.models.message import Message
 from app.models.user import User
 from app.websocket import ws_manager
+
+_bot_engine_initialized = False
 
 
 async def on_message_created(
@@ -37,13 +41,36 @@ async def on_message_created(
                 logger.warning(f"Conversation {cov_id} not found")
                 return
 
-            # Load AI config (use conversation's ai_config_id or default)
-            ai_config = None
-            if conv.ai_config_id:
-                cfg_result = await db.execute(
-                    select(AIConfig).where(AIConfig.id == conv.ai_config_id)
+            customer_config = None
+            if conv.customer_id:
+                cust_result = await db.execute(
+                    select(CustomerConfig).where(
+                        CustomerConfig.id == conv.customer_id
+                    )
                 )
-                ai_config = cfg_result.scalar_one_or_none()
+                customer_config = cust_result.scalar_one_or_none()
+
+            async def _load_ai_config(config_id: str | None) -> AIConfig | None:
+                if not config_id:
+                    return None
+                cfg_result = await db.execute(
+                    select(AIConfig).where(AIConfig.id == config_id)
+                )
+                return cfg_result.scalar_one_or_none()
+
+            # Portal/widget: channel's AI config must win over global default (e.g. broken DeepSeek)
+            ai_config = None
+            channel_ai_id = (
+                customer_config.ai_config_id if customer_config is not None else None
+            )
+            if channel_ai_id:
+                ai_config = await _load_ai_config(channel_ai_id)
+                if ai_config is not None and conv.ai_config_id != channel_ai_id:
+                    conv.ai_config_id = channel_ai_id
+                    await db.flush()
+
+            if ai_config is None and conv.ai_config_id:
+                ai_config = await _load_ai_config(conv.ai_config_id)
 
             if ai_config is None:
                 cfg_result = await db.execute(
@@ -52,14 +79,12 @@ async def on_message_created(
                 ai_config = cfg_result.scalar_one_or_none()
 
             if ai_config is None:
-                # Fallback: use any available AI config with an API key
                 cfg_result = await db.execute(
                     select(AIConfig).where(AIConfig.api_key != "").limit(1)
                 )
                 ai_config = cfg_result.scalar_one_or_none()
 
             if ai_config is None:
-                # Last resort: use literally any AI config
                 cfg_result = await db.execute(select(AIConfig).limit(1))
                 ai_config = cfg_result.scalar_one_or_none()
 
@@ -84,9 +109,42 @@ async def on_message_created(
                 )
                 return
 
+            ai_config = await ensure_ai_config_api_key(db, ai_config)
+            if not is_usable_api_key(ai_config.api_key):
+                error_msg = (
+                    "未配置有效的 AI API 密钥。请在管理后台「模型工作台」填写 API Key，"
+                    "或在 .env 设置 DEEPSEEK_API_KEY / MOONSHOT_API_KEY。"
+                )
+                logger.warning(error_msg)
+                await ws_manager.send_to_conversation(
+                    cov_id,
+                    {
+                        "type": "chat:message",
+                        "message": {
+                            "id": f"ai-error-{message.id}",
+                            "role": "assistant",
+                            "content": error_msg,
+                            "conversation_id": cov_id,
+                            "created_at": "2025-01-01T00:00:00Z",
+                        },
+                    },
+                )
+                return
+
+            logger.info(
+                f"Using AI config {ai_config.id} ({ai_config.provider}/{ai_config.model}, "
+                f"api_base={ai_config.api_base or 'default'}) for conversation {cov_id}"
+            )
+
             # Stream AI response tokens to WebSocket
             full_content = ""
-            async for token in process_message(conv, message, ai_config, db):
+            async for token in process_message(
+                conv,
+                message,
+                ai_config,
+                db,
+                customer_config=customer_config,
+            ):
                 full_content += token
                 await ws_manager.send_to_conversation(
                     cov_id,
@@ -97,13 +155,59 @@ async def on_message_created(
                     },
                 )
 
-            # Signal stream end
+            await db.flush()
+
+            # If the model failed without persisting (e.g. connection error), save a visible reply
+            if not full_content.strip():
+                msg_result = await db.execute(
+                    select(Message)
+                    .where(
+                        Message.conversation_id == cov_id,
+                        Message.role == "assistant",
+                    )
+                    .order_by(Message.created_at.desc(), Message.id.desc())
+                    .limit(1)
+                )
+                last_assistant = msg_result.scalar_one_or_none()
+                if last_assistant is not None:
+                    full_content = last_assistant.content or ""
+                else:
+                    full_content = (
+                        "AI 暂时无法回复，请检查管理后台中该助手的 API Key、"
+                        "Base URL 与网络连接（日志中可能有 Connection error）。"
+                    )
+                    fallback = Message(
+                        conversation_id=cov_id,
+                        role="assistant",
+                        content=full_content,
+                    )
+                    db.add(fallback)
+                    await db.flush()
+
+            assistant_id = None
+            if full_content.strip():
+                msg_result = await db.execute(
+                    select(Message)
+                    .where(
+                        Message.conversation_id == cov_id,
+                        Message.role == "assistant",
+                    )
+                    .order_by(Message.created_at.desc(), Message.id.desc())
+                    .limit(1)
+                )
+                assistant_row = msg_result.scalar_one_or_none()
+                if assistant_row is not None:
+                    assistant_id = assistant_row.id
+
+            # Signal stream end (include DB id so UI can dedupe)
             await ws_manager.send_to_conversation(
                 cov_id,
                 {
                     "type": "chat:stream:end",
                     "conversation_id": cov_id,
                     "content": full_content,
+                    "id": assistant_id,
+                    "message_id": assistant_id,
                 },
             )
 
@@ -129,5 +233,9 @@ async def on_message_created(
 
 def init_bot_engine() -> None:
     """Subscribe bot engine handler to message_created events."""
+    global _bot_engine_initialized
+    if _bot_engine_initialized:
+        return
+    _bot_engine_initialized = True
     event_bus.subscribe("message_created", on_message_created)
     logger.info("Bot engine initialized and listening for messages")

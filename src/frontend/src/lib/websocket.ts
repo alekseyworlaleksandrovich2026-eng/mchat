@@ -14,6 +14,7 @@ type EventMap = {
 class WebSocketClient {
   private ws: WebSocket | null = null
   private url: string
+  private outboundQueue: unknown[] = []
   private handlers: Map<string, Set<Function>> = new Map()
   private reconnectAttempts = 0
   private maxReconnectAttempts = 10
@@ -42,6 +43,7 @@ class WebSocketClient {
       this.ws.onopen = () => {
         this.setStatus('connected')
         this.reconnectAttempts = 0
+        this.flushOutboundQueue()
         this.startPing()
       }
 
@@ -87,6 +89,16 @@ class WebSocketClient {
 
   send(data: any): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data))
+      return
+    }
+    this.outboundQueue.push(data)
+  }
+
+  private flushOutboundQueue(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return
+    while (this.outboundQueue.length > 0) {
+      const data = this.outboundQueue.shift()
       this.ws.send(JSON.stringify(data))
     }
   }

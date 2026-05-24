@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
 import { useAuthStore } from '@/stores/auth'
+import { isCloudEdition } from '@/lib/edition'
 
 interface SidebarProps {
   onClose?: () => void
@@ -31,20 +32,24 @@ export function Sidebar({ onClose }: SidebarProps) {
   const { t } = useTranslation()
   const user = useAuthStore((s) => s.user)
 
+  const adminNav = [
+    { path: '/admin', labelKey: 'nav.dashboard', icon: LayoutDashboard, exact: true as const },
+    { path: '/admin/conversations', labelKey: 'nav.conversations', icon: MessageSquare },
+    { path: '/admin/knowledge', labelKey: 'nav.knowledge', icon: BookOpen },
+    { path: '/admin/skills', labelKey: 'nav.skills', icon: Puzzle },
+    { path: '/admin/agents', labelKey: 'nav.agents', icon: Bot },
+    { path: '/admin/customer-agents', labelKey: 'nav.customerAgents', icon: Headphones },
+    { path: '/admin/settings', labelKey: 'nav.settings', icon: Settings },
+    { path: '/admin/channels', labelKey: 'nav.channels', icon: Globe },
+    { path: '/admin/users', labelKey: 'nav.users', icon: Users },
+    { path: '/admin/roles', labelKey: 'nav.roles', icon: Lock },
+    ...(isCloudEdition
+      ? [{ path: '/admin/templates', labelKey: 'nav.templates', icon: Store }]
+      : []),
+  ]
+
   const navItems = (user?.role === 'admin'
-    ? [
-        { path: '/admin', labelKey: 'nav.dashboard', icon: LayoutDashboard, exact: true },
-        { path: '/admin/conversations', labelKey: 'nav.conversations', icon: MessageSquare },
-        { path: '/admin/knowledge', labelKey: 'nav.knowledge', icon: BookOpen },
-        { path: '/admin/skills', labelKey: 'nav.skills', icon: Puzzle },
-        { path: '/admin/agents', labelKey: 'nav.agents', icon: Bot },
-        { path: '/admin/customer-agents', labelKey: 'nav.customerAgents', icon: Headphones },
-        { path: '/admin/settings', labelKey: 'nav.settings', icon: Settings },
-        { path: '/admin/channels', labelKey: 'nav.channels', icon: Globe },
-        { path: '/admin/users', labelKey: 'nav.users', icon: Users },
-        { path: '/admin/roles', labelKey: 'nav.roles', icon: Lock },
-        { path: '/admin/templates', labelKey: 'nav.templates', icon: Store },
-      ]
+    ? adminNav
     : [
         { path: '/admin', labelKey: 'nav.dashboard', icon: LayoutDashboard, exact: true },
         { path: '/admin/conversations', labelKey: 'nav.conversations', icon: MessageSquare },

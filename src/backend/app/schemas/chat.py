@@ -25,6 +25,12 @@ class MessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ModelCapabilitiesResponse(BaseModel):
+    """Chat UI hints derived from the bound LLM provider/model."""
+    supports_attachments: bool = True
+    supports_vision: bool = False
+
+
 class ConversationResponse(BaseModel):
     """Conversation response schema."""
     id: str
@@ -45,6 +51,7 @@ class ConversationResponse(BaseModel):
     ai_message_count: int = 0
     total_message_count: int = 0
     messages: list[MessageResponse] | None = None
+    ai_capabilities: ModelCapabilitiesResponse | None = None
 
     model_config = {"from_attributes": True}
 
@@ -71,7 +78,11 @@ class InitConversationRequest(BaseModel):
 
 
 class CreateConversationRequest(BaseModel):
-    """Request body for creating a conversation (admin)."""
+    """Request body for creating a conversation (admin or portal user)."""
     title: str | None = Field(None, max_length=200)
     ai_config_id: str | None = None
     visitor_id: str | None = Field(None, max_length=100)
+    customer_id: str | None = Field(
+        None,
+        description="Channel (CustomerConfig) id — binds AI config, skills, and knowledge",
+    )

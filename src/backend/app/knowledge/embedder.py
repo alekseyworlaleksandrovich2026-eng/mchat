@@ -13,6 +13,12 @@ from app.core.config import settings
 from app.knowledge.rag_config import EmbeddingConfig
 
 
+_EMBED_TIMEOUT_SEC = 8.0
+_OLLAMA_EMBED_TIMEOUT_SEC = 15.0
+_OLLAMA_FALLBACK_MODEL = "nomic-embed-text"
+_OLLAMA_FALLBACK_DIM = 768
+
+
 class EmbeddingService:
     """Generates embeddings using configured provider."""
 
@@ -24,6 +30,17 @@ class EmbeddingService:
         self.dimension = self._config.resolved_dimension()
         self._client: AsyncOpenAI | None = None
 
+    def is_configured(self) -> bool:
+        """True when an API key is available for remote embedding providers."""
+        if self.provider in ("local", "ollama"):
+            return True  # local / Ollama do not need cloud API keys
+        key = (
+            settings.embedding_api_key
+            or settings.openai_api_key
+            or ""
+        ).strip()
+        return bool(key) and key not in ("not-needed", "sk-xxx")
+
     def _cache_key(self, text: str) -> str:
         raw = f"{self.provider}:{self.model}:{self.api_base}:{text}"
         return hashlib.md5(raw.encode()).hexdigest()
@@ -34,9 +51,15 @@ class EmbeddingService:
 
         provider = self.provider
         if provider in ("openai", "openai-compatible", "compatible"):
-            kwargs: dict = {}
-            if self.api_base:
-                kwargs["base_url"] = self.api_base
+            api_key = (
+                settings.embedding_api_key
+                or settings.openai_api_key
+                or ""
+            ).strip()
+            kwargs: dict = {"api_key": api_key or "not-needed"}
+            base = self.api_base or settings.embedding_api_base or None
+            if base:
+                kwargs["base_url"] = base.rstrip("/")
             self._client = AsyncOpenAI(**kwargs)
         else:
             raise ValueError(f"Unsupported embedding provider: {provider}")
@@ -65,6 +88,12 @@ class EmbeddingService:
         if self.provider == "ollama":
             return await self._embed_ollama(text)
 
+        if not self.is_configured():
+            fallback = await self._try_ollama_fallback(text)
+            if fallback is not None:
+                return fallback
+            return [0.0] * self.dimension
+
         cache_key = self._cache_key(text)
         cached = self._get_cached(cache_key)
         if cached is not None:
@@ -72,22 +101,54 @@ class EmbeddingService:
 
         try:
             client = await self._get_client()
-            response = await client.embeddings.create(
-                input=text.replace("\n", " "),
-                model=self.model,
+            response = await asyncio.wait_for(
+                client.embeddings.create(
+                    input=text.replace("\n", " "),
+                    model=self.model,
+                ),
+                timeout=_EMBED_TIMEOUT_SEC,
             )
             embedding = list(response.data[0].embedding)
             self._set_cache(cache_key, embedding)
             return embedding
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Embedding timed out after {_EMBED_TIMEOUT_SEC}s "
+                f"({self.provider}/{self.model})"
+            )
+            return [0.0] * self.dimension
         except Exception as e:
             logger.error(f"Embedding failed ({self.provider}/{self.model}): {e}")
             return [0.0] * self.dimension
 
-    async def _embed_ollama(self, text: str) -> list[float]:
-        base = (self.api_base or "http://localhost:11434").rstrip("/")
+    async def _try_ollama_fallback(self, text: str) -> list[float] | None:
+        """When OpenAI-compatible embedding is not configured, try local Ollama."""
+        if self.provider in ("local", "ollama"):
+            return None
+        model = _OLLAMA_FALLBACK_MODEL
+        base = (settings.embedding_api_base or "http://localhost:11434").rstrip("/")
         url = f"{base}/api/embeddings"
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=_OLLAMA_EMBED_TIMEOUT_SEC) as client:
+                response = await client.post(
+                    url,
+                    json={"model": model, "prompt": text.replace("\n", " ")},
+                )
+                response.raise_for_status()
+                data = response.json()
+                embedding = list(data.get("embedding") or [])
+                if embedding:
+                    logger.debug(f"Embedding via Ollama fallback ({model})")
+                    return embedding
+        except Exception as e:
+            logger.debug(f"Ollama embedding fallback unavailable: {e}")
+        return None
+
+    async def _embed_ollama(self, text: str) -> list[float]:
+        base = (self.api_base or settings.embedding_api_base or "http://localhost:11434").rstrip("/")
+        url = f"{base}/api/embeddings"
+        try:
+            async with httpx.AsyncClient(timeout=_OLLAMA_EMBED_TIMEOUT_SEC) as client:
                 response = await client.post(
                     url,
                     json={"model": self.model, "prompt": text.replace("\n", " ")},
@@ -98,7 +159,7 @@ class EmbeddingService:
                 if embedding:
                     return embedding
         except Exception as e:
-            logger.error(f"Ollama embedding failed: {e}")
+            logger.warning(f"Ollama embedding failed ({self.model}): {e}")
         return [0.0] * self.dimension
 
     _cache: dict[str, list[float]] = {}

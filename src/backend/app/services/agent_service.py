@@ -86,6 +86,10 @@ class AgentService:
 
         update_data = data.model_dump(exclude_unset=True)
 
+        # Keep existing key when the client omits or sends an empty api_key
+        if "api_key" in update_data and not (update_data.get("api_key") or "").strip():
+            update_data.pop("api_key")
+
         # If setting as default, unset other defaults
         if update_data.get("is_default"):
             await self._unset_default_ai_configs(user_id, exclude_id=config_id)

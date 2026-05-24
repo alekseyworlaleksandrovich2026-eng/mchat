@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { isCloudEdition } from '@/lib/edition'
 import { useTranslation } from 'react-i18next'
 import {
   Bot,
@@ -71,12 +72,14 @@ export function LandingPage() {
             >
               {t('landing.navShowcase')}
             </Link>
-            <Link
-              to="/portal/templates"
-              className="hidden sm:inline-flex text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              {t('portal.templates')}
-            </Link>
+            {isCloudEdition && (
+              <Link
+                to="/portal/templates"
+                className="hidden sm:inline-flex text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              >
+                {t('portal.templates')}
+              </Link>
+            )}
             <Link
               to="/admin/login"
               className="inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"

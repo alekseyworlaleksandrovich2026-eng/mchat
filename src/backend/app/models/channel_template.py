@@ -40,6 +40,7 @@ class ChannelTemplate(Base):
     )
     default_ai_config_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_skill_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    default_knowledge_base_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     default_knowledge_base_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_theme: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)

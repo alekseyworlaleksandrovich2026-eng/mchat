@@ -8,6 +8,7 @@ from loguru import logger
 
 from app.bot.dsml_parser import contains_dsml, parse_dsml_tool_calls, strip_dsml_blocks
 from app.models.ai_config import AIConfig
+from app.services.llm_credentials import resolve_api_key
 
 
 def _delta_reasoning_content(delta: Any) -> str | None:
@@ -147,15 +148,52 @@ class LLMProvider:
         yield {"type": "done"}
 
 
+def _format_provider_error(exc: Exception) -> str:
+    msg = str(exc)
+    lower = msg.lower()
+    if "401" in msg or "authentication" in lower or "invalid" in lower and "api key" in lower:
+        return (
+            "Error: API 密钥无效或未配置。请在管理后台「模型工作台」更新该 AI 配置的 API Key，"
+            "或在 .env 中设置对应环境变量（如 DEEPSEEK_API_KEY、MOONSHOT_API_KEY）。"
+        )
+    return f"Error: {exc}"
+
+
+def resolve_llm_base_url(provider: str, api_base: str | None) -> str | None:
+    """Provider default base URL + ensure /v1 suffix for OpenAI-compatible APIs."""
+    from app.services.model_catalog import _resolve_base_url
+
+    base = _resolve_base_url((provider or "").lower(), api_base)
+    if not base:
+        return None
+    base = base.rstrip("/")
+    openai_compatible = {
+        "openai",
+        "deepseek",
+        "ollama",
+        "groq",
+        "zhipu",
+        "moonshot",
+        "siliconflow",
+        "together",
+        "openai-compatible",
+    }
+    if provider.lower() in openai_compatible and not base.endswith("/v1"):
+        return f"{base}/v1"
+    return base
+
+
 class OpenAIProvider(LLMProvider):
     """OpenAI-compatible provider."""
 
     def __init__(self, ai_config: AIConfig) -> None:
         from openai import AsyncOpenAI
 
-        client_kwargs = {"api_key": ai_config.api_key}
-        if ai_config.api_base:
-            client_kwargs["base_url"] = ai_config.api_base
+        base = resolve_llm_base_url(ai_config.provider, ai_config.api_base)
+        api_key = resolve_api_key(ai_config.provider, ai_config.api_key)
+        client_kwargs = {"api_key": api_key or "not-needed"}
+        if base:
+            client_kwargs["base_url"] = base
 
         self.client = AsyncOpenAI(**client_kwargs)
         self.model = ai_config.model
@@ -184,7 +222,7 @@ class OpenAIProvider(LLMProvider):
                 yield chunk
         except Exception as e:
             logger.error(f"OpenAI provider error: {e}")
-            yield {"type": "content", "content": f"Error: {e}"}
+            yield {"type": "content", "content": _format_provider_error(e)}
             yield {"type": "done"}
 
 
@@ -408,12 +446,16 @@ class OpenAICompatibleProvider(OpenAIProvider):
     def __init__(self, ai_config: AIConfig) -> None:
         from openai import AsyncOpenAI
 
-        if not ai_config.api_base:
-            raise ValueError("api_base is required for openai-compatible provider")
+        base = resolve_llm_base_url(ai_config.provider, ai_config.api_base)
+        if not base:
+            raise ValueError(
+                f"api_base is required for provider {ai_config.provider!r} "
+                "(or use a known provider id like moonshot/deepseek)"
+            )
 
         self.client = AsyncOpenAI(
-            api_key=ai_config.api_key or "not-needed",
-            base_url=ai_config.api_base,
+            api_key=resolve_api_key(ai_config.provider, ai_config.api_key) or "not-needed",
+            base_url=base,
         )
         self.model = ai_config.model
 
@@ -461,7 +503,9 @@ def create_provider(ai_config: AIConfig) -> LLMProvider:
         )
         ai_config.model = resolved_model
 
+    base = resolve_llm_base_url(ai_config.provider, ai_config.api_base)
     logger.info(
         f"Creating provider: {ai_config.provider} with model {ai_config.model}"
+        + (f" base={base}" if base else "")
     )
     return provider_class(ai_config)

@@ -17,6 +17,10 @@ interface ChatInputProps {
   allowAssistantMode?: boolean
   allowOutboundLinks?: boolean
   defaultSendRole?: 'user' | 'assistant'
+  allowAttachments?: boolean
+  attachmentAccept?: string
+  /** studio = portal; embedded = floating widget */
+  variant?: 'default' | 'studio' | 'embedded'
 }
 
 export function ChatInput({
@@ -30,7 +34,12 @@ export function ChatInput({
   allowAssistantMode = false,
   allowOutboundLinks = false,
   defaultSendRole = 'user',
+  allowAttachments = true,
+  attachmentAccept,
+  variant = 'default',
 }: ChatInputProps) {
+  const studio = variant === 'studio'
+  const embeddedShell = variant === 'embedded'
   const { t, i18n } = useTranslation()
   const [content, setContent] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -133,6 +142,7 @@ export function ChatInput({
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!allowAttachments) return
     const file = e.target.files?.[0]
     if (file) {
       setSelectedFile(file)
@@ -140,6 +150,7 @@ export function ChatInput({
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
+    if (!allowAttachments) return
     const items = e.clipboardData?.items
     if (items) {
       for (const item of Array.from(items)) {
@@ -186,11 +197,21 @@ export function ChatInput({
     }
   }
 
+  const defaultAccept =
+    'image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm,.pdf,.doc,.docx,.txt'
+  const fileAccept = attachmentAccept ?? defaultAccept
+
   return (
     <div
       className={cn(
-        'border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800',
-        compact ? 'px-3 py-2.5' : 'px-4 py-3',
+        studio
+          ? 'rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800 px-3 pt-3 pb-3'
+          : embeddedShell
+            ? 'bg-transparent px-0 py-0'
+            : cn(
+                'bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700',
+                compact ? 'px-3 py-2.5' : 'px-4 pt-3',
+              ),
       )}
     >
       {speechError && (
@@ -314,24 +335,28 @@ export function ChatInput({
       )}
 
       <div className={cn('flex gap-2', singleLine ? 'items-center' : 'items-end')}>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-          title={t('chat.uploadAttachment')}
-        >
-          <Paperclip className="w-5 h-5" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          onChange={handleFileSelect}
-          accept="image/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm,.pdf,.doc,.docx,.txt"
-          title={t('chat.uploadAttachment')}
-          aria-label={t('chat.uploadAttachment')}
-        />
+        {allowAttachments && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+              title={t('chat.uploadAttachment')}
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleFileSelect}
+              accept={fileAccept}
+              title={t('chat.uploadAttachment')}
+              aria-label={t('chat.uploadAttachment')}
+            />
+          </>
+        )}
 
         {speechEnabled && (
           <button

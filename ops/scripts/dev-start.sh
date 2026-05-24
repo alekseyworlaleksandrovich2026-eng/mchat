@@ -32,7 +32,8 @@ fi
 # shellcheck disable=SC1091
 source venv/bin/activate
 
-echo "→ Starting backend http://127.0.0.1:${BACKEND_PORT}"
+echo "→ Starting Core backend http://127.0.0.1:${BACKEND_PORT}"
+echo "  (app.main:app — no portal/templates API; use make cloud for those)"
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 
@@ -52,6 +53,9 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 cd "$ROOT/src/frontend"
-echo "→ Starting frontend http://127.0.0.1:${FRONTEND_PORT}"
-echo "  Login: admin / admin123 (or your .env ADMIN_* values)"
+echo "→ Starting frontend (Core edition) http://127.0.0.1:${FRONTEND_PORT}"
+echo "  Admin:  http://127.0.0.1:${FRONTEND_PORT}/admin"
+echo "  Login:  admin / admin123"
+echo "  Cloud:  run make cloud for portal + template marketplace"
+export VITE_MCHAT_EDITION=core
 exec npm run dev

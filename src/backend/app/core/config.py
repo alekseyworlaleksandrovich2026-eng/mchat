@@ -29,10 +29,11 @@ class Settings(BaseSettings):
     milvus_enabled: bool = False
 
     # Embedding (global defaults; per knowledge base can override)
-    embedding_provider: str = "openai"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_api_base: str = ""
-    embedding_dimension: int = 1536
+    # Prefer local Ollama in dev; override with EMBEDDING_* in .env if needed
+    embedding_provider: str = "ollama"
+    embedding_model: str = "nomic-embed-text"
+    embedding_api_base: str = "http://localhost:11434"
+    embedding_dimension: int = 768
     embedding_model_max_mb: int = 2048
 
     # Redis
@@ -72,6 +73,18 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = False
     s3_public_base_url: str = ""
     s3_force_path_style: bool = True
+
+    # LLM provider API keys (optional env fallback when DB config key is empty)
+    openai_api_key: str = ""
+    deepseek_api_key: str = ""
+    moonshot_api_key: str = ""
+    zhipu_api_key: str = ""
+    groq_api_key: str = ""
+    siliconflow_api_key: str = ""
+    together_api_key: str = ""
+
+    # Embedding API key (falls back to openai_api_key)
+    embedding_api_key: str = ""
 
     # Reranker (global defaults; per KB can override)
     rerank_provider: str = "lexical"  # none, lexical, cohere, bge, cross-encoder

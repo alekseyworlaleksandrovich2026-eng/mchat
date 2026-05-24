@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { isCloudEdition } from '@/lib/edition'
 import { AdminLayout } from './components/layout/AdminLayout'
 import { UserLayout } from './components/layout/UserLayout'
 import { Spinner } from './components/ui/Spinner'
@@ -38,6 +39,7 @@ export const PortalTemplates = lazyNamed(() => import('./pages/portal/TemplatesP
 export const PortalTemplateDetail = lazyNamed(() => import('./pages/portal/TemplateDetailPage'), 'TemplateDetailPage')
 export const PortalMyChannels = lazyNamed(() => import('./pages/portal/MyChannelsPage'), 'MyChannelsPage')
 export const PortalChannelDetail = lazyNamed(() => import('./pages/portal/ChannelDetailPage'), 'ChannelDetailPage')
+export const PortalChannelKnowledge = lazyNamed(() => import('./pages/portal/ChannelKnowledgePage'), 'ChannelKnowledgePage')
 
 export function PageSuspense({ children }: { children: React.ReactNode }) {
   return (
@@ -69,7 +71,11 @@ export function CoreRoutes() {
         <Route path="/admin/settings" element={<AdminLayout><PageSuspense><SettingsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/channels" element={<AdminLayout><PageSuspense><ChannelsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/roles" element={<AdminLayout><PageSuspense><RolesPage /></PageSuspense></AdminLayout>} />
-        <Route path="/admin/templates" element={<AdminLayout><PageSuspense><TemplateManagerPage /></PageSuspense></AdminLayout>} />
+        {isCloudEdition ? (
+          <Route path="/admin/templates" element={<AdminLayout><PageSuspense><TemplateManagerPage /></PageSuspense></AdminLayout>} />
+        ) : (
+          <Route path="/admin/templates" element={<Navigate to="/admin" replace />} />
+        )}
         <Route path="/admin/users" element={<AdminLayout><PageSuspense><UsersPage /></PageSuspense></AdminLayout>} />
         <Route path="/chat/:conversationId" element={<PageSuspense><ChatPage /></PageSuspense>} />
         <Route path="/widget/demo" element={<PageSuspense><WidgetDemo /></PageSuspense>} />
@@ -93,6 +99,7 @@ export function PortalRoutes() {
       <Route path="/portal/templates/:id" element={<UserLayout><PageSuspense><PortalTemplateDetail /></PageSuspense></UserLayout>} />
       <Route path="/portal/channels" element={<UserLayout><PageSuspense><PortalMyChannels /></PageSuspense></UserLayout>} />
       <Route path="/portal/channels/:id" element={<UserLayout><PageSuspense><PortalChannelDetail /></PageSuspense></UserLayout>} />
+      <Route path="/portal/channels/:id/knowledge" element={<UserLayout><PageSuspense><PortalChannelKnowledge /></PageSuspense></UserLayout>} />
     </Routes>
   )
 }

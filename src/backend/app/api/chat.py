@@ -110,9 +110,10 @@ async def send_message(
 @router.get("/conversations", response_model=ConversationList)
 async def list_conversations(
     skip: int = 0,
-    limit: int = 20,
+    limit: int = 50,
     status_filter: str | None = None,
     search: str | None = None,
+    customer_id: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -125,6 +126,7 @@ async def list_conversations(
         limit=limit,
         status=status_filter,
         search=search,
+        customer_id=customer_id,
     )
     return ConversationList(items=conversations, total=total)
 
@@ -154,6 +156,7 @@ async def create_conversation(
         title=request.title,
         ai_config_id=request.ai_config_id,
         visitor_id=request.visitor_id,
+        customer_id=request.customer_id,
     )
     return conversation
 

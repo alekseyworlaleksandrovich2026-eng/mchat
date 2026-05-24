@@ -66,7 +66,7 @@ _PATENT_SEARCH_OBSERVATION_NUDGE = (
 )
 _ENABLE_PATENT_SEARCH_PRESENTATION = True
 _ENABLE_PATENT_SEARCH_SUMMARY = False
-_HISTORY_MESSAGE_LIMIT = 60
+_HISTORY_MESSAGE_LIMIT = 30
 
 
 def _is_patent_search_success(
@@ -118,28 +118,33 @@ async def _append_rag_context(
     chat_fn=None,
 ) -> tuple[str, list[dict[str, Any]]]:
     kb_ids = knowledge_base_ids_for_chat(customer_config)
+    if not kb_ids:
+        return system_prompt, []
+
     rag = RagService()
     all_results = []
 
     try:
-        if kb_ids:
-            for kb_id in kb_ids:
-                search_results = await rag.search(
-                    query=query,
-                    user_id=user_id,
-                    knowledge_base_id=kb_id,
-                    top_k=3,
-                    chat_fn=chat_fn,
-                )
-                all_results.extend(search_results.results)
-        else:
-            search_results = await rag.search(
+        import asyncio
+
+        async def _search_kb(kb_id: str):
+            return await rag.search(
                 query=query,
                 user_id=user_id,
+                knowledge_base_id=kb_id,
                 top_k=3,
                 chat_fn=chat_fn,
             )
-            all_results.extend(search_results.results)
+
+        batches = await asyncio.gather(
+            *[_search_kb(kb_id) for kb_id in kb_ids],
+            return_exceptions=True,
+        )
+        for batch in batches:
+            if isinstance(batch, Exception):
+                logger.warning(f"RAG search failed for a knowledge base: {batch}")
+                continue
+            all_results.extend(batch.results)
     except Exception as e:
         logger.warning(f"RAG search failed: {e}")
         return system_prompt, []
@@ -196,6 +201,17 @@ async def process_message(
             yield "Error: No AI configuration available. Please configure an AI provider first."
             return
 
+        if not (ai_config.api_key or "").strip():
+            from app.services.llm_credentials import ensure_ai_config_api_key, is_usable_api_key
+
+            ai_config = await ensure_ai_config_api_key(db_session, ai_config)
+            if not is_usable_api_key(ai_config.api_key):
+                yield (
+                    "Error: 未配置有效的 AI API 密钥。请在管理后台「模型工作台」填写 API Key，"
+                    "或在 .env 设置 DEEPSEEK_API_KEY / MOONSHOT_API_KEY。"
+                )
+                return
+
         system_prompt = ai_config.system_prompt or "You are a helpful AI assistant."
 
         prompt_skills, tool_skills = await load_skills_for_chat(
@@ -219,20 +235,12 @@ async def process_message(
                 template=str(patent_links["template"]),
             )
 
-        # Create chat_fn for optional query rewriting
-        _chat_fn = None
-        try:
-            from app.bot.query_rewrite_chat import create_rewrite_chat_fn
-            _chat_fn = await create_rewrite_chat_fn(ai_config)
-        except Exception:
-            pass
-
         system_prompt, knowledge_hits = await _append_rag_context(
             system_prompt,
             message.content,
             ai_config.user_id,
             customer_config,
-            chat_fn=_chat_fn,
+            chat_fn=None,
         )
 
         auto_reply_matches = await match_auto_reply_rules(
@@ -281,6 +289,16 @@ async def process_message(
         first_pass_content = ""
         usage_info: dict[str, int] = {}
 
+        def _merge_usage(chunk: dict[str, Any]) -> None:
+            pt = int(chunk.get("prompt_tokens") or 0)
+            ct = int(chunk.get("completion_tokens") or 0)
+            tt = int(chunk.get("total_tokens") or 0) or (pt + ct)
+            usage_info["prompt_tokens"] = usage_info.get("prompt_tokens", 0) + pt
+            usage_info["completion_tokens"] = (
+                usage_info.get("completion_tokens", 0) + ct
+            )
+            usage_info["total_tokens"] = usage_info.get("total_tokens", 0) + tt
+
         async for chunk in provider.stream_chat(
             messages=messages_list,
             tools=tools if tools else None,
@@ -288,15 +306,17 @@ async def process_message(
             max_tokens=ai_config.max_tokens,
         ):
             if chunk.get("type") == "usage":
-                usage_info = {
-                    "prompt_tokens": chunk.get("prompt_tokens", 0),
-                    "completion_tokens": chunk.get("completion_tokens", 0),
-                }
+                _merge_usage(chunk)
             elif chunk.get("type") == "reasoning":
                 reasoning_content += chunk.get("content", "") or ""
             elif chunk.get("type") == "content":
                 token = chunk.get("content", "")
-                if token and not token.startswith("Error:"):
+                if not token:
+                    continue
+                if token.startswith("Error:"):
+                    full_response += token
+                    yield token
+                else:
                     first_pass_content += token
                     yield token
             elif chunk.get("type") == "tool_call":
@@ -379,7 +399,9 @@ async def process_message(
                     temperature=ai_config.temperature,
                     max_tokens=ai_config.max_tokens,
                 ):
-                    if chunk.get("type") == "content":
+                    if chunk.get("type") == "usage":
+                        _merge_usage(chunk)
+                    elif chunk.get("type") == "content":
                         token = chunk.get("content", "")
                         if token.startswith("Error:"):
                             presentation_parts.append(f"\n\n{token}")
@@ -405,7 +427,9 @@ async def process_message(
                     temperature=ai_config.temperature,
                     max_tokens=ai_config.max_tokens,
                 ):
-                    if chunk.get("type") == "content":
+                    if chunk.get("type") == "usage":
+                        _merge_usage(chunk)
+                    elif chunk.get("type") == "content":
                         token = chunk.get("content", "")
                         if token.startswith("Error:"):
                             summary_parts.append(f"\n\n{token}")
@@ -461,15 +485,28 @@ async def process_message(
             db_session.add(assistant_msg)
 
             # Increment token usage on the associated channel
-            if usage_info:
-                customer_id = getattr(conversation, 'customer_id', None)
-                if customer_id:
+            customer_id = getattr(conversation, "customer_id", None)
+            if customer_id:
+                tokens_used = int(usage_info.get("total_tokens") or 0)
+                if not tokens_used:
+                    tokens_used = int(usage_info.get("prompt_tokens") or 0) + int(
+                        usage_info.get("completion_tokens") or 0
+                    )
+                if not tokens_used and (
+                    assistant_msg.prompt_tokens or assistant_msg.completion_tokens
+                ):
+                    tokens_used = int(assistant_msg.prompt_tokens or 0) + int(
+                        assistant_msg.completion_tokens or 0
+                    )
+                if tokens_used > 0:
                     result = await db_session.execute(
                         select(CustomerConfig).where(CustomerConfig.id == customer_id)
                     )
                     config = result.scalar_one_or_none()
                     if config is not None:
-                        config.usage_tokens_month = (config.usage_tokens_month or 0) + usage_info.get("total_tokens", 0)
+                        config.usage_tokens_month = (
+                            config.usage_tokens_month or 0
+                        ) + tokens_used
                         await db_session.flush()
 
             conversation.updated_at = datetime.now(timezone.utc)

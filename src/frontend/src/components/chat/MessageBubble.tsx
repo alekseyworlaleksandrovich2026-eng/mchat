@@ -18,6 +18,8 @@ interface MessageBubbleProps {
   accentColor?: string
   /** Narrow container (floating widget) — assistant bubbles use more width */
   compact?: boolean
+  /** Full-width studio layout (portal / admin chat) */
+  variant?: 'default' | 'studio'
 }
 
 export function MessageBubble({
@@ -26,7 +28,9 @@ export function MessageBubble({
   streamingContent,
   accentColor,
   compact = false,
+  variant = 'default',
 }: MessageBubbleProps) {
+  const studio = variant === 'studio'
   const { t, i18n } = useTranslation()
   const [copied, setCopied] = React.useState(false)
   const isUser = message.role === 'user'
@@ -49,7 +53,11 @@ export function MessageBubble({
 
   const displayContent = isStreaming ? streamingContent || '' : message.content
   const throttledContent = useThrottledValue(displayContent, isStreaming ? 50 : 0)
-  const assistantText = prepareAssistantMarkdown(throttledContent)
+  const isErrorReply =
+    !isUser && (displayContent.startsWith('Error:') || displayContent.includes('Connection error'))
+  const assistantText = isErrorReply
+    ? displayContent
+    : prepareAssistantMarkdown(throttledContent)
 
   type Attachment = { url?: string; name?: string; mime?: string }
   type OutboundAsset = {
@@ -128,36 +136,51 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        'flex gap-2.5 message-enter w-full',
-        isUser ? 'flex-row-reverse' : 'flex-row',
+        'message-enter w-full',
+        studio
+          ? cn('flex', isUser ? 'justify-end' : 'justify-start')
+          : cn('flex gap-2.5', isUser ? 'flex-row-reverse' : 'flex-row'),
       )}
     >
-      <Avatar
-        size="md"
-        name={isUser ? t('chat.userLabel') : t('chat.aiLabel')}
-        className={cn(
-          'shrink-0',
-          isUser ? 'bg-primary-500' : 'bg-gray-500',
-        )}
-      />
+      {!studio && (
+        <Avatar
+          size="md"
+          name={isUser ? t('chat.userLabel') : t('chat.aiLabel')}
+          className={cn(
+            'shrink-0 mt-0.5',
+            isUser ? 'bg-primary-500' : 'bg-gray-500',
+          )}
+        />
+      )}
 
       <div
         className={cn(
-          'rounded-2xl px-4 py-3 min-w-0',
-          isUser
+          'min-w-0',
+          studio
             ? cn(
-                'max-w-[75%] text-white rounded-tr-sm',
-                !accentColor && 'bg-primary-600',
+                isUser
+                  ? 'max-w-[min(85%,42rem)] rounded-2xl px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                  : 'max-w-full w-full px-0 py-0',
               )
             : cn(
-                'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-sm',
-                compact ? 'flex-1 max-w-none' : 'max-w-[85%]',
+                'rounded-2xl px-4 py-3',
+                isUser
+                  ? cn(
+                      'max-w-[85%] text-white rounded-tr-sm',
+                      !accentColor && 'bg-primary-600',
+                    )
+                  : cn(
+                      'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-tl-sm shadow-sm',
+                      compact ? 'flex-1 max-w-[95%]' : 'max-w-[85%]',
+                    ),
               ),
         )}
-        style={isUser && accentColor ? { backgroundColor: accentColor } : undefined}
+        style={
+          !studio && isUser && accentColor ? { backgroundColor: accentColor } : undefined
+        }
       >
         {isUser ? (
-          <div className="space-y-2">
+          <div className={cn('space-y-2', studio && 'text-gray-900 dark:text-gray-100')}>
             {imageAttachments.map((att, i) => (
               <a
                 key={`${att.url}-${i}`}
@@ -211,13 +234,25 @@ export function MessageBubble({
             ) : null}
           </div>
         ) : (
-          <div className="max-w-none break-words text-gray-800 dark:text-gray-200">
+          <div
+            className={cn(
+              'max-w-none break-words',
+              isErrorReply
+                ? 'text-red-700 dark:text-red-300 text-sm leading-relaxed'
+                : 'text-gray-800 dark:text-gray-200',
+              studio && !isErrorReply && 'prose prose-sm dark:prose-invert max-w-none',
+            )}
+          >
+            {isErrorReply ? (
+              <p className="whitespace-pre-wrap">{assistantText}</p>
+            ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={markdownComponents}
             >
               {assistantText}
             </ReactMarkdown>
+            )}
             {(imageAttachments.length > 0 || imageAssets.length > 0 || videoAttachments.length > 0 || videoAssets.length > 0 || fileAttachments.length > 0 || fileAndLinkAssets.length > 0) && (
               <div className="mt-3 space-y-2">
                 {imageAttachments.map((asset, i) => (
@@ -329,10 +364,13 @@ export function MessageBubble({
         <p
           className={cn(
             'text-xs mt-1.5',
+            studio && !isUser && 'hidden',
             isUser
-              ? accentColor
-                ? 'text-white/70'
-                : 'text-primary-100'
+              ? studio
+                ? 'text-gray-500 dark:text-gray-400 text-right'
+                : accentColor
+                  ? 'text-white/70'
+                  : 'text-primary-100'
               : 'text-gray-500 dark:text-gray-400',
           )}
         >

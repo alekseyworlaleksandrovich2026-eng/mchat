@@ -19,12 +19,42 @@ export interface ChatSendOptions {
   outboundAssets?: OutboundAsset[]
 }
 
+let streamSafetyTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleStreamSafetyTimeout(
+  conversationId: string,
+  shouldStream: boolean,
+) {
+  if (!shouldStream) return
+  if (streamSafetyTimer) clearTimeout(streamSafetyTimer)
+  streamSafetyTimer = setTimeout(() => {
+    streamSafetyTimer = null
+    const s = useChatStore.getState()
+    if (!s.isStreaming) return
+    const lastUser = [...s.messages].reverse().find((m) => m.role === 'user')
+    const lastAssistant = [...s.messages]
+      .reverse()
+      .find((m) => m.role === 'assistant')
+    if (
+      lastAssistant &&
+      lastUser &&
+      lastAssistant.created_at >= lastUser.created_at
+    ) {
+      s.endStream()
+      return
+    }
+    s.finalizeStream({
+      conversation_id: conversationId,
+      content: s.streamingContent,
+    })
+  }, 45000)
+}
+
 function dedupeMessages(messages: Message[]): Message[] {
   const seen = new Set<string>()
   const out: Message[] = []
   for (const m of messages) {
-    const key =
-      m.role === 'assistant' ? `a:${m.content}` : `u:${m.id}:${m.content}`
+    const key = m.id || `${m.role}:${m.created_at}:${m.content?.slice(0, 64)}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(m)
@@ -40,6 +70,11 @@ export interface Message {
   content_type?: 'text' | 'image' | 'file' | 'video'
   extra_data?: Record<string, any>
   created_at: string
+}
+
+export interface ModelCapabilities {
+  supports_attachments: boolean
+  supports_vision: boolean
 }
 
 export interface Conversation {
@@ -60,6 +95,7 @@ export interface Conversation {
   user_message_count?: number
   ai_message_count?: number
   total_message_count?: number
+  ai_capabilities?: ModelCapabilities | null
 }
 
 interface ChatState {
@@ -79,6 +115,12 @@ interface ChatState {
   addMessage: (message: Message) => void
   appendToStream: (content: string) => void
   endStream: () => void
+  finalizeStream: (message: {
+    id?: string
+    conversation_id?: string
+    content?: string
+  }) => void
+  syncMessagesFromServer: (conversationId: string) => Promise<void>
   setError: (error: string | null) => void
 }
 
@@ -102,10 +144,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   fetchMessages: async (conversationId: string) => {
-    set({ isLoading: true, isStreaming: false, streamingContent: '' })
+    set({
+      isLoading: true,
+      isStreaming: false,
+      streamingContent: '',
+      messages: [],
+      currentConversation: null,
+    })
     try {
-      const resp = await api.get<{ messages: Message[] }>(`/chat/conversations/${conversationId}`)
+      const resp = await api.get<Conversation & { messages?: Message[] }>(
+        `/chat/conversations/${conversationId}`,
+      )
       set({
+        currentConversation: resp,
         messages: dedupeMessages((resp.messages || []).map(normalizeMessageMedia)),
         isLoading: false,
       })
@@ -197,6 +248,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set((state) => ({
           messages: state.messages.map((m) => (m.id === tempId ? persisted : m)),
         }))
+        scheduleStreamSafetyTimeout(conversationId, shouldStream)
         if (previewUrl) URL.revokeObjectURL(previewUrl)
       } else {
         const saved = await api.post<Message>('/chat/send', {
@@ -216,18 +268,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const persisted = normalizeMessageMedia(saved)
         set((state) => ({
           messages: state.messages.map((m) => (m.id === tempId ? persisted : m)),
-          isStreaming: shouldStream,
+          // Do not force isStreaming=true here: the bot may finish via WebSocket
+          // before this HTTP response returns, which would leave a stuck "typing" UI.
         }))
-        // Safety timeout: force end stream after 45s regardless
+        scheduleStreamSafetyTimeout(conversationId, shouldStream)
         if (shouldStream) {
-          const timerId = setTimeout(() => {
-            const s = useChatStore.getState()
-            if (s.isStreaming) {
-              s.endStream()
-            }
-          }, 45000)
-          // Store timer ID for cleanup (avoid memory leaks)
-          set((state) => ({ ...state, _streamTimer: timerId as any }))
+          window.setTimeout(() => {
+            void get().syncMessagesFromServer(conversationId)
+          }, 2000)
         }
       }
     } catch (apiErr: any) {
@@ -264,17 +312,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (state.messages.some((m) => m.id === normalized.id)) {
         return { isStreaming: false, streamingContent: '' }
       }
-      const duplicateAssistant =
-        normalized.role === 'assistant' &&
-        state.messages.some(
-          (m) =>
-            m.role === 'assistant' &&
-            m.content === normalized.content &&
-            m.conversation_id === normalized.conversation_id,
-        )
-      if (duplicateAssistant) {
-        return { isStreaming: false, streamingContent: '' }
-      }
       return {
         messages: [...state.messages, normalized],
         isStreaming: false,
@@ -290,7 +327,82 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   endStream: () => {
+    if (streamSafetyTimer) {
+      clearTimeout(streamSafetyTimer)
+      streamSafetyTimer = null
+    }
     set({ isStreaming: false, streamingContent: '' })
+  },
+
+  syncMessagesFromServer: async (conversationId: string) => {
+    try {
+      const resp = await api.get<Conversation & { messages?: Message[] }>(
+        `/chat/conversations/${conversationId}`,
+      )
+      const serverMsgs = dedupeMessages(
+        (resp.messages || []).map(normalizeMessageMedia),
+      )
+      set((state) => {
+        if (!state.isStreaming) {
+          return { messages: serverMsgs }
+        }
+        const localAssistants = state.messages.filter(
+          (m) => m.role === 'assistant',
+        ).length
+        const serverAssistants = serverMsgs.filter(
+          (m) => m.role === 'assistant',
+        ).length
+        if (serverAssistants > localAssistants) {
+          if (streamSafetyTimer) {
+            clearTimeout(streamSafetyTimer)
+            streamSafetyTimer = null
+          }
+          return {
+            messages: serverMsgs,
+            isStreaming: false,
+            streamingContent: '',
+          }
+        }
+        return state
+      })
+    } catch {
+      /* ignore poll errors */
+    }
+  },
+
+  finalizeStream: (message) => {
+    set((state) => {
+      const fromPayload = (message.content ?? '').trim()
+      const fromStream = (state.streamingContent ?? '').trim()
+      const content = fromPayload || fromStream
+      if (!content) {
+        return { isStreaming: false, streamingContent: '' }
+      }
+      const id = message.id || `msg-${Date.now()}`
+      const conversation_id =
+        message.conversation_id || state.messages[0]?.conversation_id || ''
+
+      const withoutDupes = state.messages.filter((m) => m.id !== id)
+
+      const final: Message = {
+        id,
+        conversation_id,
+        role: 'assistant',
+        content,
+        content_type: 'text',
+        created_at: new Date().toISOString(),
+      }
+
+      if (streamSafetyTimer) {
+        clearTimeout(streamSafetyTimer)
+        streamSafetyTimer = null
+      }
+      return {
+        messages: [...withoutDupes, final],
+        isStreaming: false,
+        streamingContent: '',
+      }
+    })
   },
 
   setError: (error: string | null) => set({ error }),

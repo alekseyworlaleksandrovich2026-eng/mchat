@@ -46,7 +46,7 @@ DEFAULT_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com",
     "google": "https://generativelanguage.googleapis.com",
-    "deepseek": "https://api.deepseek.com",
+    "deepseek": "https://api.deepseek.com/v1",
     "ollama": "http://localhost:11434/v1",
     "groq": "https://api.groq.com/openai/v1",
     "zhipu": "https://open.bigmodel.cn/api/paas/v4",
@@ -148,13 +148,15 @@ async def test_connection(
 
     raw_model = model or STATIC_MODELS.get(params.provider, ["test"])[0]
     probe_model = normalize_model_id(params.provider, raw_model)
+    from app.services.llm_credentials import resolve_api_key
+
     cfg = AIConfig(
         id="probe",
         user_id="probe",
         name="probe",
         provider=params.provider,
         model=probe_model,
-        api_key=params.api_key,
+        api_key=resolve_api_key(params.provider, params.api_key),
         api_base=params.api_base or _resolve_base_url(params.provider, None),
         system_prompt=None,
         temperature=0,

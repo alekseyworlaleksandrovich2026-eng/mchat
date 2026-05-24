@@ -247,6 +247,22 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
             )
             applied.append("channel_templates.default_ai_config_id")
+        if "default_knowledge_base_ids" not in cols:
+            if dialect == "mysql":
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_templates "
+                        "ADD COLUMN default_knowledge_base_ids JSON NULL"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_templates "
+                        "ADD COLUMN default_knowledge_base_ids TEXT NULL"
+                    )
+                )
+            applied.append("channel_templates.default_knowledge_base_ids")
 
     # document_chunks migration
     if "document_chunks" in inspect(conn).get_table_names():

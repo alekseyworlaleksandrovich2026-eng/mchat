@@ -4,7 +4,8 @@ import { MessageSquare } from 'lucide-react'
 import { GithubLink } from '@/components/common/GithubLink'
 import { MessageBubble } from './MessageBubble'
 import { ChatInput } from './ChatInput'
-import { ChatSendOptions, Message } from '@/stores/chat'
+import { ChatSendOptions, Message, ModelCapabilities } from '@/stores/chat'
+import { attachmentAcceptForCapabilities } from '@/lib/modelCapabilities'
 import { cn } from '@/lib/utils'
 
 interface ChatWindowProps {
@@ -26,6 +27,9 @@ interface ChatWindowProps {
   allowAssistantMode?: boolean
   allowOutboundLinks?: boolean
   defaultSendRole?: 'user' | 'assistant'
+  /** Kimi/DeepSeek-style centered thread (portal chat) */
+  variant?: 'default' | 'studio'
+  modelCapabilities?: ModelCapabilities | null
 }
 
 export function ChatWindow({
@@ -46,7 +50,13 @@ export function ChatWindow({
   allowAssistantMode = false,
   allowOutboundLinks = false,
   defaultSendRole = 'user',
+  variant = 'default',
+  modelCapabilities = null,
 }: ChatWindowProps) {
+  const studio = variant === 'studio'
+  const embed = embedded && !studio
+  const allowAttachments = modelCapabilities?.supports_attachments !== false
+  const attachmentAccept = attachmentAcceptForCapabilities(modelCapabilities)
   const { t } = useTranslation()
   const resolvedEmpty = emptyMessage ?? t('chat.emptyStart')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -80,10 +90,18 @@ export function ChatWindow({
       <div
         ref={containerRef}
         className={cn(
-          'flex-1 overflow-y-auto w-full space-y-4 scrollbar-thin',
-          embedded ? 'px-3 py-4' : 'px-4 py-6',
+          'flex-1 overflow-y-auto w-full scrollbar-thin',
+          studio ? 'px-4 pt-6 pb-2' : embed ? 'px-2 py-2' : 'px-4 py-6',
         )}
       >
+        <div
+          className={cn(
+            'w-full min-w-0',
+            studio && 'mx-auto max-w-3xl space-y-8',
+            embed && 'flex flex-col gap-3',
+            !studio && !embed && 'flex flex-col gap-4',
+          )}
+        >
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">
             {t('chat.loadingHistory')}
@@ -108,6 +126,7 @@ export function ChatWindow({
                 message={message}
                 accentColor={accentColor}
                 compact={embedded}
+                variant={studio ? 'studio' : 'default'}
               />
             ))}
             {isStreaming && (
@@ -124,25 +143,44 @@ export function ChatWindow({
                 streamingContent={streamingContent}
                 accentColor={accentColor}
                 compact={embedded}
+                variant={studio ? 'studio' : 'default'}
               />
             )}
           </>
         )}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Input area */}
+      <div
+        className={cn(
+          studio && 'bg-gray-50 dark:bg-gray-900 shrink-0',
+          embed && 'shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800',
+        )}
+      >
+        <div
+          className={cn(
+            studio && 'mx-auto w-full max-w-3xl pt-3',
+            embed && 'px-2 py-2',
+          )}
+        >
       <ChatInput
         onSend={onSend}
         disabled={disabled}
-        compact={embedded}
-        singleLine={embedded}
+        compact={embed}
+        singleLine={embed}
+        variant={studio ? 'studio' : embed ? 'embedded' : 'default'}
         speechTranscribeUrl={speechTranscribeUrl}
         speechConfigUrl={speechConfigUrl}
         allowAssistantMode={allowAssistantMode}
         allowOutboundLinks={allowOutboundLinks}
         defaultSendRole={defaultSendRole}
+        allowAttachments={allowAttachments}
+        attachmentAccept={attachmentAccept}
       />
+        </div>
+      </div>
     </div>
   )
 }

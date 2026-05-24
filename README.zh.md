@@ -96,11 +96,21 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
 
 ```bash
 make install   # 安装依赖
-make dev       # 启动前后端
+make db-mysql-dev   # 可选：本地 MySQL
+ollama pull nomic-embed-text   # 推荐：本地 Embedding（知识库向量）
+make dev         # Core 本地开发（app.main，管理后台无「模板」菜单）
+make cloud       # Cloud 本地开发（cloud.main + 方案市场 / 门户）
 
 # 后端: http://localhost:3001  (/docs 为 Swagger)
 # 前端: http://localhost:5173
 ```
+
+| 命令 | 后端 | 管理后台「模板」 | 门户 / 方案市场 |
+|------|------|------------------|-----------------|
+| `make dev` | `app.main:app` | 无 | 无 |
+| `make cloud` | `cloud.main:app` | 有 | 有 |
+| `make deploy-core` | Core | 无 | 无 |
+| `make deploy-cloud` | Cloud | 有 | 有 |
 ```bash
 make test      # 运行测试
 make lint      # 代码检查
