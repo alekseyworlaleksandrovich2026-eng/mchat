@@ -106,10 +106,21 @@ export function useChat(conversationId?: string) {
     const ws = getWsClient()
     ws.connect()
 
-    // Send subscribe after a short delay (let WS connect)
-    const timer = setTimeout(() => {
+    const doSubscribe = () => {
       ws.send({ type: 'subscribe', conversation_id: conversationId })
-    }, 300)
+    }
+
+    // Send subscribe after a short delay (let WS connect)
+    const timer = setTimeout(doSubscribe, 300)
+
+    // Re-subscribe on WebSocket reconnection
+    const handleStatus = (status: string) => {
+      if (status === 'connected') {
+        subscribedRef.current = false
+        setTimeout(doSubscribe, 200)
+      }
+    }
+    const unsubStatus = ws.on('status', handleStatus)
 
     const unsubscribe = ws.on('message', handleMessage)
 
@@ -117,6 +128,7 @@ export function useChat(conversationId?: string) {
       clearTimeout(timer)
       subscribedRef.current = false
       ws.send({ type: 'unsubscribe', conversation_id: conversationId })
+      unsubStatus()
       unsubscribe()
     }
   }, [conversationId, fetchMessages, handleMessage])

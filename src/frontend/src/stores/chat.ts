@@ -218,14 +218,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messages: state.messages.map((m) => (m.id === tempId ? persisted : m)),
           isStreaming: shouldStream,
         }))
-        // Safety timeout: end stream after 30s if no response received
+        // Safety timeout: force end stream after 45s regardless
         if (shouldStream) {
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
             const s = useChatStore.getState()
-            if (s.isStreaming && !s.streamingContent) {
+            if (s.isStreaming) {
               s.endStream()
             }
-          }, 30000)
+          }, 45000)
+          // Store timer ID for cleanup (avoid memory leaks)
+          set((state) => ({ ...state, _streamTimer: timerId as any }))
         }
       }
     } catch (apiErr: any) {
