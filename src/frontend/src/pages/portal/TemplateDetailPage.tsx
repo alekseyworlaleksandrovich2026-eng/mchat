@@ -44,7 +44,7 @@ export function TemplateDetailPage() {
     : t('portal.planFree')
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
       <button onClick={() => navigate('/portal/templates')}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400">
         <ArrowLeft className="w-4 h-4" /> {t('portal.templates')}

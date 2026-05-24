@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, MessageSquare, ShoppingBag, Trash2 } from 'lucide-react'
+import { ExternalLink, MessageCircle, MessageSquare, ShoppingBag, Trash2 } from 'lucide-react'
+import api from '@/lib/api'
 import { portalApi, type MyChannel } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -44,6 +45,15 @@ export function MyChannelsPage() {
       setChannels((prev) => prev.filter((c) => c.id !== id))
     } catch (e: any) {
       setError(e.message)
+    }
+  }
+
+  const handleStartChat = async (channel: MyChannel) => {
+    try {
+      const conv = await api.post<{ id: string }>('/chat/conversations', { title: channel.name })
+      navigate(`/chat/${conv.id}`)
+    } catch (e: any) {
+      setError(e.message || 'Failed to start chat')
     }
   }
 
@@ -129,11 +139,14 @@ export function MyChannelsPage() {
 
             {/* Actions */}
             <div className="px-5 pb-4 flex items-center gap-2 border-t border-gray-100 dark:border-gray-700 pt-3">
-              <Button onClick={() => navigate(`/portal/channels/${channel.id}`)} size="sm" variant="outline" className="flex-1">
-                <ExternalLink className="w-3.5 h-3.5 mr-1" />{t('common.edit')}
+              <Button onClick={() => handleStartChat(channel)} size="sm" className="flex-1 gap-1">
+                <MessageCircle className="w-3.5 h-3.5" />Chat
+              </Button>
+              <Button onClick={() => navigate(`/portal/channels/${channel.id}`)} size="sm" variant="outline" className="gap-1">
+                <ExternalLink className="w-3.5 h-3.5" />Settings
               </Button>
               <button onClick={() => handleDelete(channel.id)}
-                className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
                 title={t('common.delete')}>
                 <Trash2 className="w-4 h-4" />
               </button>

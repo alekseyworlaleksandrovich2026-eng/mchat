@@ -104,6 +104,27 @@ class ChatService:
         # this message and update the conversation without lock contention.
         await self.db.commit()
 
+        # Increment usage counters for the associated channel
+        if user is not None:
+            from app.models.customer import CustomerConfig
+            customer_id = getattr(conversation, 'customer_id', None)
+            if customer_id:
+                result = await self.db.execute(
+                    select(CustomerConfig).where(CustomerConfig.id == customer_id)
+                )
+            else:
+                # Fallback: increment the user's first active channel
+                result = await self.db.execute(
+                    select(CustomerConfig).where(
+                        CustomerConfig.user_id == user.id,
+                        CustomerConfig.enabled == True,
+                    ).limit(1)
+                )
+            config = result.scalar_one_or_none()
+            if config is not None:
+                config.usage_messages_month = (config.usage_messages_month or 0) + 1
+                await self.db.flush()
+
         # Only user messages should trigger the bot engine.
         if role == "user":
             await event_bus.publish(

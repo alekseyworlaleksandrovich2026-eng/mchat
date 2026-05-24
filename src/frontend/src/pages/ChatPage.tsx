@@ -7,11 +7,13 @@ import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
 import { ChatWindow } from '@/components/chat/ChatWindow'
 import { useChat } from '@/hooks/useChat'
 import { ChatSendOptions } from '@/stores/chat'
+import { useAuthStore } from '@/stores/auth'
 
 export function ChatPage() {
   const { t } = useTranslation()
   const { conversationId } = useParams<{ conversationId: string }>()
   const navigate = useNavigate()
+  const { user } = useAuthStore()
   const chat = useChat(conversationId)
 
   const handleSend = (content: string, options?: ChatSendOptions) => {
@@ -20,14 +22,15 @@ export function ChatPage() {
     }
   }
 
+  const backPath = user?.role === 'user' ? '/portal/channels' : '/admin/conversations'
+
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       <header className="shrink-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => navigate('/admin/conversations')}
+          onClick={() => navigate(backPath)}
           className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           title={t('chat.backToConversations')}
-          aria-label={t('chat.backToConversations')}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -67,7 +70,7 @@ export function ChatPage() {
           speechTranscribeUrl="/api/speech/transcribe"
           allowAssistantMode
           allowOutboundLinks
-          defaultSendRole="assistant"
+          defaultSendRole="user"
         />
       </div>
     </div>
