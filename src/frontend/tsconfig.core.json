@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/routes-portal.tsx",
+    "src/AppPortal.tsx",
+    "src/main-portal.tsx",
+    "src/pages/portal",
+    "src/components/portal"
+  ]
+}

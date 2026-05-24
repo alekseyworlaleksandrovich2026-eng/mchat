@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const edition = process.env.VITE_MCHAT_EDITION || 'core'
+const isCloud = edition === 'cloud'
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -37,7 +40,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         widget: path.resolve(__dirname, 'widget.html'),
         'wx-mini': path.resolve(__dirname, 'wx-mini.html'),
-        portal: path.resolve(__dirname, 'portal.html'),
+        ...(isCloud ? { portal: path.resolve(__dirname, 'portal.html') } : {}),
       },
       output: {
         manualChunks: {

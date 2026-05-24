@@ -9,7 +9,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
 echo "==> Build frontend (Core edition)"
 cd "$PROJECT_DIR/src/frontend"
-VITE_MCHAT_EDITION=core npm run build
+VITE_MCHAT_EDITION=core npm run build:core
 
 echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
 rsync -avz --delete \
