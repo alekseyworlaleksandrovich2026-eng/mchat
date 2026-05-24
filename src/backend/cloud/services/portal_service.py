@@ -7,6 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_config import AIConfig
+from app.services.llm_credentials import is_usable_api_key, resolve_api_key
 from app.models.channel_template import ChannelTemplate
 from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
@@ -93,6 +94,36 @@ class PortalService:
             )
             if result.scalar_one_or_none() is not None:
                 ai_config_id = template.default_ai_config_id
+        if ai_config_id is None:
+            default_result = await self.db.execute(
+                select(AIConfig).where(AIConfig.is_default == True)
+            )
+            platform_default = default_result.scalar_one_or_none()
+            if platform_default is not None:
+                key = resolve_api_key(
+                    platform_default.provider, platform_default.api_key
+                )
+                if is_usable_api_key(key):
+                    ai_config = AIConfig(
+                        name=f"{template.name} AI",
+                        user_id=user.id,
+                        provider=platform_default.provider,
+                        model=platform_default.model,
+                        api_key=key,
+                        api_base=platform_default.api_base,
+                        system_prompt=(
+                            platform_default.system_prompt
+                            or (template.default_ai_config_spec or {}).get(
+                                "system_prompt", ""
+                            )
+                        ),
+                        temperature=platform_default.temperature,
+                        max_tokens=platform_default.max_tokens,
+                    )
+                    self.db.add(ai_config)
+                    await self.db.flush()
+                    ai_config_id = ai_config.id
+
         if ai_config_id is None:
             ai_spec = template.default_ai_config_spec or {}
             if ai_spec:

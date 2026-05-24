@@ -460,15 +460,32 @@ class OpenAICompatibleProvider(OpenAIProvider):
         self.model = ai_config.model
 
 
+def _effective_api_base(ai_config: AIConfig) -> str:
+    base = resolve_llm_base_url(ai_config.provider, ai_config.api_base) or ""
+    return base.lower()
+
+
 def _resolve_model_id(ai_config: AIConfig) -> str:
     """Map deprecated provider model ids to current ones."""
-    if ai_config.provider == "deepseek":
+    model = ai_config.model or ""
+    provider = (ai_config.provider or "").lower()
+    base = _effective_api_base(ai_config)
+
+    if provider == "deepseek" or "deepseek.com" in base:
         aliases = {
             "deepseek-chat": "deepseek-v4-flash",
             "deepseek-reasoner": "deepseek-v4-pro",
         }
-        return aliases.get(ai_config.model, ai_config.model)
-    return ai_config.model
+        if model in aliases:
+            return aliases[model]
+        if model.startswith("gpt-"):
+            logger.warning(
+                f"Model {model!r} incompatible with DeepSeek API; using deepseek-v4-flash"
+            )
+            return "deepseek-v4-flash"
+        return model
+
+    return model
 
 
 def create_provider(ai_config: AIConfig) -> LLMProvider:
