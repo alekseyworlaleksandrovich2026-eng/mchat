@@ -12,8 +12,6 @@ from app.api.health import router as health_router
 from app.api.settings import router as settings_router
 from app.api.channel import router as channel_router
 from app.api.dashboard import router as dashboard_router
-from app.api.portal import router as portal_router
-from app.api.template import router as template_router
 from app.api.speech import router as speech_router
 
 api_router = APIRouter(prefix="/api")
@@ -29,5 +27,3 @@ api_router.include_router(settings_router, prefix="/settings", tags=["Settings"]
 api_router.include_router(channel_router, prefix="/channels", tags=["Channels"])
 api_router.include_router(health_router, prefix="/health", tags=["Health"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
-api_router.include_router(portal_router, prefix="/portal", tags=["Portal"])
-api_router.include_router(template_router, prefix="/templates", tags=["Templates"])

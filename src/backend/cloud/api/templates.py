@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.schemas.portal import ChannelTemplateResponse
-from app.services.portal_service import PortalService
+from cloud.schemas.portal import ChannelTemplateResponse
+from cloud.services.portal_service import PortalService
 
 router = APIRouter()
 

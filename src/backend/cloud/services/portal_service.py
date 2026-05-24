@@ -11,7 +11,7 @@ from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
 from app.models.user import User
-from app.schemas.portal import (
+from cloud.schemas.portal import (
     ChannelTemplateResponse,
     EmbedCodeResponse,
     MyChannelResponse,

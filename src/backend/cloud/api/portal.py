@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
-from app.schemas.portal import (
+from cloud.schemas.portal import (
     EmbedCodeResponse,
     MyChannelResponse,
     MyChannelUpdate,
     PortalDashboardStats,
     RentChannelRequest,
 )
-from app.services.portal_service import PortalService
+from cloud.services.portal_service import PortalService
 
 router = APIRouter()
 

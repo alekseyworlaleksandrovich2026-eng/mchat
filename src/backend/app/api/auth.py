@@ -13,7 +13,6 @@ from app.schemas.auth import (
     CreateUserRequest,
     LoginRequest,
     RegisterRequest,
-    SignupRequest,
     TokenResponse,
     UpdateUserRequest,
     UserResponse,
@@ -83,29 +82,6 @@ async def register(
         )
 
 
-
-@router.post("/signup", response_model=TokenResponse)
-async def signup(
-    request: SignupRequest,
-    db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
-    """Public user signup — creates a 'user' role account."""
-    auth_service = AuthService(db)
-    try:
-        result = await auth_service.signup(
-            username=request.username,
-            password=request.password,
-            email=request.email,
-            display_name=request.display_name,
-        )
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Signup failed: {e}",
-        )
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(

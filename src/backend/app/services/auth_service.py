@@ -10,7 +10,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.auth import SignupRequest, TokenResponse, UserResponse
+from app.schemas.auth import TokenResponse, UserResponse
 
 
 class AuthService:
