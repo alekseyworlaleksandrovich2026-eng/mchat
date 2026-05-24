@@ -182,8 +182,17 @@ class ChatService:
             [c.id for c in conversations]
         )
 
+        # Batch-fetch usernames for display
+        user_ids = list({c.user_id for c in conversations if c.user_id})
+        usernames: dict[str, str] = {}
+        if user_ids:
+            user_result = await self.db.execute(
+                select(User.id, User.username).where(User.id.in_(user_ids))
+            )
+            usernames = {row[0]: row[1] for row in user_result.all()}
+
         return [
-            self._conversation_response_with_counts(conversation, counts, previews)
+            self._conversation_response_with_counts(conversation, counts, previews, usernames)
             for conversation in conversations
         ], total
 
@@ -305,6 +314,7 @@ class ChatService:
         conversation: Conversation,
         counts: dict[str, dict[str, int]],
         previews: dict[str, str],
+        usernames: dict[str, str] | None = None,
     ) -> ConversationResponse:
         payload = ConversationResponse.model_validate(conversation).model_dump()
         metrics = counts.get(conversation.id, {"user": 0, "ai": 0, "total": 0})
@@ -313,6 +323,12 @@ class ChatService:
         payload["total_message_count"] = metrics["total"]
         payload["conversation_type"] = self._conversation_type(conversation)
         payload["first_user_message_preview"] = previews.get(conversation.id)
+        if conversation.user_id:
+            payload["user_id"] = conversation.user_id
+            if usernames:
+                payload["username"] = usernames.get(conversation.user_id)
+        if getattr(conversation, 'customer_id', None):
+            payload["customer_id"] = getattr(conversation, 'customer_id', None)
         return ConversationResponse(**payload)
 
     async def _first_user_message_previews(

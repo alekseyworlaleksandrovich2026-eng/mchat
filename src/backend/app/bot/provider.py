@@ -74,7 +74,15 @@ class LLMProvider:
         content_buffer = ""
         dsml_mode = False
 
+        usage_info = None
         async for chunk in stream:
+            if hasattr(chunk, 'usage') and chunk.usage:
+                usage_info = {
+                    "prompt_tokens": getattr(chunk.usage, 'prompt_tokens', 0) or 0,
+                    "completion_tokens": getattr(chunk.usage, 'completion_tokens', 0) or 0,
+                    "total_tokens": getattr(chunk.usage, 'total_tokens', 0) or 0,
+                }
+                continue
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta is None:
                 continue
@@ -108,6 +116,9 @@ class LLMProvider:
                             tool_acc[idx]["name"] = tc.function.name
                         if tc.function.arguments:
                             tool_acc[idx]["arguments"] += tc.function.arguments
+
+        if usage_info:
+            yield {"type": "usage", **usage_info}
 
         for idx in sorted(tool_acc.keys()):
             entry = tool_acc[idx]
@@ -162,7 +173,7 @@ class OpenAIProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
-            "stream_options": {"include_usage": False},
+            "stream_options": {"include_usage": True},
         }
         if tools:
             kwargs["tools"] = tools

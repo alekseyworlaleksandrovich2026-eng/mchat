@@ -286,11 +286,18 @@ export function ConversationList({ onSelect, onStatsChange }: ConversationListPr
                           {statusLabels[conv.status]?.label || conv.status}
                         </Badge>
                       </div>
-                      {conv.contact_info && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 truncate">
-                          {truncate(conv.contact_info, 40)}
-                        </p>
-                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        {conv.username && (
+                          <span className="text-xs text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded">
+                            {conv.username}
+                          </span>
+                        )}
+                        {conv.contact_info && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {truncate(conv.contact_info, 30)}
+                          </span>
+                        )}
+                      </div>
                       {conv.first_user_message_preview && (
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 truncate">
                           {conv.first_user_message_preview}

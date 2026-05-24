@@ -31,10 +31,13 @@ class ConversationResponse(BaseModel):
     title: str | None = None
     status: str
     conversation_type: str = "chat"
+    user_id: str | None = None
+    username: str | None = None
     first_user_message_preview: str | None = None
     visitor_id: str | None = None
     client_ip: str | None = None
     contact_info: str | None = None
+    customer_id: str | None = None
     created_at: datetime
     updated_at: datetime
     last_seen_at: datetime

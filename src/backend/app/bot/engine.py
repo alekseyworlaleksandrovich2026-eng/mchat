@@ -279,6 +279,7 @@ async def process_message(
         reasoning_content = ""
         tool_calls_map: dict[str, dict[str, Any]] = {}
         first_pass_content = ""
+        usage_info: dict[str, int] = {}
 
         async for chunk in provider.stream_chat(
             messages=messages_list,
@@ -286,7 +287,12 @@ async def process_message(
             temperature=ai_config.temperature,
             max_tokens=ai_config.max_tokens,
         ):
-            if chunk.get("type") == "reasoning":
+            if chunk.get("type") == "usage":
+                usage_info = {
+                    "prompt_tokens": chunk.get("prompt_tokens", 0),
+                    "completion_tokens": chunk.get("completion_tokens", 0),
+                }
+            elif chunk.get("type") == "reasoning":
                 reasoning_content += chunk.get("content", "") or ""
             elif chunk.get("type") == "content":
                 token = chunk.get("content", "")
@@ -449,8 +455,23 @@ async def process_message(
                 role="assistant",
                 content=full_response,
                 extra_data=assistant_extra_data,
+                prompt_tokens=usage_info.get("prompt_tokens"),
+                completion_tokens=usage_info.get("completion_tokens"),
             )
             db_session.add(assistant_msg)
+
+            # Increment token usage on the associated channel
+            if usage_info:
+                customer_id = getattr(conversation, 'customer_id', None)
+                if customer_id:
+                    result = await db_session.execute(
+                        select(CustomerConfig).where(CustomerConfig.id == customer_id)
+                    )
+                    config = result.scalar_one_or_none()
+                    if config is not None:
+                        config.usage_tokens_month = (config.usage_tokens_month or 0) + usage_info.get("total_tokens", 0)
+                        await db_session.flush()
+
             conversation.updated_at = datetime.now(timezone.utc)
             conversation.last_seen_at = datetime.now(timezone.utc)
 

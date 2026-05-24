@@ -47,10 +47,13 @@ export interface Conversation {
   title: string | null
   status: 'active' | 'closed'
   conversation_type?: string
+  user_id?: string | null
+  username?: string | null
   first_user_message_preview?: string | null
   visitor_id: string | null
   client_ip?: string | null
   contact_info: string | null
+  customer_id?: string | null
   created_at: string
   updated_at: string
   last_seen_at: string
