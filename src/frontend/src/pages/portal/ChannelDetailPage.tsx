@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Copy, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Check, Copy, ExternalLink, MessageSquare } from 'lucide-react'
+import api from '@/lib/api'
 import { portalApi, type MyChannel, type EmbedCode } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -15,6 +16,7 @@ export function ChannelDetailPage() {
   const [embed, setEmbed] = useState<EmbedCode | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [startingChat, setStartingChat] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', welcome_message: '' })
@@ -52,6 +54,20 @@ export function ChannelDetailPage() {
     })
   }
 
+  const handleStartChat = async () => {
+    setStartingChat(true)
+    try {
+      const conv = await api.post<{ id: string }>('/chat/conversations', {
+        title: channel?.name || 'Chat',
+      })
+      navigate(`/chat/${conv.id}`)
+    } catch (e: any) {
+      setError(e.message || 'Failed to start chat')
+    } finally {
+      setStartingChat(false)
+    }
+  }
+
   if (loading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>
   if (!channel) return <div className="text-red-500 text-sm p-4">{error || 'Not found'}</div>
 
@@ -63,6 +79,28 @@ export function ChannelDetailPage() {
       </button>
 
       {error && <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">{error}</div>}
+
+      {/* Direct Chat */}
+      <div className="bg-primary-50 dark:bg-primary-900/20 rounded-2xl border border-primary-200 dark:border-primary-800 p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center">
+            <MessageSquare className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">{channel.name}</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {channel.channel_category === 'patent_rag' ? 'Patent RAG' : channel.channel_category}
+            </p>
+          </div>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          {channel.welcome_message || 'Start a conversation with this channel.'}
+        </p>
+        <Button onClick={handleStartChat} isLoading={startingChat} className="gap-2">
+          <MessageSquare className="w-4 h-4" />
+          {t('portal.startChat', 'Open Chat')}
+        </Button>
+      </div>
 
       {/* Settings */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">

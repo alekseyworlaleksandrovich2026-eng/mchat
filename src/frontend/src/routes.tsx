@@ -35,7 +35,6 @@ export const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'Reg
 export const PortalDashboard = lazyNamed(() => import('./pages/portal/DashboardPage'), 'DashboardPage')
 export const PortalTemplates = lazyNamed(() => import('./pages/portal/TemplatesPage'), 'TemplatesPage')
 export const PortalTemplateDetail = lazyNamed(() => import('./pages/portal/TemplateDetailPage'), 'TemplateDetailPage')
-export const PortalConversations = lazyNamed(() => import('./pages/ConversationsPage'), 'ConversationsPage')
 export const PortalMyChannels = lazyNamed(() => import('./pages/portal/MyChannelsPage'), 'MyChannelsPage')
 export const PortalChannelDetail = lazyNamed(() => import('./pages/portal/ChannelDetailPage'), 'ChannelDetailPage')
 
@@ -90,7 +89,6 @@ export function PortalRoutes() {
       <Route path="/portal/dashboard" element={<UserLayout><PageSuspense><PortalDashboard /></PageSuspense></UserLayout>} />
       <Route path="/portal/templates" element={<UserLayout><PageSuspense><PortalTemplates /></PageSuspense></UserLayout>} />
       <Route path="/portal/templates/:id" element={<UserLayout><PageSuspense><PortalTemplateDetail /></PageSuspense></UserLayout>} />
-      <Route path="/portal/conversations" element={<UserLayout><PageSuspense><PortalConversations /></PageSuspense></UserLayout>} />
       <Route path="/portal/channels" element={<UserLayout><PageSuspense><PortalMyChannels /></PageSuspense></UserLayout>} />
       <Route path="/portal/channels/:id" element={<UserLayout><PageSuspense><PortalChannelDetail /></PageSuspense></UserLayout>} />
     </Routes>

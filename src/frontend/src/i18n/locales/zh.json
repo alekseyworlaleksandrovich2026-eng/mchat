@@ -1040,6 +1040,7 @@
     "deleteConfirm": "确定要删除这个通道吗？此操作不可撤销。",
     "embedHint": "将以下代码复制到你的网站 <body> 标签末尾",
     "copyCode": "复制代码",
-    "copied": "已复制！"
+    "copied": "已复制！",
+    "startChat": "直接对话"
   }
 }
