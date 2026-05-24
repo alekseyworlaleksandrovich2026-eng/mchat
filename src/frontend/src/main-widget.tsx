@@ -23,7 +23,7 @@ const config = {
   primaryColor: params.get('primaryColor') || '#3b82f6',
   welcomeMessage:
     params.get('welcomeMessage') ||
-    '你好！我是智能客服助手，有什么可以帮助你的？',
+    '你好！有什么可以帮助你的？',
   botName: params.get('botName') || '智能助手',
   skillId: params.get('skillId') || '',
   launcherIcon: params.get('launcherIcon') || 'chat',

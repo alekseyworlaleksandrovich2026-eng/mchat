@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class AppSettingsResponse(BaseModel):
     """System-wide application settings."""
     site_name: str = "MChat"
-    site_description: str = "智能客服管理平台"
+    site_description: str = "垂直 RAG 管理平台"
     language: str = "zh-CN"
     timezone: str = "Asia/Shanghai"
     max_file_size: int = 10

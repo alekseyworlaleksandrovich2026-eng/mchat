@@ -1,4 +1,4 @@
-# MChat — 多租户 AI 智能客服平台
+# MChat — 多租户垂直 RAG 平台
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
@@ -6,7 +6,9 @@
 
 **[English](README.md)** · **[GitHub](https://github.com/windinwing/mchat)**
 
-MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流式 Bot 引擎、RAG 知识库、Skill 插件系统与嵌入式聊天 Widget，支持 **10+ 大模型提供商**及多渠道接入（网站 Widget、WebSocket、REST API、微信公众号等）。
+MChat 是一款**轻量、可嵌入、多租户**的垂直领域 RAG 平台，整合流式 Bot 引擎、RAG 知识库、Skill 插件系统与嵌入式聊天 Widget，支持 **10+ 大模型提供商**及多渠道接入（网站 Widget、WebSocket、REST API、微信公众号等）。
+
+平台内置 **AI 客服**作为基础通道，同时支持**自定义垂直通道**——预配置的领域 RAG 套餐（如专利查新、医疗咨询、法律问答），包含领域知识库、专属技能包和调优的检索策略，一行 `<script>` 即可嵌入。
 
 ## 在线站点
 
@@ -27,7 +29,7 @@ MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流
 
 [![对话管理](docs/images/mchat.conversations.zh.png)](docs/images/mchat.conversations.zh.png)
 
-### 客服 Agent 配置
+### 垂直通道配置（Agent）
 
 [![客服 Agent 配置](docs/images/mchat.customer.zh.png)](docs/images/mchat.customer.zh.png)
 
@@ -50,13 +52,14 @@ MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流
 ## 特性
 
 - **Bot 引擎** — 流式 LLM 推理与工具调用，支持 OpenAI、Anthropic、Google、DeepSeek、Ollama、Groq 等
-- **Skill 插件** — 支持从磁盘、zip、URL 热加载 `SKILL.md`，兼容 OpenClaw 风格技能包
+- **Skill 插件** — 支持从磁盘、zip、URL 热加载 `SKILL.md`，兼容 OpenClaw 风格技能包。可选付费技能包作为垂直通道的核心能力
 - **RAG 知识库** — 多策略分块、多 provider 嵌入（OpenAI / 本地上传 / Ollama）、混合检索（向量 + BM25 + RRF）、多 provider 重排序、查询改写、Parent-Child 上下文增强
-- **嵌入式 Widget** — 一行 `<script>` 即可为任意网站接入品牌化客服窗口
-- **多租户** — 多个客服 Agent，独立 AI 配置、技能与知识库
+- **嵌入式 Widget** — 一行 `<script>` 即可为任意网站接入品牌化垂直 RAG 窗口
+- **多租户** — 多个独立通道配置，各自拥有 AI 配置、技能与知识库，数据完全隔离
+- **垂直通道** — 预配置的领域 RAG 套餐：AI 模型、System Prompt、知识库、重排序策略、技能包、Widget 外观，一键创建
 - **多渠道** — Web Widget、REST、WebSocket、微信公众号（钉钉/WhatsApp/Telegram 等 [规划中](docs/roadmap.zh.md#3-多渠道频道)）
 - **语音输入** — 支持 OpenAI Whisper 转写（可选本地模型）
-- **安全认证** — JWT 与 API Key 管理
+- **安全认证** — JWT 与 API Key 管理，RBAC 权限控制
 - **Docker 部署** — `docker compose up -d` 一键启动
 
 ## 快速开始
@@ -85,7 +88,7 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
   data-agent-id="YOUR_AGENT_ID"
   data-primary-color="#3b82f6"
   data-welcome-message="你好！有什么可以帮助你的？"
-  data-bot-name="智能客服"
+  data-bot-name="智能助手"
 ></script>
 ```
 
@@ -121,6 +124,7 @@ mchat/
 │           ├── i18n/     # 中英文 (react-i18next)
 │           └── pages/    # 落地页 + 管理后台
 ├── skills/               # 技能包目录
+├── channel_templates/    # 垂直通道模板（专利查新、医疗咨询等）
 ├── docs/                 # 架构、API、部署、路线图
 ├── ops/docker/           # Docker Compose
 └── Makefile
@@ -147,8 +151,9 @@ mchat/
 | Agent | `/api/agents/*` | AI 配置 |
 | 知识库 | `/api/knowledge/*` | 文档与检索 |
 | Widget | `/api/widget/*` | 嵌入式聊天 |
-| 技能 | `/api/skills/*` | 技能管理 |
+| 技能 | `/api/skills/*` | 技能管理与安装 |
 | 频道 | `/api/channels/*` | 微信公众号等 |
+| 通道模板 | `/api/channels/templates/*` | 垂直通道一键创建 |
 | 语音 | `/api/speech/*` | 语音转文字 |
 | 认证 | `/api/auth/*` | 登录 / JWT |
 | WebSocket | `/ws` | 实时流式 |
@@ -178,6 +183,7 @@ mchat db seed
 - 支持 OpenClaw 风格 `SKILL.md` 多语言 blocks
 - 管理后台支持 zip 上传和 URL 安装（`/api/skills/install-url`）
 - CLI 支持 URL 或 ClawHub 名称安装，例如：`mchat skill install patent-search`
+- **付费技能包**：垂直通道可绑定专属技能作为增值服务
 
 ## Docker 变体
 

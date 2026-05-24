@@ -96,11 +96,13 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="MChat API",
         description=(
-            "MChat — Multi-tenant AI customer service platform. "
+            "MChat — Multi-tenant vertical RAG platform. "
             "Features: streaming Bot engine with tool calling, "
             "RAG knowledge base (multi-strategy chunking, hybrid search, "
             "multi-provider rerank), Skill plugin system, embedded chat Widget, "
-            "and multi-channel support (WeChat, Web Widget, REST, WebSocket)."
+            "and multi-channel support (WeChat, Web Widget, REST, WebSocket). "
+            "Ships with AI customer service as a built-in channel; extensible "
+            "to patent search, medical, legal, and other vertical RAG channels."
         ),
         version="1.0.0",
         lifespan=lifespan,
@@ -115,7 +117,7 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {"name": "Auth", "description": "Authentication, user management, JWT tokens"},
             {"name": "Chat", "description": "Conversations and messages (SSE streaming, file upload)"},
-            {"name": "Agents", "description": "AI model configs and customer service configurations"},
+            {"name": "Agents", "description": "AI model configs and vertical channel configurations"},
             {"name": "Knowledge", "description": "Knowledge bases, documents, RAG search, embedding models"},
             {"name": "Skills", "description": "Skill plugin management — upload, install from URL, reload"},
             {"name": "Widget", "description": "Public API for embedded chat widget (no auth)"},
