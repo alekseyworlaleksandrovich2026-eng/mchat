@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AdminLayout } from './components/layout/AdminLayout'
+import { UserLayout } from './components/layout/UserLayout'
 import { Spinner } from './components/ui/Spinner'
 import { DocumentTitle } from './components/common/DocumentTitle'
 
@@ -28,6 +29,12 @@ const MpJump = lazyNamed(() => import('./pages/MpJump'), 'MpJump')
 const HelpPage = lazyNamed(() => import('./pages/HelpPage'), 'HelpPage')
 const UsersPage = lazyNamed(() => import('./pages/UsersPage'), 'UsersPage')
 const RolesPage = lazyNamed(() => import('./pages/RolesPage'), 'RolesPage')
+const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'RegisterPage')
+const PortalDashboard = lazyNamed(() => import('./pages/portal/DashboardPage'), 'DashboardPage')
+const PortalTemplates = lazyNamed(() => import('./pages/portal/TemplatesPage'), 'TemplatesPage')
+const PortalTemplateDetail = lazyNamed(() => import('./pages/portal/TemplateDetailPage'), 'TemplateDetailPage')
+const PortalMyChannels = lazyNamed(() => import('./pages/portal/MyChannelsPage'), 'MyChannelsPage')
+const PortalChannelDetail = lazyNamed(() => import('./pages/portal/ChannelDetailPage'), 'ChannelDetailPage')
 
 function PageSuspense({ children }: { children: React.ReactNode }) {
   return (
@@ -137,6 +144,14 @@ export default function App() {
         <Route path="/mini-program" element={<PageSuspense><MpJump /></PageSuspense>} />
         <Route path="/help" element={<PageSuspense><HelpPage /></PageSuspense>} />
         <Route path="/showcase" element={<PageSuspense><SkillShowcasePage /></PageSuspense>} />
+        {/* Public portal */}
+        <Route path="/register" element={<PageSuspense><RegisterPage /></PageSuspense>} />
+        <Route path="/portal" element={<UserLayout><PageSuspense><PortalDashboard /></PageSuspense></UserLayout>} />
+        <Route path="/portal/dashboard" element={<UserLayout><PageSuspense><PortalDashboard /></PageSuspense></UserLayout>} />
+        <Route path="/portal/templates" element={<UserLayout><PageSuspense><PortalTemplates /></PageSuspense></UserLayout>} />
+        <Route path="/portal/templates/:id" element={<UserLayout><PageSuspense><PortalTemplateDetail /></PageSuspense></UserLayout>} />
+        <Route path="/portal/channels" element={<UserLayout><PageSuspense><PortalMyChannels /></PageSuspense></UserLayout>} />
+        <Route path="/portal/channels/:id" element={<UserLayout><PageSuspense><PortalChannelDetail /></PageSuspense></UserLayout>} />
       </Routes>
     </>
   )
