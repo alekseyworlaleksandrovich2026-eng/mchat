@@ -1,0 +1,64 @@
+import api from './api'
+
+export interface ChannelTemplate {
+  id: string
+  name: string
+  description: string | null
+  category: string
+  icon: string | null
+  price_monthly_cents: number
+  price_yearly_cents: number
+  trial_days: number
+  default_theme: Record<string, any> | null
+  default_welcome_message: string | null
+  default_offline_message: string | null
+  created_at: string
+}
+
+export interface MyChannel {
+  id: string
+  name: string
+  short_code: string | null
+  channel_category: string
+  template_id: string | null
+  plan: string
+  trial_ends_at: string | null
+  enabled: boolean
+  welcome_message: string | null
+  offline_message: string | null
+  theme: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EmbedCode {
+  agent_id: string
+  embed_script: string
+  widget_url: string
+}
+
+export interface PortalDashboardStats {
+  total_channels: number
+  active_channels: number
+  total_conversations: number
+  messages_today: number
+  plan: string | null
+  trial_ends_at: string | null
+}
+
+export const portalApi = {
+  getTemplates: () => api.get<ChannelTemplate[]>('/templates'),
+  getTemplate: (id: string) => api.get<ChannelTemplate>(`/templates/${id}`),
+
+  rentChannel: (templateId: string, name?: string) =>
+    api.post<MyChannel>('/portal/channels/rent', { template_id: templateId, name }),
+
+  getMyChannels: () => api.get<MyChannel[]>('/portal/channels'),
+  getMyChannel: (id: string) => api.get<MyChannel>(`/portal/channels/${id}`),
+  updateMyChannel: (id: string, data: Partial<MyChannel>) =>
+    api.put<MyChannel>(`/portal/channels/${id}`, data),
+  deleteMyChannel: (id: string) => api.delete(`/portal/channels/${id}`),
+
+  getEmbedCode: (id: string) => api.get<EmbedCode>(`/portal/channels/${id}/embed`),
+  getDashboardStats: () => api.get<PortalDashboardStats>('/portal/dashboard'),
+}

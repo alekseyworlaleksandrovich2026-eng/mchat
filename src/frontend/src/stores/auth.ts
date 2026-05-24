@@ -4,7 +4,8 @@ import api, { setToken, removeToken } from '@/lib/api'
 export interface User {
   id: string
   username: string
-  role: 'admin' | 'agent'
+  role: 'admin' | 'agent' | 'user'
+  account_status?: string
   display_name?: string | null
   avatar_url?: string | null
   email?: string
@@ -17,6 +18,7 @@ interface AuthState {
   error: string | null
 
   login: (username: string, password: string) => Promise<void>
+  signup: (username: string, password: string, email?: string, displayName?: string) => Promise<void>
   logout: () => void
   checkAuth: () => Promise<void>
   clearError: () => void
@@ -45,6 +47,30 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         isLoading: false,
         error: err.message || '登录失败',
+      })
+      throw err
+    }
+  },
+
+  signup: async (username, password, email, displayName) => {
+    set({ isLoading: true, error: null })
+    try {
+      const res = await api.post<{ access_token: string; token_type: string; user: User }>('/auth/signup', {
+        username,
+        password,
+        email,
+        display_name: displayName,
+      })
+      setToken(res.access_token)
+      set({
+        user: res.user,
+        isAuthenticated: true,
+        isLoading: false,
+      })
+    } catch (err: any) {
+      set({
+        isLoading: false,
+        error: err.message || 'Signup failed',
       })
       throw err
     }

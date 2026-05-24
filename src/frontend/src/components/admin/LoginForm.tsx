@@ -140,6 +140,16 @@ export function LoginForm() {
               })}
             </p>
           )}
+
+          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+            {t('auth.noAccount')}{' '}
+            <Link
+              to="/register"
+              className="text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+            >
+              {t('auth.register')}
+            </Link>
+          </p>
         </div>
       </div>
     </div>

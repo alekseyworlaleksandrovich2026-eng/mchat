@@ -122,7 +122,20 @@
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "submit": "登录",
-    "defaultCredentials": "首次登录默认账号：{{username}} / {{password}}（请登录后尽快修改密码）"
+    "defaultCredentials": "首次登录默认账号：{{username}} / {{password}}（请登录后尽快修改密码）",
+    "registerTitle": "创建账号",
+    "registerTagline": "注册 MChat 账号，开始使用垂直 RAG 通道",
+    "signup": "注册",
+    "confirmPassword": "确认密码",
+    "confirmPasswordPlaceholder": "请再次输入密码",
+    "passwordMismatch": "两次输入的密码不一致",
+    "haveAccount": "已有账号？",
+    "signIn": "登录",
+    "noAccount": "没有账号？",
+    "register": "立即注册",
+    "email": "邮箱（可选）",
+    "emailPlaceholder": "your@email.com",
+    "displayNamePlaceholder": "输入显示名称（可选）"
   },
   "meta": {
     "titleDefault": "MChat - 垂直 RAG 平台",
@@ -795,9 +808,18 @@
             "label": "客服配置（Agent）",
             "placeholder": "选择要接待消息的通道"
           },
-          "app_id": { "label": "App ID", "placeholder": "wx..." },
-          "app_secret": { "label": "App Secret", "placeholder": "公众号密钥" },
-          "token": { "label": "Token", "placeholder": "与公众平台服务器配置一致" },
+          "app_id": {
+            "label": "App ID",
+            "placeholder": "wx..."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "placeholder": "公众号密钥"
+          },
+          "token": {
+            "label": "Token",
+            "placeholder": "与公众平台服务器配置一致"
+          },
           "encoding_aes_key": {
             "label": "Encoding AES Key",
             "placeholder": "安全模式必填，明文模式可留空"
@@ -808,33 +830,60 @@
         "label": "钉钉",
         "description": "钉钉机器人或企业应用",
         "fields": {
-          "app_key": { "label": "App Key", "placeholder": "ding..." },
-          "app_secret": { "label": "App Secret", "placeholder": "应用密钥" },
-          "webhook_url": { "label": "Webhook URL", "placeholder": "https://oapi.dingtalk.com/..." }
+          "app_key": {
+            "label": "App Key",
+            "placeholder": "ding..."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "placeholder": "应用密钥"
+          },
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://oapi.dingtalk.com/..."
+          }
         }
       },
       "whatsapp": {
         "label": "WhatsApp",
         "description": "WhatsApp Business API",
         "fields": {
-          "phone_number_id": { "label": "Phone Number ID", "placeholder": "手机号 ID" },
-          "access_token": { "label": "Access Token", "placeholder": "EAA..." },
-          "verify_token": { "label": "Verify Token", "placeholder": "自定义验证令牌" }
+          "phone_number_id": {
+            "label": "Phone Number ID",
+            "placeholder": "手机号 ID"
+          },
+          "access_token": {
+            "label": "Access Token",
+            "placeholder": "EAA..."
+          },
+          "verify_token": {
+            "label": "Verify Token",
+            "placeholder": "自定义验证令牌"
+          }
         }
       },
       "telegram": {
         "label": "Telegram",
         "description": "Telegram Bot API",
         "fields": {
-          "bot_token": { "label": "Bot Token", "placeholder": "123:ABC..." }
+          "bot_token": {
+            "label": "Bot Token",
+            "placeholder": "123:ABC..."
+          }
         }
       },
       "slack": {
         "label": "Slack",
         "description": "Slack Bot / App",
         "fields": {
-          "bot_token": { "label": "Bot Token", "placeholder": "xoxb-..." },
-          "signing_secret": { "label": "Signing Secret", "placeholder": "签名密钥" }
+          "bot_token": {
+            "label": "Bot Token",
+            "placeholder": "xoxb-..."
+          },
+          "signing_secret": {
+            "label": "Signing Secret",
+            "placeholder": "签名密钥"
+          }
         }
       },
       "line": {
@@ -845,15 +894,24 @@
             "label": "Channel Access Token",
             "placeholder": "Bearer token"
           },
-          "channel_secret": { "label": "Channel Secret", "placeholder": "渠道密钥" }
+          "channel_secret": {
+            "label": "Channel Secret",
+            "placeholder": "渠道密钥"
+          }
         }
       },
       "custom": {
         "label": "自定义",
         "description": "自定义 Webhook 接入",
         "fields": {
-          "webhook_url": { "label": "Webhook URL", "placeholder": "https://..." },
-          "api_key": { "label": "API Key", "placeholder": "认证密钥" }
+          "webhook_url": {
+            "label": "Webhook URL",
+            "placeholder": "https://..."
+          },
+          "api_key": {
+            "label": "API Key",
+            "placeholder": "认证密钥"
+          }
         }
       }
     }
@@ -951,5 +1009,37 @@
     "speechFailed": "语音识别失败",
     "micDenied": "无法访问麦克风，请检查浏览器权限",
     "unavailable": "语音输入不可用，请配置后端 STT 或使用支持的浏览器"
+  },
+  "portal": {
+    "dashboard": "仪表盘",
+    "templates": "模板市场",
+    "myChannels": "我的通道",
+    "settings": "设置",
+    "trialRemaining": "试用剩余 {{days}} 天",
+    "trialExpired": "试用已过期",
+    "planFree": "免费版",
+    "planFreeTrial": "免费试用",
+    "planPro": "专业版",
+    "planEnterprise": "企业版",
+    "rentChannel": "免费试用",
+    "rentConfirm": "确定要创建「{{name}}」通道吗？",
+    "rentSuccess": "通道创建成功！",
+    "rentFailed": "创建通道失败",
+    "noChannels": "还没有创建通道",
+    "noChannelsHint": "浏览模板市场，选择一个垂直 RAG 通道开始使用",
+    "browseTemplates": "浏览模板市场",
+    "embedCode": "嵌入代码",
+    "widgetSettings": "Widget 设置",
+    "channelSettings": "通道设置",
+    "monthly": "/月",
+    "yearly": "/年",
+    "tryFree": "免费试用",
+    "trialDays": "{{days}} 天免费试用",
+    "noTrial": "无需试用",
+    "deleteChannel": "删除通道",
+    "deleteConfirm": "确定要删除这个通道吗？此操作不可撤销。",
+    "embedHint": "将以下代码复制到你的网站 <body> 标签末尾",
+    "copyCode": "复制代码",
+    "copied": "已复制！"
   }
 }
