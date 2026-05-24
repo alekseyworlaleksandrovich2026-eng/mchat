@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Copy, ExternalLink, MessageSquare } from 'lucide-react'
-import api from '@/lib/api'
+import { ArrowLeft, BookOpen, Check, Copy, ExternalLink, MessageSquare } from 'lucide-react'
 import { portalApi, type MyChannel, type EmbedCode } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -21,16 +20,34 @@ export function ChannelDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', welcome_message: '' })
 
-  useEffect(() => {
+  const loadChannel = () => {
     if (!id) return
+    setLoading(true)
     Promise.all([
       portalApi.getMyChannel(id),
       portalApi.getEmbedCode(id).catch(() => null),
-    ]).then(([ch, em]) => {
-      setChannel(ch)
-      setEmbed(em)
-      setForm({ name: ch.name, welcome_message: ch.welcome_message || '' })
-    }).catch((e) => setError(e.message)).finally(() => setLoading(false))
+    ])
+      .then(([ch, em]) => {
+        setChannel(ch)
+        setEmbed(em)
+        setForm({ name: ch.name, welcome_message: ch.welcome_message || '' })
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadChannel()
+  }, [id])
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (id) {
+        portalApi.getMyChannel(id).then(setChannel).catch(() => {})
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [id])
 
   const handleSave = async () => {
@@ -55,12 +72,12 @@ export function ChannelDetailPage() {
   }
 
   const handleStartChat = async () => {
+    if (!id) return
     setStartingChat(true)
     try {
-      const conv = await api.post<{ id: string }>('/chat/conversations', {
-        title: channel?.name || 'Chat',
-      })
-      navigate(`/chat/${conv.id}`)
+      const conv = await portalApi.resumeChannelConversation(id)
+      sessionStorage.setItem('mchat_portal_channel_id', id)
+      navigate(`/chat/${conv.id}?channel=${id}`)
     } catch (e: any) {
       setError(e.message || 'Failed to start chat')
     } finally {
@@ -93,13 +110,27 @@ export function ChannelDetailPage() {
             </p>
           </div>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
           {channel.welcome_message || 'Start a conversation with this channel.'}
         </p>
-        <Button onClick={handleStartChat} isLoading={startingChat} className="gap-2">
-          <MessageSquare className="w-4 h-4" />
-          {t('portal.startChat', 'Open Chat')}
-        </Button>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+          {t(
+            'portal.persistentChatHint',
+            'Chat history is saved for this channel. Leave and return anytime to continue.',
+          )}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleStartChat} isLoading={startingChat} className="gap-2">
+            <MessageSquare className="w-4 h-4" />
+            {t('portal.startChat', 'Open Chat')}
+          </Button>
+          <Link to={`/portal/channels/${id}/knowledge`}>
+            <Button type="button" variant="outline" className="gap-2">
+              <BookOpen className="w-4 h-4" />
+              {t('portal.manageKnowledge', 'Knowledge & files')}
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Usage */}
@@ -133,26 +164,31 @@ export function ChannelDetailPage() {
         </div>
       </div>
 
-      {/* Embed */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('portal.embedCode')}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('portal.embedHint')}</p>
-        {embed && (
-          <>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto mb-3">{embed.embed_script}</pre>
-            <div className="flex items-center gap-3">
-              <Button onClick={handleCopy} size="sm" className="gap-1">
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? t('portal.copied') : t('portal.copyCode')}
-              </Button>
-              <a href={embed.widget_url} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
-                {t('common.preview')} <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </>
-        )}
-      </div>
+      {/* Optional website embed — not the main portal chat experience */}
+      <details className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm group">
+        <summary className="cursor-pointer list-none px-6 py-4 text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center justify-between">
+          <span>{t('portal.embedAdvanced', 'Advanced: embed on your website')}</span>
+          <span className="text-xs text-gray-400 group-open:hidden">{t('portal.expand', 'Expand')}</span>
+        </summary>
+        <div className="px-6 pb-6 border-t border-gray-100 dark:border-gray-700 pt-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('portal.embedHint')}</p>
+          {embed && (
+            <>
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto mb-3">{embed.embed_script}</pre>
+              <div className="flex items-center gap-3">
+                <Button onClick={handleCopy} size="sm" className="gap-1">
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? t('portal.copied') : t('portal.copyCode')}
+                </Button>
+                <a href={embed.widget_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                  {t('common.preview')} <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      </details>
     </div>
   )
 }

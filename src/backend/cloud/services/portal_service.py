@@ -110,6 +110,18 @@ class PortalService:
                 await self.db.flush()
                 ai_config_id = ai_config.id
 
+        knowledge_base_ids: list[str] = []
+        if template.default_knowledge_base_ids:
+            knowledge_base_ids.extend(
+                [str(k) for k in template.default_knowledge_base_ids if k]
+            )
+        if not knowledge_base_ids:
+            kb_id = await self._create_kb_from_spec(
+                user, template.default_knowledge_base_spec or {}
+            )
+            if kb_id:
+                knowledge_base_ids.append(kb_id)
+
         config = CustomerConfig(
             name=request.name or template.name,
             user_id=user.id,
@@ -122,6 +134,7 @@ class PortalService:
             offline_message=template.default_offline_message,
             theme=template.default_theme or {},
             skill_ids=template.default_skill_ids or [],
+            knowledge_base_ids=knowledge_base_ids or None,
             position="right",
             enabled=True,
             widget_session_ttl_hours=24,
@@ -253,3 +266,170 @@ class PortalService:
             total_messages_month=int(total_msgs),
             total_tokens_month=int(total_tokens),
         )
+
+    async def _get_owned_channel(
+        self, user: User, channel_id: str
+    ) -> CustomerConfig:
+        result = await self.db.execute(
+            select(CustomerConfig).where(
+                CustomerConfig.id == channel_id,
+                CustomerConfig.user_id == user.id,
+            )
+        )
+        channel = result.scalar_one_or_none()
+        if channel is None:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        return channel
+
+    async def _create_kb_from_spec(
+        self, user: User, spec: dict
+    ) -> str | None:
+        """Create a knowledge base from template spec; returns kb id or None."""
+        if not spec or not spec.get("name"):
+            return None
+        from app.schemas.knowledge import KnowledgeBaseCreate
+        from app.services.knowledge_service import KnowledgeService
+
+        field_names = set(KnowledgeBaseCreate.model_fields.keys())
+        extra = {
+            k: v
+            for k, v in spec.items()
+            if k in field_names and k not in ("name", "description", "enabled")
+        }
+        kb = await KnowledgeService(self.db).create_knowledge_base(
+            user.id,
+            KnowledgeBaseCreate(
+                name=str(spec["name"]),
+                description=spec.get("description"),
+                enabled=bool(spec.get("enabled", True)),
+                **extra,
+            ),
+        )
+        return kb.id
+
+    async def list_channel_knowledge_bases(
+        self, user: User, channel_id: str
+    ) -> list[dict]:
+        from app.models.knowledge import Document, KnowledgeBase
+
+        channel = await self._get_owned_channel(user, channel_id)
+        kb_ids = list(channel.knowledge_base_ids or [])
+        if not kb_ids:
+            return []
+        result = await self.db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id.in_(kb_ids))
+        )
+        kb_by_id = {kb.id: kb for kb in result.scalars().all()}
+        items = []
+        for kb_id in kb_ids:
+            kb = kb_by_id.get(kb_id)
+            if kb is None:
+                continue
+            doc_count_result = await self.db.execute(
+                select(func.count(Document.id)).where(
+                    Document.knowledge_base_id == kb.id
+                )
+            )
+            doc_count = doc_count_result.scalar() or 0
+            is_owned = kb.user_id == user.id
+            items.append(
+                {
+                    "id": kb.id,
+                    "name": kb.name,
+                    "description": kb.description,
+                    "enabled": kb.enabled,
+                    "document_count": int(doc_count),
+                    "source": "owned" if is_owned else "system",
+                    "can_upload": is_owned,
+                    "can_delete": True,
+                }
+            )
+        return items
+
+    async def create_channel_knowledge_base(
+        self, user: User, channel_id: str, data: dict
+    ) -> dict:
+        from app.schemas.knowledge import KnowledgeBaseCreate
+        from app.services.knowledge_service import KnowledgeService
+
+        channel = await self._get_owned_channel(user, channel_id)
+        kb = await KnowledgeService(self.db).create_knowledge_base(
+            user.id,
+            KnowledgeBaseCreate(
+                name=data.get("name") or f"{channel.name} 知识库",
+                description=data.get("description"),
+                enabled=data.get("enabled", True),
+            ),
+        )
+        ids = list(channel.knowledge_base_ids or [])
+        if kb.id not in ids:
+            ids.append(kb.id)
+        channel.knowledge_base_ids = ids
+        await self.db.flush()
+        return {"id": kb.id, "name": kb.name}
+
+    async def import_channel_document(
+        self,
+        user: User,
+        channel_id: str,
+        kb_id: str,
+        file,
+    ):
+        from app.models.knowledge import KnowledgeBase
+        from app.services.knowledge_service import KnowledgeService
+
+        channel = await self._get_owned_channel(user, channel_id)
+        kb_ids = list(channel.knowledge_base_ids or [])
+        if kb_id not in kb_ids:
+            raise HTTPException(
+                status_code=403,
+                detail="Knowledge base not linked to this channel",
+            )
+        kb_result = await self.db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        )
+        kb = kb_result.scalar_one_or_none()
+        if kb is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+        if kb.user_id != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="System knowledge bases are read-only",
+            )
+        return await KnowledgeService(self.db).import_file(
+            kb_id=kb_id,
+            user_id=user.id,
+            file=file,
+        )
+
+    async def remove_channel_knowledge_base(
+        self, user: User, channel_id: str, kb_id: str
+    ) -> dict:
+        """Unlink KB from channel; delete the KB only when owned by the user."""
+        from app.models.knowledge import KnowledgeBase
+        from app.services.knowledge_service import KnowledgeService
+
+        channel = await self._get_owned_channel(user, channel_id)
+        kb_ids = list(channel.knowledge_base_ids or [])
+        if kb_id not in kb_ids:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+        kb_result = await self.db.execute(
+            select(KnowledgeBase).where(KnowledgeBase.id == kb_id)
+        )
+        kb = kb_result.scalar_one_or_none()
+        if kb is None:
+            kb_ids = [x for x in kb_ids if x != kb_id]
+            channel.knowledge_base_ids = kb_ids or None
+            await self.db.flush()
+            return {"ok": True, "deleted": False}
+
+        kb_ids = [x for x in kb_ids if x != kb_id]
+        channel.knowledge_base_ids = kb_ids or None
+        deleted = False
+        if kb.user_id == user.id:
+            deleted = await KnowledgeService(self.db).delete_knowledge_base(
+                kb_id, user.id
+            )
+        await self.db.flush()
+        return {"ok": True, "deleted": deleted, "source": "owned" if deleted else "system"}

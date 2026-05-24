@@ -52,6 +52,16 @@ export interface PortalDashboardStats {
   trial_ends_at: string | null
 }
 
+export interface ChannelKnowledgeBase {
+  id: string
+  name: string
+  description?: string | null
+  document_count: number
+  source: 'owned' | 'system'
+  can_upload?: boolean
+  can_delete?: boolean
+}
+
 export const portalApi = {
   getTemplates: () => api.get<ChannelTemplate[]>('/templates'),
   getTemplate: (id: string) => api.get<ChannelTemplate>(`/templates/${id}`),
@@ -66,5 +76,31 @@ export const portalApi = {
   deleteMyChannel: (id: string) => api.delete(`/portal/channels/${id}`),
 
   getEmbedCode: (id: string) => api.get<EmbedCode>(`/portal/channels/${id}/embed`),
+
+  /** Resume persistent portal chat for a channel (same thread across visits). */
+  resumeChannelConversation: (channelId: string) =>
+    api.post<{ id: string; messages?: unknown[] }>(
+      `/portal/channels/${channelId}/conversation/resume`,
+    ),
   getDashboardStats: () => api.get<PortalDashboardStats>('/portal/dashboard'),
+
+  listChannelKnowledgeBases: (channelId: string) =>
+    api.get<ChannelKnowledgeBase[]>(`/portal/channels/${channelId}/knowledge-bases`),
+
+  createChannelKnowledgeBase: (channelId: string, data: { name: string; description?: string }) =>
+    api.post<{ id: string; name: string }>(
+      `/portal/channels/${channelId}/knowledge-bases`,
+      data,
+    ),
+
+  removeChannelKnowledgeBase: (channelId: string, kbId: string) =>
+    api.delete<{ ok: boolean; deleted: boolean }>(
+      `/portal/channels/${channelId}/knowledge-bases/${kbId}`,
+    ),
+
+  uploadChannelDocument: (channelId: string, kbId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.upload(`/portal/channels/${channelId}/knowledge-bases/${kbId}/import-file`, form)
+  },
 }

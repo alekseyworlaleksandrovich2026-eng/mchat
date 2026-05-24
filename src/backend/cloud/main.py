@@ -69,6 +69,9 @@ def create_app() -> FastAPI:
                             "chunk_strategy": "fixed",
                             "chunk_size": 1000,
                             "chunk_overlap": 100,
+                            "embedding_provider": "ollama",
+                            "embedding_model": "nomic-embed-text",
+                            "embedding_dimension": 768,
                         },
                         default_theme={
                             "primaryColor": "#0891b2",

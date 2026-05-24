@@ -7,9 +7,9 @@ REMOTE="${1:-xiaoxiao@10.98.8.15}"
 REMOTE_DIR="/opt/xiaoxiao/mchat"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
-echo "==> Build frontend (local)"
+echo "==> Build frontend (Cloud edition)"
 cd "$PROJECT_DIR/src/frontend"
-npm run build
+VITE_MCHAT_EDITION=cloud npm run build
 
 echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
 rsync -avz --delete \

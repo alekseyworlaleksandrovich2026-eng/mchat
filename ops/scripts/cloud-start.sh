@@ -80,10 +80,11 @@ cat > index.html <<'HTMLEOF'
 </html>
 HTMLEOF
 
-echo "→ Starting frontend http://127.0.0.1:${FRONTEND_PORT}"
+echo "→ Starting frontend (Cloud edition) http://127.0.0.1:${FRONTEND_PORT}"
 echo "  Admin:     http://127.0.0.1:${FRONTEND_PORT}/admin"
 echo "  Portal:    http://127.0.0.1:${FRONTEND_PORT}/portal/dashboard"
 echo "  Templates: http://127.0.0.1:${FRONTEND_PORT}/portal/templates"
 echo "  Register:  http://127.0.0.1:${FRONTEND_PORT}/register"
 echo "  Login:     admin / admin123"
+export VITE_MCHAT_EDITION=cloud
 exec npm run dev

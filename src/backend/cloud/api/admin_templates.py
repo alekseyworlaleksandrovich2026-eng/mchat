@@ -26,6 +26,7 @@ class TemplateUpdate(BaseModel):
     default_ai_config_id: str | None = None
     default_ai_config_spec: dict | None = None
     default_skill_ids: list | None = None
+    default_knowledge_base_ids: list | None = None
     default_knowledge_base_spec: dict | None = None
     default_theme: dict | None = None
     default_welcome_message: str | None = None
@@ -57,6 +58,7 @@ async def list_templates(
             "default_ai_config_id": t.default_ai_config_id,
             "default_ai_config_spec": t.default_ai_config_spec,
             "default_skill_ids": t.default_skill_ids,
+            "default_knowledge_base_ids": t.default_knowledge_base_ids,
             "default_knowledge_base_spec": t.default_knowledge_base_spec,
             "default_theme": t.default_theme,
             "default_welcome_message": t.default_welcome_message,
@@ -89,6 +91,7 @@ async def get_template(
         "is_published": t.is_published, "sort_order": t.sort_order,
         "default_ai_config_spec": t.default_ai_config_spec,
         "default_skill_ids": t.default_skill_ids,
+        "default_knowledge_base_ids": t.default_knowledge_base_ids,
         "default_knowledge_base_spec": t.default_knowledge_base_spec,
         "default_theme": t.default_theme,
         "default_welcome_message": t.default_welcome_message,
@@ -136,8 +139,10 @@ async def create_template(
         trial_days=data.trial_days or 14,
         is_published=data.is_published or False,
         sort_order=data.sort_order or 0,
+        default_ai_config_id=data.default_ai_config_id,
         default_ai_config_spec=data.default_ai_config_spec,
         default_skill_ids=data.default_skill_ids,
+        default_knowledge_base_ids=data.default_knowledge_base_ids,
         default_knowledge_base_spec=data.default_knowledge_base_spec,
         default_theme=data.default_theme,
         default_welcome_message=data.default_welcome_message,
