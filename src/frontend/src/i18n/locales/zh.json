@@ -52,7 +52,8 @@
     "channels": "频道管理",
     "widgetPreview": "Widget 预览",
     "users": "用户管理",
-    "roles": "角色权限"
+    "roles": "角色权限",
+    "templates": "模板管理"
   },
   "roles": {
     "pageTitle": "角色权限管理"

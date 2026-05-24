@@ -52,7 +52,8 @@
     "channels": "Channels",
     "widgetPreview": "Widget preview",
     "users": "Users",
-    "roles": "Roles"
+    "roles": "Roles",
+    "templates": "Templates"
   },
   "roles": {
     "pageTitle": "Roles & Permissions"

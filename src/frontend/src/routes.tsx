@@ -29,6 +29,7 @@ const MpJump = lazyNamed(() => import('./pages/MpJump'), 'MpJump')
 const HelpPage = lazyNamed(() => import('./pages/HelpPage'), 'HelpPage')
 const UsersPage = lazyNamed(() => import('./pages/UsersPage'), 'UsersPage')
 const RolesPage = lazyNamed(() => import('./pages/RolesPage'), 'RolesPage')
+const TemplateManagerPage = lazyNamed(() => import('./pages/admin/TemplateManagerPage'), 'TemplateManagerPage')
 
 // Portal pages (only used in Cloud mode)
 export const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'RegisterPage')
@@ -68,6 +69,7 @@ export function CoreRoutes() {
         <Route path="/admin/settings" element={<AdminLayout><PageSuspense><SettingsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/channels" element={<AdminLayout><PageSuspense><ChannelsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/roles" element={<AdminLayout><PageSuspense><RolesPage /></PageSuspense></AdminLayout>} />
+        <Route path="/admin/templates" element={<AdminLayout><PageSuspense><TemplateManagerPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/users" element={<AdminLayout><PageSuspense><UsersPage /></PageSuspense></AdminLayout>} />
         <Route path="/chat/:conversationId" element={<PageSuspense><ChatPage /></PageSuspense>} />
         <Route path="/widget/demo" element={<PageSuspense><WidgetDemo /></PageSuspense>} />

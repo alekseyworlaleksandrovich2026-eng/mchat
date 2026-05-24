@@ -10,6 +10,7 @@ from app.main import create_app as create_core_app
 from cloud.api.auth import router as cloud_auth_router
 from cloud.api.portal import router as portal_router
 from cloud.api.templates import router as templates_router
+from cloud.api.admin_templates import router as admin_templates_router
 
 
 def create_app() -> FastAPI:
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
     app.include_router(cloud_auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(portal_router, prefix="/api/portal", tags=["Portal"])
     app.include_router(templates_router, prefix="/api/templates", tags=["Templates"])
+    app.include_router(admin_templates_router, prefix="/api", tags=["Admin Templates"])
 
     # Seed channel templates on startup
     from collections.abc import AsyncIterator
