@@ -41,7 +41,13 @@ export function LoginForm() {
     clearError()
     try {
       await login(username, password)
-      navigate(from, { replace: true })
+      // After login, check user role from store to redirect correctly
+      const user = useAuthStore.getState().user
+      if (user?.role === 'user') {
+        navigate('/portal/dashboard', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
     } catch {
       // error is handled by store
     }

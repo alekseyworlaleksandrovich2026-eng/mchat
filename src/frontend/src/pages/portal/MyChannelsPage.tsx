@@ -139,10 +139,10 @@ export function MyChannelsPage() {
 
             {/* Actions */}
             <div className="px-5 pb-4 flex items-center gap-2 border-t border-gray-100 dark:border-gray-700 pt-3">
-              <Button onClick={() => handleStartChat(channel)} size="sm" className="flex-1 gap-1">
+              <Button onClick={() => handleStartChat(channel)} size="sm" className="w-[120px] gap-1">
                 <MessageCircle className="w-3.5 h-3.5" />Chat
               </Button>
-              <Button onClick={() => navigate(`/portal/channels/${channel.id}`)} size="sm" variant="outline" className="gap-1">
+              <Button onClick={() => navigate(`/portal/channels/${channel.id}`)} size="sm" variant="outline" className="w-[100px] gap-1">
                 <ExternalLink className="w-3.5 h-3.5" />Settings
               </Button>
               <button onClick={() => handleDelete(channel.id)}

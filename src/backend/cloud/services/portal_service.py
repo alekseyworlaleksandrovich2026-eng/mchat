@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ai_config import AIConfig
 from app.models.channel_template import ChannelTemplate
 from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
@@ -70,10 +71,29 @@ class PortalService:
             else None
         )
 
+        # Create AIConfig from template spec
+        ai_config_id = None
+        ai_spec = template.default_ai_config_spec or {}
+        if ai_spec:
+            ai_config = AIConfig(
+                name=f"{template.name} AI",
+                user_id=user.id,
+                provider=ai_spec.get("provider", "openai"),
+                model=ai_spec.get("model", "gpt-4o-mini"),
+                api_key=ai_spec.get("api_key", ""),
+                system_prompt=ai_spec.get("system_prompt", ""),
+                temperature=ai_spec.get("temperature", 0.7),
+                max_tokens=ai_spec.get("max_tokens", 2048),
+            )
+            self.db.add(ai_config)
+            await self.db.flush()
+            ai_config_id = ai_config.id
+
         config = CustomerConfig(
             name=request.name or template.name,
             user_id=user.id,
             template_id=template.id,
+            ai_config_id=ai_config_id,
             channel_category=template.category,
             plan="free_trial" if template.trial_days > 0 else "free",
             trial_ends_at=trial_end,
