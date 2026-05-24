@@ -260,6 +260,16 @@ class DashboardService:
         activities.sort(key=lambda a: a.timestamp, reverse=True)
         return activities[:limit]
 
+    def _epoch_diff(self, a, b):
+        """Return SQL expression for (a - b) in seconds, dialect-aware."""
+        dialect = self.db.get_bind().dialect.name
+        if dialect == "mysql":
+            return func.unix_timestamp(a) - func.unix_timestamp(b)
+        elif dialect == "sqlite":
+            return func.strftime("%s", a) - func.strftime("%s", b)
+        else:
+            return func.extract("epoch", a) - func.extract("epoch", b)
+
     async def _compute_frt(self, user_id: str | None, period_start: datetime) -> float | None:
         """Average First Response Time: conversation.created_at to first assistant message."""
         sub = (
@@ -279,8 +289,7 @@ class DashboardService:
             sub = sub.where(Conversation.user_id == user_id)
 
         result = await self.db.execute(select(func.avg(
-            func.extract("epoch", sub.c.first_assistant) -
-            func.extract("epoch", sub.c.conv_created)
+            self._epoch_diff(sub.c.first_assistant, sub.c.conv_created)
         )).select_from(sub.subquery()))
         val = result.scalar()
         return float(val) if val is not None else None

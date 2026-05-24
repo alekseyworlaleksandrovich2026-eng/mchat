@@ -75,3 +75,4 @@ coverage/
 # Temporary files
 tmp/
 temp/
+src/frontend/index.html.bak
