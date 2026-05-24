@@ -15,6 +15,7 @@ import {
   Home,
   Users,
   Lock,
+  Store,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
@@ -42,10 +43,12 @@ export function Sidebar({ onClose }: SidebarProps) {
         { path: '/admin/channels', labelKey: 'nav.channels', icon: Globe },
         { path: '/admin/users', labelKey: 'nav.users', icon: Users },
         { path: '/admin/roles', labelKey: 'nav.roles', icon: Lock },
+        { path: '/portal/templates', labelKey: 'portal.templates', icon: Store },
       ]
     : [
         { path: '/admin', labelKey: 'nav.dashboard', icon: LayoutDashboard, exact: true },
         { path: '/admin/conversations', labelKey: 'nav.conversations', icon: MessageSquare },
+        { path: '/portal/templates', labelKey: 'portal.templates', icon: Store },
       ])
 
 

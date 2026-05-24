@@ -34,14 +34,10 @@ export function UserLayout({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!isLoading) {
-      if (!isAuthenticated) {
-        navigate('/register', { replace: true })
-      } else if (user?.role === 'admin' || user?.role === 'agent') {
-        navigate('/admin', { replace: true })
-      }
+    if (!isLoading && !isAuthenticated) {
+      navigate('/register', { replace: true })
     }
-  }, [isAuthenticated, isLoading, user, navigate])
+  }, [isAuthenticated, isLoading, navigate])
 
   if (isLoading || !isAuthenticated) {
     return (
