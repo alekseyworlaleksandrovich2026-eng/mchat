@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-stop cloud cloud-stop dev-backend dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
+.PHONY: help install dev dev-stop cloud cloud-stop dev-backend deploy-core deploy-cloud dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -18,6 +18,12 @@ cloud: ## Start Cloud (Core + signup/portal/templates) dev servers
 
 cloud-stop: ## Stop Cloud dev servers (same as dev-stop)
 	@bash ops/scripts/cloud-stop.sh
+
+deploy-core: ## Deploy Core to 192.169.177.210 (http://mchat.chat)
+	@bash ops/scripts/deploy-remote-core.sh
+
+deploy-cloud: ## Deploy Cloud to 10.98.8.15 (https://mchat.9235.net)
+	@bash ops/scripts/deploy-remote-cloud.sh
 
 dev-backend: ## Start backend only (frees port 3001 first)
 	@bash ops/scripts/dev-stop.sh 2>/dev/null || true
