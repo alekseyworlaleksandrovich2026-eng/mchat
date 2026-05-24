@@ -25,11 +25,24 @@ python -m app.cli db migrate
 cd "$DEPLOY_DIR"
 
 echo "==> systemd user service (Cloud: cloud.main:app)"
+# Stop legacy Core-only unit if present — it also binds :3001 and blocks Cloud routes.
+if systemctl --user is-active mchat-backend.service >/dev/null 2>&1; then
+  echo "    Stopping mchat-backend.service (Core) to free port 3001"
+  systemctl --user stop mchat-backend.service
+fi
+systemctl --user disable mchat-backend.service 2>/dev/null || true
+
 mkdir -p ~/.config/systemd/user
 cp ops/deploy/mchat-cloud-backend.service ~/.config/systemd/user/mchat-cloud-backend.service
 systemctl --user daemon-reload
 systemctl --user enable mchat-cloud-backend.service
 systemctl --user restart mchat-cloud-backend.service
+sleep 2
+if ! systemctl --user is-active mchat-cloud-backend.service >/dev/null 2>&1; then
+  echo "ERROR: mchat-cloud-backend failed to start. Recent logs:"
+  journalctl --user -u mchat-cloud-backend.service -n 15 --no-pager || true
+  exit 1
+fi
 
 if command -v loginctl >/dev/null 2>&1; then
   loginctl enable-linger "$USER" 2>/dev/null || true

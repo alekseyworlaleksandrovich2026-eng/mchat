@@ -157,12 +157,14 @@ export function ChatWindow({
         className={cn(
           studio && 'bg-gray-50 dark:bg-gray-900 shrink-0',
           embed && 'shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800',
+          !studio && !embed && 'shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800',
         )}
       >
         <div
           className={cn(
-            studio && 'mx-auto w-full max-w-3xl pt-3',
+            studio && 'mx-auto w-full max-w-3xl px-4 pt-3 pb-4',
             embed && 'px-2 py-2',
+            !studio && !embed && 'px-4 pt-3 pb-5',
           )}
         >
       <ChatInput
