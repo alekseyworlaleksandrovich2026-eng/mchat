@@ -169,45 +169,46 @@ class PortalService:
     # ── Dashboard ───────────────────────────────────────────────────
 
     async def get_dashboard_stats(self, user: User) -> PortalDashboardStats:
-        # Count channels
         result = await self.db.execute(
-            select(func.count(CustomerConfig.id)).where(
-                CustomerConfig.user_id == user.id
-            )
+            select(func.count(CustomerConfig.id)).where(CustomerConfig.user_id == user.id)
         )
         total_channels = result.scalar() or 0
 
         result = await self.db.execute(
             select(func.count(CustomerConfig.id)).where(
-                CustomerConfig.user_id == user.id,
-                CustomerConfig.enabled == True,
+                CustomerConfig.user_id == user.id, CustomerConfig.enabled == True
             )
         )
         active_channels = result.scalar() or 0
 
-        # Count conversations for this user
         result = await self.db.execute(
-            select(func.count(Conversation.id)).where(
-                Conversation.user_id == user.id
-            )
+            select(func.count(Conversation.id)).where(Conversation.user_id == user.id)
         )
         total_conversations = result.scalar() or 0
 
-        # Messages today
-        today_start = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         result = await self.db.execute(
             select(func.count(Message.id)).where(
-                Message.user_id == user.id,
-                Message.created_at >= today_start,
+                Message.user_id == user.id, Message.created_at >= today_start
             )
         )
         messages_today = result.scalar() or 0
+
+        # Aggregated usage across all user's channels
+        result = await self.db.execute(
+            select(
+                func.coalesce(func.sum(CustomerConfig.usage_messages_month), 0),
+                func.coalesce(func.sum(CustomerConfig.usage_tokens_month), 0),
+            ).where(CustomerConfig.user_id == user.id)
+        )
+        row = result.one_or_none()
+        total_msgs, total_tokens = row if row else (0, 0)
 
         return PortalDashboardStats(
             total_channels=total_channels,
             active_channels=active_channels,
             total_conversations=total_conversations,
             messages_today=messages_today,
+            total_messages_month=int(total_msgs),
+            total_tokens_month=int(total_tokens),
         )

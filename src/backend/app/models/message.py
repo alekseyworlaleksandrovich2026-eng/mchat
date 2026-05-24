@@ -29,6 +29,8 @@ class Message(Base):
         String(20), nullable=False
     )  # user, assistant, system, tool
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(nullable=True)
     extra_data: Mapped[dict | None] = mapped_column(
         "extra_data",
         JSON, nullable=True, default=None

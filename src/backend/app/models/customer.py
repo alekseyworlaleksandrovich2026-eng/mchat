@@ -69,11 +69,20 @@ class CustomerConfig(Base):
     usage_messages_month: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
+    usage_tokens_month: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     usage_documents_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
     usage_storage_bytes: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
+    )
+    usage_messages_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1000
+    )
+    usage_tokens_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100000
     )
     last_usage_reset_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

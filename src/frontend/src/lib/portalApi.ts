@@ -27,6 +27,10 @@ export interface MyChannel {
   welcome_message: string | null
   offline_message: string | null
   theme: Record<string, any> | null
+  usage_messages_month: number
+  usage_tokens_month: number
+  usage_messages_limit: number
+  usage_tokens_limit: number
   created_at: string
   updated_at: string
 }
@@ -42,6 +46,8 @@ export interface PortalDashboardStats {
   active_channels: number
   total_conversations: number
   messages_today: number
+  total_messages_month: number
+  total_tokens_month: number
   plan: string | null
   trial_ends_at: string | null
 }

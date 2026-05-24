@@ -102,6 +102,27 @@ export function ChannelDetailPage() {
         </Button>
       </div>
 
+      {/* Usage */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Usage this month</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-xs text-gray-500">Messages</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              {(channel.usage_messages_month ?? 0).toLocaleString()}
+              <span className="text-xs font-normal text-gray-400 ml-1">/ {(channel.usage_messages_limit ?? 0).toLocaleString()}</span>
+            </p>
+          </div>
+          <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl">
+            <p className="text-xs text-gray-500">Tokens</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              {(channel.usage_tokens_month ?? 0) >= 1000 ? `${((channel.usage_tokens_month ?? 0) / 1000).toFixed(1)}k` : (channel.usage_tokens_month ?? 0)}
+              <span className="text-xs font-normal text-gray-400 ml-1">/ {((channel.usage_tokens_limit ?? 0) >= 1000 ? `${((channel.usage_tokens_limit ?? 0) / 1000).toFixed(0)}k` : (channel.usage_tokens_limit ?? 0))}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Settings */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('portal.channelSettings')}</h2>

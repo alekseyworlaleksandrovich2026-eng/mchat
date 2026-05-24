@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { LayoutDashboard, MessageSquare, ShoppingBag, Zap } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, ShoppingBag, Zap, TrendingUp } from 'lucide-react'
 import { portalApi, type PortalDashboardStats } from '@/lib/portalApi'
 import { Spinner } from '@/components/ui/Spinner'
 import { useAuthStore } from '@/stores/auth'
+
+const formatTokens = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 export function DashboardPage() {
   const { t } = useTranslation()
@@ -43,6 +45,24 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Usage overview */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          <TrendingUp className="w-5 h-5 inline mr-2" />Usage this month
+        </h2>
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Messages</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{(stats?.total_messages_month ?? 0).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-1">Tokens</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatTokens(stats?.total_tokens_month ?? 0)}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Quick actions</h2>
         <div className="flex flex-wrap gap-3">

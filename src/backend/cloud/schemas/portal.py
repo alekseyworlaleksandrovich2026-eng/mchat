@@ -32,7 +32,7 @@ class RentChannelRequest(BaseModel):
 
 
 class MyChannelResponse(BaseModel):
-    """User's channel summary."""
+    """User's channel summary with usage stats."""
 
     id: str
     name: str
@@ -45,6 +45,11 @@ class MyChannelResponse(BaseModel):
     welcome_message: str | None = None
     offline_message: str | None = None
     theme: dict | None = None
+    # Usage stats
+    usage_messages_month: int = 0
+    usage_tokens_month: int = 0
+    usage_messages_limit: int = 1000
+    usage_tokens_limit: int = 100000
     created_at: datetime
     updated_at: datetime
 
@@ -76,5 +81,8 @@ class PortalDashboardStats(BaseModel):
     active_channels: int = 0
     total_conversations: int = 0
     messages_today: int = 0
+    # Aggregated usage across all channels
+    total_messages_month: int = 0
+    total_tokens_month: int = 0
     plan: str | None = None
     trial_ends_at: datetime | None = None

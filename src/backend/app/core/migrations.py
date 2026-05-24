@@ -196,8 +196,11 @@ def apply_schema_patches(conn: Connection) -> list[str]:
             ("template_id", "VARCHAR(36) NULL"),
             ("channel_category", "VARCHAR(50) NOT NULL DEFAULT 'customer_service'"),
             ("usage_messages_month", "INTEGER NOT NULL DEFAULT 0"),
+            ("usage_tokens_month", "INTEGER NOT NULL DEFAULT 0"),
             ("usage_documents_count", "INTEGER NOT NULL DEFAULT 0"),
             ("usage_storage_bytes", "INTEGER NOT NULL DEFAULT 0"),
+            ("usage_messages_limit", "INTEGER NOT NULL DEFAULT 1000"),
+            ("usage_tokens_limit", "INTEGER NOT NULL DEFAULT 100000"),
             ("last_usage_reset_at", "DATETIME NULL"),
         ]
         for col_name, col_def in cc_patches:
@@ -218,6 +221,20 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
             except Exception:
                 pass
+
+    # ---- messages: token tracking ----
+    if "messages" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "messages")
+        msg_patches = [
+            ("prompt_tokens", "INTEGER NULL"),
+            ("completion_tokens", "INTEGER NULL"),
+        ]
+        for col_name, col_def in msg_patches:
+            if col_name not in cols:
+                conn.execute(
+                    text(f"ALTER TABLE messages ADD COLUMN {col_name} {col_def}")
+                )
+                applied.append(f"messages.{col_name}")
 
     # document_chunks migration
     if "document_chunks" in inspect(conn).get_table_names():
