@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start Cloud backend + frontend for local development.
 # Cloud = Core + signup, portal API, template marketplace.
-# Always frees port 3001 first so `make clone` reliably restarts the API.
+# Always frees port 3001 first so `make cloud` reliably restarts the API.
 
 set -euo pipefail
 
@@ -31,6 +31,7 @@ fi
 source venv/bin/activate
 
 echo "→ Starting Cloud backend http://127.0.0.1:${BACKEND_PORT}"
+echo "  (cloud.main:app = Core + signup + portal + templates)"
 python -m uvicorn cloud.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 

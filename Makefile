@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-stop clone clone-stop dev-backend dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
+.PHONY: help install dev dev-stop cloud cloud-stop dev-backend dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -13,11 +13,11 @@ dev: ## Start dev servers (kills old 3001/5173, then backend + frontend)
 dev-stop: ## Stop processes on ports 3001 and 5173
 	@bash ops/scripts/dev-stop.sh
 
-clone: ## Start Cloud (Core + signup/portal/templates) dev servers
-	@bash ops/scripts/clone-start.sh
+cloud: ## Start Cloud (Core + signup/portal/templates) dev servers
+	@bash ops/scripts/cloud-start.sh
 
-clone-stop: ## Stop Cloud dev servers (same as dev-stop)
-	@bash ops/scripts/clone-stop.sh
+cloud-stop: ## Stop Cloud dev servers (same as dev-stop)
+	@bash ops/scripts/cloud-stop.sh
 
 dev-backend: ## Start backend only (frees port 3001 first)
 	@bash ops/scripts/dev-stop.sh 2>/dev/null || true
