@@ -173,6 +173,52 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 )
                 applied.append(f"knowledge_bases.{col_name}")
 
+    # ---- user fields added for channel rental ----
+    if "users" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "users")
+        user_patches = [
+            ("email", "VARCHAR(255) NULL"),
+            ("account_status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+        ]
+        for col_name, col_def in user_patches:
+            if col_name not in cols:
+                conn.execute(
+                    text(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
+                )
+                applied.append(f"users.{col_name}")
+
+    # ---- customer_configs fields for channel rental ----
+    if "customer_configs" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "customer_configs")
+        cc_patches = [
+            ("plan", "VARCHAR(20) NOT NULL DEFAULT 'free'"),
+            ("trial_ends_at", "DATETIME NULL"),
+            ("template_id", "VARCHAR(36) NULL"),
+            ("channel_category", "VARCHAR(50) NOT NULL DEFAULT 'customer_service'"),
+            ("usage_messages_month", "INTEGER NOT NULL DEFAULT 0"),
+            ("usage_documents_count", "INTEGER NOT NULL DEFAULT 0"),
+            ("usage_storage_bytes", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_usage_reset_at", "DATETIME NULL"),
+        ]
+        for col_name, col_def in cc_patches:
+            if col_name not in cols:
+                conn.execute(
+                    text(
+                        f"ALTER TABLE customer_configs ADD COLUMN {col_name} {col_def}"
+                    )
+                )
+                applied.append(f"customer_configs.{col_name}")
+        if "template_id" in _column_names(conn, "customer_configs"):
+            try:
+                conn.execute(
+                    text(
+                        "CREATE INDEX idx_customer_configs_template_id "
+                        "ON customer_configs(template_id)"
+                    )
+                )
+            except Exception:
+                pass
+
     # document_chunks migration
     if "document_chunks" in inspect(conn).get_table_names():
         cols = _column_names(conn, "document_chunks")

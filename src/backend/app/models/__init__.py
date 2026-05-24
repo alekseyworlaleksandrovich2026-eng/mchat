@@ -9,6 +9,7 @@ from app.models.knowledge import Document, DocumentChunk, KnowledgeBase
 from app.models.customer import CustomerConfig, WebhookConfig
 from app.models.setting import Setting
 from app.models.channel import Channel
+from app.models.channel_template import ChannelTemplate
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "WebhookConfig",
     "Setting",
     "Channel",
+    "ChannelTemplate",
 ]

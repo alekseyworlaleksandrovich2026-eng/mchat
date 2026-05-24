@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +50,36 @@ class CustomerConfig(Base):
     widget_session_ttl_hours: Mapped[int] = mapped_column(
         nullable=False, default=24
     )
+
+    # Channel rental / vertical RAG fields
+    plan: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="free"
+    )  # free, free_trial, pro, enterprise
+    trial_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    template_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("channel_templates.id"), nullable=True, index=True
+    )
+    channel_category: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="customer_service"
+    )  # customer_service, patent_rag, medical_rag, etc.
+
+    # Usage tracking
+    usage_messages_month: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    usage_documents_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    usage_storage_bytes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    last_usage_reset_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -62,6 +92,7 @@ class CustomerConfig(Base):
 
     # Relationships
     user = relationship("User", back_populates="customer_configs")
+    template = relationship("ChannelTemplate", back_populates="customer_configs")
 
     def __repr__(self) -> str:
         return f"<CustomerConfig(id={self.id}, name={self.name})>"

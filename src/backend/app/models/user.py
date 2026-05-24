@@ -23,6 +23,12 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         String(50), nullable=False, default="agent"
     )  # admin, agent, or custom roles
+    email: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
+    account_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active"
+    )  # active, suspended
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     display_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True
