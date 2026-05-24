@@ -30,35 +30,6 @@ def _delta_reasoning_content(delta: Any) -> str | None:
     return None
 
 
-def _message_reasoning_content(message: Any) -> str | None:
-    """Read reasoning_content from a completed chat message."""
-    if message is None:
-        return None
-    rc = getattr(message, "reasoning_content", None)
-    if rc:
-        return str(rc)
-    extra = getattr(message, "model_extra", None)
-    if isinstance(extra, dict) and extra.get("reasoning_content"):
-        return str(extra["reasoning_content"])
-    if hasattr(message, "model_dump"):
-        try:
-            dumped = message.model_dump()
-            if dumped.get("reasoning_content"):
-                return str(dumped["reasoning_content"])
-        except Exception:
-            pass
-    return None
-
-
-def _is_deepseek_thinking_api(client: Any, model: str) -> bool:
-    """DeepSeek V3.2+ thinking mode requires reasoning_content on tool turns."""
-    base = str(getattr(client, "base_url", "") or "").lower()
-    if "deepseek" in base:
-        return True
-    m = (model or "").lower()
-    return m.startswith("deepseek") or "reasoner" in m
-
-
 def _chunk_reasoning_content(chunk: Any) -> str | None:
     """Fallback: read reasoning_content from raw chunk JSON."""
     if not hasattr(chunk, "model_dump"):
@@ -177,57 +148,6 @@ class OpenAIProvider(LLMProvider):
 
         self.client = AsyncOpenAI(**client_kwargs)
         self.model = ai_config.model
-        self._deepseek_thinking = _is_deepseek_thinking_api(self.client, self.model)
-
-    async def _stream_tool_round_non_streaming(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
-        temperature: float,
-        max_tokens: int,
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        """Non-stream completion so reasoning_content is available for tool calls."""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            tools=tools,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=False,
-        )
-        msg = response.choices[0].message
-        reasoning = _message_reasoning_content(msg)
-        if reasoning:
-            yield {"type": "reasoning", "content": reasoning}
-
-        content = msg.content or ""
-        native_calls = list(msg.tool_calls or [])
-        dsml_calls = parse_dsml_tool_calls(content) if not native_calls else []
-
-        display = strip_dsml_blocks(content) if dsml_calls else content
-        if display and display.strip():
-            yield {"type": "content", "content": display}
-
-        if native_calls:
-            for tc in native_calls:
-                args_raw = tc.function.arguments if tc.function else ""
-                try:
-                    arguments = json.loads(args_raw) if args_raw else {}
-                except json.JSONDecodeError:
-                    arguments = {"raw": args_raw}
-                yield {
-                    "type": "tool_call",
-                    "tool_call": {
-                        "id": tc.id or "",
-                        "name": (tc.function.name if tc.function else "") or "",
-                        "arguments": arguments,
-                    },
-                }
-        else:
-            for call in dsml_calls:
-                yield {"type": "tool_call", "tool_call": call}
-
-        yield {"type": "done"}
 
     async def stream_chat(
         self,
@@ -236,18 +156,6 @@ class OpenAIProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 2048,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        if tools and self._deepseek_thinking:
-            try:
-                async for chunk in self._stream_tool_round_non_streaming(
-                    messages, tools, temperature, max_tokens
-                ):
-                    yield chunk
-                return
-            except Exception as e:
-                logger.warning(
-                    f"DeepSeek non-stream tool round failed, falling back to stream: {e}"
-                )
-
         kwargs = {
             "model": self.model,
             "messages": messages,
@@ -286,29 +194,75 @@ class AnthropicProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 2048,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # Anthropic expects system as separate parameter
         system_prompt = None
         api_messages = []
         for m in messages:
             if m["role"] == "system":
                 system_prompt = m["content"]
             else:
-                api_messages.append(m)
+                api_messages.append({"role": m["role"], "content": m["content"]})
 
-        kwargs = {
+        anthropic_tools = None
+        if tools:
+            anthropic_tools = []
+            for t in tools:
+                func = t.get("function") or t
+                anthropic_tools.append({
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                    "input_schema": func.get("parameters") or {"type": "object", "properties": {}, "required": []},
+                })
+
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": True,
         }
         if system_prompt:
             kwargs["system"] = system_prompt
+        if anthropic_tools:
+            kwargs["tools"] = anthropic_tools
 
         try:
+            tool_use_acc: dict[int, dict[str, Any]] = {}
+            content_idx = 0
+
             async with self.client.messages.stream(**kwargs) as stream:
-                async for text in stream.text_stream:
-                    yield {"type": "content", "content": text}
+                async for event in stream:
+                    if event.type == "content_block_start":
+                        block = event.content_block
+                        if block.type == "tool_use":
+                            tool_use_acc[event.index] = {
+                                "id": block.id,
+                                "name": block.name,
+                                "arguments": "",
+                            }
+                            content_idx = event.index
+                    elif event.type == "content_block_delta":
+                        delta = event.delta
+                        if delta.type == "text_delta":
+                            yield {"type": "content", "content": delta.text}
+                        elif delta.type == "input_json_delta":
+                            if event.index in tool_use_acc:
+                                tool_use_acc[event.index]["arguments"] += delta.partial_json
+                    elif event.type == "content_block_stop":
+                        if event.index in tool_use_acc:
+                            entry = tool_use_acc[event.index]
+                            args_raw = entry["arguments"]
+                            try:
+                                arguments = json.loads(args_raw) if args_raw else {}
+                            except json.JSONDecodeError:
+                                arguments = {"raw": args_raw}
+                            yield {
+                                "type": "tool_call",
+                                "tool_call": {
+                                    "id": entry["id"],
+                                    "name": entry["name"],
+                                    "arguments": arguments,
+                                },
+                            }
+                            del tool_use_acc[event.index]
 
             yield {"type": "done"}
         except Exception as e:
@@ -333,43 +287,74 @@ class GoogleProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 2048,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # Convert openai-style messages to Gemini format
+        from google.genai import types
+
         system_instruction = None
-        google_messages = []
+        google_contents: list[Any] = []
         for m in messages:
             if m["role"] == "system":
                 system_instruction = m["content"]
             else:
                 role = "model" if m["role"] == "assistant" else m["role"]
-                google_messages.append({
-                    "role": role,
-                    "parts": [{"text": m["content"]}],
-                })
+                google_contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part.from_text(text=m["content"])],
+                    )
+                )
+
+        google_tools = None
+        if tools:
+            func_declarations = []
+            for t in tools:
+                func = t.get("function") or t
+                params = func.get("parameters") or {"type": "object", "properties": {}}
+                func_declarations.append(
+                    types.FunctionDeclaration(
+                        name=func.get("name", ""),
+                        description=func.get("description", ""),
+                        parameters=params,
+                    )
+                )
+            google_tools = [types.Tool(function_declarations=func_declarations)]
+
+        gen_config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            system_instruction=system_instruction,
+            tools=google_tools,
+        )
 
         try:
-            gen_config = {
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-            }
-
-            contents = google_messages if google_messages else None
-
-            if contents:
-                response = self.client.models.generate_content_stream(
-                    model=self.model,
-                    contents=contents,
-                    config=gen_config,
-                )
-            else:
-                response = self.client.models.generate_content_stream(
-                    model=self.model,
-                    contents="Hello",
-                    config=gen_config,
-                )
-
-            for chunk in response:
-                if chunk.text:
-                    yield {"type": "content", "content": chunk.text}
+            accumulated_text = ""
+            async for response in self.client.aio.models.generate_content_stream(
+                model=self.model,
+                contents=google_contents,
+                config=gen_config,
+            ):
+                if response.candidates is None:
+                    # Handle safety block or empty response
+                    continue
+                for candidate in response.candidates:
+                    if candidate.content is None:
+                        continue
+                    for part in candidate.content.parts:
+                        if part.text:
+                            accumulated_text += part.text
+                            yield {"type": "content", "content": part.text}
+                        elif hasattr(part, "function_call") and part.function_call:
+                            fc = part.function_call
+                            args = {}
+                            if fc.args:
+                                args = dict(fc.args) if isinstance(fc.args, dict) else fc.args
+                            yield {
+                                "type": "tool_call",
+                                "tool_call": {
+                                    "id": fc.id or f"call_{fc.name}",
+                                    "name": fc.name,
+                                    "arguments": args,
+                                },
+                            }
 
             yield {"type": "done"}
         except Exception as e:

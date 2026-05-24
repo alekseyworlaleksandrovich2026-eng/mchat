@@ -292,6 +292,7 @@ async def process_message(
                 token = chunk.get("content", "")
                 if token and not token.startswith("Error:"):
                     first_pass_content += token
+                    yield token
             elif chunk.get("type") == "tool_call":
                 tc = chunk.get("tool_call", {})
                 tid = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
@@ -308,7 +309,6 @@ async def process_message(
 
         if not tool_calls_list and first_pass_content:
             full_response += first_pass_content
-            yield _with_patent_links(first_pass_content)
 
         if tool_calls_list:
             messages_list.append(
@@ -379,6 +379,7 @@ async def process_message(
                             presentation_parts.append(f"\n\n{token}")
                         elif token:
                             presentation_parts.append(token)
+                            yield token
                 if presentation_parts:
                     presentation_text = _with_patent_links(
                         "".join(presentation_parts)
@@ -386,7 +387,6 @@ async def process_message(
                     if not presentation_text.endswith("\n\n"):
                         presentation_text = presentation_text.rstrip() + "\n\n"
                     full_response += presentation_text
-                    yield presentation_text
 
             if patent_search_for_summary:
                 messages_list.append(
@@ -405,6 +405,7 @@ async def process_message(
                             summary_parts.append(f"\n\n{token}")
                         elif token:
                             summary_parts.append(token)
+                            yield token
                 if summary_parts:
                     summary_text = _with_patent_links("".join(summary_parts))
                     if not summary_text.startswith("\n"):
@@ -412,7 +413,6 @@ async def process_message(
                     if not summary_text.endswith("\n\n"):
                         summary_text = summary_text.rstrip() + "\n\n"
                     full_response += summary_text
-                    yield summary_text
 
         auto_reply_note = build_auto_reply_note(auto_reply_matches)
         if auto_reply_note:
