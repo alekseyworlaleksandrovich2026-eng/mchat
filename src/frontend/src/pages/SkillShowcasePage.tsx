@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink, Loader2, MessageSquare, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, ExternalLink, Loader2, MessageSquare, X } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
 
 interface ShowcaseSkill {
@@ -45,6 +45,7 @@ export function SkillShowcasePage() {
   const [config, setConfig] = useState<ShowcaseConfig | null>(null)
   const [activeSkill, setActiveSkill] = useState<ShowcaseSkill | null>(null)
   const [hubItems, setHubItems] = useState<ShowcaseHubItem[]>([])
+  const [mobileExpanded, setMobileExpanded] = useState(false)
   // Direct overlay from hub card click (skips detail page)
   const [hubDirectConfig, setHubDirectConfig] = useState<ShowcaseConfig | null>(null)
 
@@ -247,65 +248,137 @@ export function SkillShowcasePage() {
           primaryColor: effectiveConfig.theme?.primaryColor || '#3b82f6',
           welcomeMessage: effectiveConfig.welcome_message || t('showcase.defaultWelcome'),
         })
+        const close = () => { setActiveSkill(null); setHubDirectConfig(null); setMobileExpanded(false) }
+        const sidebar = (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
+                {activeSkill.name}
+              </h2>
+              <button
+                type="button"
+                onClick={close}
+                className="rounded-lg border border-gray-200 dark:border-gray-700 p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white shrink-0"
+                title={t('chat.widgetClose')}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {activeSkill.description ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                {activeSkill.description}
+              </p>
+            ) : null}
+            {hubDirectConfig && hubDirectConfig.skills.length > 1 && (
+              <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {hubDirectConfig.skills.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { setActiveSkill(s); setMobileExpanded(false) }}
+                      className={`px-2.5 py-1 rounded-full text-xs transition-colors ${
+                        activeSkill.id === s.id
+                          ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
+                          : 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => window.open(`/widget.html?${query.toString()}`, '_blank', 'noopener,noreferrer')}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 pt-1"
+            >
+              {t('showcase.openDirect')}
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )
+        const iframeEl = (
+          <div className="h-full min-h-0 rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-2xl">
+            <iframe
+              title={`skill-${activeSkill.id}`}
+              src={`/widget.html?${query.toString()}`}
+              className="w-full h-full border-0"
+              loading="lazy"
+            />
+          </div>
+        )
         return (
-          <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm p-4 md:p-8">
-            <div className="mx-auto h-full max-w-6xl grid lg:grid-cols-[320px,1fr] gap-4">
-              <div className="rounded-3xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6 shadow-2xl">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-gray-400">{t('showcase.pageTitle')}</p>
-                    <h2 className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{activeSkill.name}</h2>
-                  </div>
+          <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm p-2 sm:p-3 flex items-stretch sm:items-center justify-center">
+            {/* Mobile layout: compact header + iframe fills remaining height */}
+            <div className="h-full w-full max-w-6xl mx-auto flex flex-col min-h-0 lg:hidden">
+              <div className="rounded-xl bg-white/95 dark:bg-gray-800/95 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg px-3 py-2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <p className="flex-1 min-w-0 text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                    {activeSkill.name}
+                  </p>
                   <button
                     type="button"
-                    onClick={() => { setActiveSkill(null); setHubDirectConfig(null) }}
-                    className="rounded-xl border border-gray-200 dark:border-gray-700 p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white"
-                    title={t('chat.widgetClose')}
+                    onClick={() => setMobileExpanded(!mobileExpanded)}
+                    className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                  >
+                    {mobileExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={close}
+                    className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                  {activeSkill.description || t('showcase.cardHint')}
-                </p>
-                {hubDirectConfig && (
-                  <div className="mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
-                    <p className="text-xs text-gray-400 mb-2">{t('showcase.pageSubtitle')}</p>
-                    <div className="space-y-1">
-                      {hubDirectConfig.skills.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => setActiveSkill(s)}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                            activeSkill.id === s.id
-                              ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
-                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                          }`}
-                        >
-                          {s.name}
-                        </button>
-                      ))}
-                    </div>
+                {mobileExpanded && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                    {hubDirectConfig && (
+                      <div className="space-y-1 mb-3">
+                        {hubDirectConfig.skills.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => { setActiveSkill(s); setMobileExpanded(false) }}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                              activeSkill.id === s.id
+                                ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                            }`}
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => window.open(`/widget.html?${query.toString()}`, '_blank', 'noopener,noreferrer')}
+                      className="inline-flex items-center gap-2 text-sm font-medium text-primary-600 dark:text-primary-400"
+                    >
+                      {t('showcase.openDirect')}
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
-                <button
-                  type="button"
-                  onClick={() => window.open(`/widget.html?${query.toString()}`, '_blank', 'noopener,noreferrer')}
-                  className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-primary-600 dark:text-primary-400"
-                >
-                  {t('showcase.openDirect')}
-                  <ExternalLink className="w-4 h-4" />
-                </button>
               </div>
-              <div className="rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-2xl min-h-[70vh]">
+              <div className="mt-1.5 flex-1 min-h-0 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-2xl">
                 <iframe
                   title={`skill-${activeSkill.id}`}
                   src={`/widget.html?${query.toString()}`}
-                  className="w-full h-full min-h-[70vh] border-0"
+                  className="w-full h-full border-0"
                   loading="lazy"
                 />
               </div>
+            </div>
+            {/* Desktop: narrow sidebar + tall chat panel */}
+            <div className="hidden lg:grid w-full max-w-6xl h-[min(88vh,820px)] grid-cols-[minmax(200px,240px)_1fr] gap-3 min-h-0">
+              <div className="self-start rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 shadow-2xl max-h-full overflow-y-auto">
+                {sidebar}
+              </div>
+              {iframeEl}
             </div>
           </div>
         )

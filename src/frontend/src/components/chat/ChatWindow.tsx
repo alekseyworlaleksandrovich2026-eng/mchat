@@ -89,9 +89,16 @@ export function ChatWindow({
             {t('chat.loadingHistory')}
           </div>
         ) : messages.length === 0 && !isStreaming ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
-            <MessageSquare className="w-12 h-12 mb-3 opacity-50" />
-            <p className="text-sm">{resolvedEmpty}</p>
+          <div
+            className={cn(
+              'flex flex-col text-gray-400 dark:text-gray-500',
+              embedded
+                ? 'items-start pt-2'
+                : 'items-center justify-center h-full',
+            )}
+          >
+            <MessageSquare className={cn('opacity-50', embedded ? 'w-8 h-8 mb-2' : 'w-12 h-12 mb-3')} />
+            <p className={cn('text-sm', embedded && 'text-left leading-relaxed')}>{resolvedEmpty}</p>
           </div>
         ) : (
           <>
