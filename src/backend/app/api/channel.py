@@ -186,6 +186,24 @@ async def whatsapp_webhook_receive(
         raise HTTPException(status_code=403, detail="Channel disabled")
 
     body = await request.body()
+    config = channel.config or {}
+
+    # Verify X-Hub-Signature-256 (Meta requires this for POST)
+    app_secret = str(config.get("app_secret") or "").strip()
+    if app_secret:
+        import hashlib
+        import hmac
+
+        sig_header = request.headers.get("X-Hub-Signature-256", "")
+        if not sig_header.startswith("sha256="):
+            raise HTTPException(status_code=401, detail="Missing X-Hub-Signature-256")
+        expected = sig_header[7:]
+        computed = hmac.new(
+            app_secret.encode("utf-8"), body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(computed, expected):
+            raise HTTPException(status_code=401, detail="Signature mismatch")
+
     try:
         return await handle_whatsapp_webhook(
             channel, body=body, client_ip=extract_client_ip(request), db=db,
@@ -287,6 +305,30 @@ async def dingtalk_webhook_receive(
         raise HTTPException(status_code=403, detail="Channel disabled")
 
     body = await request.body()
+    config = channel.config or {}
+
+    # Verify DingTalk signature
+    app_secret = str(config.get("app_secret") or "").strip()
+    if app_secret:
+        import hashlib
+        import hmac
+        from base64 import b64encode
+
+        timestamp = request.headers.get("timestamp", "")
+        sign = request.headers.get("sign", "")
+        if not timestamp or not sign:
+            raise HTTPException(status_code=401, detail="Missing DingTalk signature headers")
+        string_to_sign = f"{timestamp}\n{app_secret}"
+        computed = b64encode(
+            hmac.new(
+                app_secret.encode("utf-8"),
+                string_to_sign.encode("utf-8"),
+                digestmod=hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+        if computed != sign:
+            raise HTTPException(status_code=401, detail="DingTalk signature mismatch")
+
     try:
         return await handle_dingtalk_webhook(
             channel, body=body, client_ip=extract_client_ip(request), db=db,

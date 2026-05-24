@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.engine import process_message
 from app.channels.whatsapp_adapter import WhatsAppAdapter
-from app.models.ai_config import AIConfig
 from app.models.channel import Channel
-from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
+from app.services.channel_service import (
+    channel_get_or_create_conversation,
+    channel_resolve_ai_config,
+)
 
 WHATSAPP_CONTACT_PREFIX = "whatsapp_channel:"
 
@@ -61,7 +63,12 @@ async def handle_whatsapp_webhook(
         await adapter.send_reply(config, msg.sender_id, "Linked customer config not found.")
         return {"ok": True}
 
-    conversation = await _get_or_create_conversation(db, channel.id, msg.sender_id, customer, client_ip)
+    conversation = await channel_get_or_create_conversation(
+        db, msg.sender_id, customer,
+        contact_info=whatsapp_contact_info(channel.id),
+        title=f"WhatsApp: {customer.name}",
+        client_ip=client_ip,
+    )
 
     user_message = Message(
         id=str(uuid.uuid4()),
@@ -75,10 +82,13 @@ async def handle_whatsapp_webhook(
     conversation.last_seen_at = datetime.now(timezone.utc)
     await db.commit()
 
+    ai_config = await channel_resolve_ai_config(db, customer)
+
     async def _generate_reply() -> str:
         full = ""
-        async for token in process_message(conversation, user_message, await _resolve_ai_config(db, customer), db,
-                                           customer_config=customer):
+        async for token in process_message(
+            conversation, user_message, ai_config, db, customer_config=customer
+        ):
             full += token
         return full
 
@@ -101,37 +111,3 @@ async def handle_whatsapp_webhook(
         logger.error(f"WhatsApp send failed: {e}", exc_info=True)
 
     return {"ok": True}
-
-
-async def _get_or_create_conversation(
-    db: AsyncSession, channel_id: str, sender_id: str, customer: CustomerConfig, client_ip: str | None
-) -> Conversation:
-    contact = whatsapp_contact_info(channel_id)
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.visitor_id == sender_id, Conversation.contact_info == contact,
-               Conversation.status == "active")
-        .order_by(Conversation.updated_at.desc()).limit(1)
-    )
-    conversation = result.scalar_one_or_none()
-    if conversation is not None:
-        return conversation
-
-    conversation = Conversation(
-        id=str(uuid.uuid4()), visitor_id=sender_id, client_ip=client_ip,
-        ai_config_id=customer.ai_config_id, title=f"WhatsApp: {customer.name}",
-        contact_info=contact, status="active",
-    )
-    db.add(conversation)
-    await db.flush()
-    return conversation
-
-
-async def _resolve_ai_config(db: AsyncSession, customer: CustomerConfig) -> AIConfig | None:
-    if customer.ai_config_id:
-        result = await db.execute(select(AIConfig).where(AIConfig.id == customer.ai_config_id))
-        cfg = result.scalar_one_or_none()
-        if cfg is not None:
-            return cfg
-    result = await db.execute(select(AIConfig).where(AIConfig.is_default == True))
-    return result.scalar_one_or_none()

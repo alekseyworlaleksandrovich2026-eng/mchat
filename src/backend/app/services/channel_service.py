@@ -1,11 +1,73 @@
 """Channel service - business logic for communication channel management."""
 
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ai_config import AIConfig
 from app.models.channel import Channel
+from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.schemas.channel import ChannelCreate, ChannelResponse, ChannelUpdate
+
+
+async def channel_get_or_create_conversation(
+    db: AsyncSession,
+    sender_id: str,
+    customer: CustomerConfig,
+    *,
+    contact_info: str,
+    title: str,
+    client_ip: str | None = None,
+) -> Conversation:
+    """Find or create an active conversation for a channel message."""
+    result = await db.execute(
+        select(Conversation)
+        .where(
+            Conversation.visitor_id == sender_id,
+            Conversation.contact_info == contact_info,
+            Conversation.status == "active",
+        )
+        .order_by(Conversation.updated_at.desc())
+        .limit(1)
+    )
+    conversation = result.scalar_one_or_none()
+    if conversation is not None:
+        if not conversation.customer_id:
+            conversation.customer_id = customer.id
+        return conversation
+
+    conversation = Conversation(
+        id=str(uuid.uuid4()),
+        visitor_id=sender_id,
+        customer_id=customer.id,
+        client_ip=client_ip,
+        ai_config_id=customer.ai_config_id,
+        title=title,
+        contact_info=contact_info,
+        status="active",
+    )
+    db.add(conversation)
+    await db.flush()
+    return conversation
+
+
+async def channel_resolve_ai_config(
+    db: AsyncSession, customer: CustomerConfig
+) -> AIConfig | None:
+    """Resolve AI config from customer or fall back to default."""
+    if customer.ai_config_id:
+        result = await db.execute(
+            select(AIConfig).where(AIConfig.id == customer.ai_config_id)
+        )
+        cfg = result.scalar_one_or_none()
+        if cfg is not None:
+            return cfg
+    result = await db.execute(
+        select(AIConfig).where(AIConfig.is_default == True)
+    )
+    return result.scalar_one_or_none()
 
 
 class ChannelService:

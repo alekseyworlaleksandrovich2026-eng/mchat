@@ -28,6 +28,10 @@ from app.models.channel import Channel
 from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
+from app.services.channel_service import (
+    channel_get_or_create_conversation,
+    channel_resolve_ai_config,
+)
 from app.core.database import async_session_factory
 
 WECHAT_CONTACT_PREFIX = "wechat_channel:"
@@ -206,7 +210,7 @@ async def _push_wechat_reply_in_background(
                 )
                 return
 
-            ai_config = await _resolve_ai_config(db, customer)
+            ai_config = await channel_resolve_ai_config(db, customer)
             if ai_config is None:
                 reply_text = "未配置 AI 模型，请在管理后台设置默认模型或绑定客服 Agent 的模型。"
             else:
@@ -428,11 +432,12 @@ async def _queue_active_text_message(
             f"原因：{e}"
         )
 
-    conversation = await _get_or_create_conversation(
+    conversation = await channel_get_or_create_conversation(
         db,
-        channel_id=channel.id,
-        openid=openid,
-        customer=customer,
+        openid,
+        customer,
+        contact_info=wechat_contact_info(channel.id),
+        title=f"WeChat: {customer.name}",
         client_ip=client_ip,
     )
 
@@ -505,11 +510,12 @@ async def _process_text_message(
     if customer.user_id != channel.user_id:
         return "客服配置与频道不属于同一账号，请重新绑定。"
 
-    conversation = await _get_or_create_conversation(
+    conversation = await channel_get_or_create_conversation(
         db,
-        channel_id=channel.id,
-        openid=openid,
-        customer=customer,
+        openid,
+        customer,
+        contact_info=wechat_contact_info(channel.id),
+        title=f"WeChat: {customer.name}",
         client_ip=client_ip,
     )
 
@@ -569,56 +575,3 @@ async def _process_text_message(
     if not reply:
         reply = "抱歉，我暂时无法回复，请稍后再试。"
     return _to_wechat_plain_text(reply)
-
-
-async def _get_or_create_conversation(
-    db: AsyncSession,
-    *,
-    channel_id: str,
-    openid: str,
-    customer: CustomerConfig,
-    client_ip: str | None,
-) -> Conversation:
-    contact = wechat_contact_info(channel_id)
-    result = await db.execute(
-        select(Conversation)
-        .where(
-            Conversation.visitor_id == openid,
-            Conversation.contact_info == contact,
-            Conversation.status == "active",
-        )
-        .order_by(Conversation.updated_at.desc())
-        .limit(1)
-    )
-    conversation = result.scalar_one_or_none()
-    if conversation is not None:
-        return conversation
-
-    conversation = Conversation(
-        id=str(uuid.uuid4()),
-        visitor_id=openid,
-        client_ip=client_ip,
-        ai_config_id=customer.ai_config_id,
-        title=f"WeChat: {customer.name}",
-        contact_info=contact,
-        status="active",
-    )
-    db.add(conversation)
-    await db.flush()
-    return conversation
-
-
-async def _resolve_ai_config(
-    db: AsyncSession, customer: CustomerConfig
-) -> AIConfig | None:
-    if customer.ai_config_id:
-        result = await db.execute(
-            select(AIConfig).where(AIConfig.id == customer.ai_config_id)
-        )
-        cfg = result.scalar_one_or_none()
-        if cfg is not None:
-            return cfg
-    result = await db.execute(
-        select(AIConfig).where(AIConfig.is_default == True)
-    )
-    return result.scalar_one_or_none()

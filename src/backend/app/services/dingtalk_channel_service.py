@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -13,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.engine import process_message
 from app.channels.dingtalk_adapter import DingTalkAdapter
-from app.models.ai_config import AIConfig
 from app.models.channel import Channel
-from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
+from app.services.channel_service import (
+    channel_get_or_create_conversation,
+    channel_resolve_ai_config,
+)
 
 DINGTALK_CONTACT_PREFIX = "dingtalk_channel:"
 
@@ -61,14 +64,18 @@ async def handle_dingtalk_webhook(
         await adapter.send_reply(config, msg.sender_id, "Linked customer config not found.")
         return {"ok": True}
 
-    import json
     try:
         ids = json.loads(msg.sender_id)
         sender_user = ids.get("sender", msg.sender_id)
     except (json.JSONDecodeError, TypeError):
         sender_user = msg.sender_id
 
-    conversation = await _get_or_create_conversation(db, channel.id, sender_user, customer, client_ip)
+    conversation = await channel_get_or_create_conversation(
+        db, sender_user, customer,
+        contact_info=dingtalk_contact_info(channel.id),
+        title=f"DingTalk: {customer.name}",
+        client_ip=client_ip,
+    )
 
     user_message = Message(
         id=str(uuid.uuid4()), conversation_id=conversation.id, role="user", content=content,
@@ -79,10 +86,13 @@ async def handle_dingtalk_webhook(
     conversation.last_seen_at = datetime.now(timezone.utc)
     await db.commit()
 
+    ai_config = await channel_resolve_ai_config(db, customer)
+
     async def _generate_reply() -> str:
         full = ""
-        async for token in process_message(conversation, user_message, await _resolve_ai_config(db, customer), db,
-                                           customer_config=customer):
+        async for token in process_message(
+            conversation, user_message, ai_config, db, customer_config=customer
+        ):
             full += token
         return full
 
@@ -105,37 +115,3 @@ async def handle_dingtalk_webhook(
         logger.error(f"DingTalk send failed: {e}", exc_info=True)
 
     return {"ok": True}
-
-
-async def _get_or_create_conversation(
-    db: AsyncSession, channel_id: str, sender_id: str, customer: CustomerConfig, client_ip: str | None
-) -> Conversation:
-    contact = dingtalk_contact_info(channel_id)
-    result = await db.execute(
-        select(Conversation)
-        .where(Conversation.visitor_id == sender_id, Conversation.contact_info == contact,
-               Conversation.status == "active")
-        .order_by(Conversation.updated_at.desc()).limit(1)
-    )
-    conversation = result.scalar_one_or_none()
-    if conversation is not None:
-        return conversation
-
-    conversation = Conversation(
-        id=str(uuid.uuid4()), visitor_id=sender_id, client_ip=client_ip,
-        ai_config_id=customer.ai_config_id, title=f"DingTalk: {customer.name}",
-        contact_info=contact, status="active",
-    )
-    db.add(conversation)
-    await db.flush()
-    return conversation
-
-
-async def _resolve_ai_config(db: AsyncSession, customer: CustomerConfig) -> AIConfig | None:
-    if customer.ai_config_id:
-        result = await db.execute(select(AIConfig).where(AIConfig.id == customer.ai_config_id))
-        cfg = result.scalar_one_or_none()
-        if cfg is not None:
-            return cfg
-    result = await db.execute(select(AIConfig).where(AIConfig.is_default == True))
-    return result.scalar_one_or_none()

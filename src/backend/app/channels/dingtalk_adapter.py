@@ -21,7 +21,10 @@ class DingTalkAdapter(BaseChannelAdapter):
     async def verify_webhook(self, query_params: dict[str, str]) -> str | None:
         return None
 
-    async def parse_message(self, body: bytes, query_params: dict[str, str]) -> ChannelMessage:
+    async def parse_message(
+        self, body: bytes, query_params: dict[str, str],
+        headers: dict[str, str] | None = None,
+    ) -> ChannelMessage:
         payload = json.loads(body)
 
         sender_id = payload.get("senderId") or payload.get("senderStaffId") or ""
