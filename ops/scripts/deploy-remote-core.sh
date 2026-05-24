@@ -3,7 +3,7 @@
 # Usage: bash ops/scripts/deploy-remote-core.sh
 set -euo pipefail
 
-REMOTE="${1:-root@192.169.177.210}"
+REMOTE="${1:-xiaoxiao@192.169.177.210}"
 REMOTE_DIR="/opt/xiaoxiao/mchat"
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
