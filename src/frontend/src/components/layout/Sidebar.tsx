@@ -14,6 +14,7 @@ import {
   Headphones,
   Home,
   Users,
+  Lock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
@@ -40,6 +41,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         { path: '/admin/settings', labelKey: 'nav.settings', icon: Settings },
         { path: '/admin/channels', labelKey: 'nav.channels', icon: Globe },
         { path: '/admin/users', labelKey: 'nav.users', icon: Users },
+        { path: '/admin/roles', labelKey: 'nav.roles', icon: Lock },
       ]
     : [
         { path: '/admin', labelKey: 'nav.dashboard', icon: LayoutDashboard, exact: true },

@@ -90,10 +90,37 @@ def create_app() -> FastAPI:
     setup_logger()
 
     app = FastAPI(
-        title="mchat Backend",
-        description="Multi-tenant AI chat platform backend API",
+        title="MChat API",
+        description=(
+            "MChat — Multi-tenant AI customer service platform. "
+            "Features: streaming Bot engine with tool calling, "
+            "RAG knowledge base (multi-strategy chunking, hybrid search, "
+            "multi-provider rerank), Skill plugin system, embedded chat Widget, "
+            "and multi-channel support (WeChat, Web Widget, REST, WebSocket)."
+        ),
         version="1.0.0",
         lifespan=lifespan,
+        contact={
+            "name": "MChat",
+            "url": "https://github.com/windinwing/mchat",
+        },
+        license_info={
+            "name": "MIT",
+            "url": "https://github.com/windinwing/mchat/blob/main/LICENSE",
+        },
+        openapi_tags=[
+            {"name": "Auth", "description": "Authentication, user management, JWT tokens"},
+            {"name": "Chat", "description": "Conversations and messages (SSE streaming, file upload)"},
+            {"name": "Agents", "description": "AI model configs and customer service configurations"},
+            {"name": "Knowledge", "description": "Knowledge bases, documents, RAG search, embedding models"},
+            {"name": "Skills", "description": "Skill plugin management — upload, install from URL, reload"},
+            {"name": "Widget", "description": "Public API for embedded chat widget (no auth)"},
+            {"name": "Channels", "description": "Multi-channel configuration (WeChat, etc.)"},
+            {"name": "Speech", "description": "Speech-to-text transcription"},
+            {"name": "Settings", "description": "System settings, logs, Milvus test"},
+            {"name": "Health", "description": "Health check and metrics"},
+            {"name": "Dashboard", "description": "Dashboard stats and activity feed"},
+        ],
     )
 
     # CORS middleware

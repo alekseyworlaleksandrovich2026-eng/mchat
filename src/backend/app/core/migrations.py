@@ -94,6 +94,21 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                 pass
             applied.append("customer_configs.short_code")
 
+    # Expand users.role column for custom role names
+    if "users" in inspect(conn).get_table_names():
+        try:
+            if dialect == "mysql":
+                conn.execute(
+                    text("ALTER TABLE users MODIFY COLUMN role VARCHAR(50) NOT NULL DEFAULT 'agent'")
+                )
+            elif dialect == "postgresql":
+                conn.execute(
+                    text("ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(50)")
+                )
+            applied.append("users.role_size")
+        except Exception:
+            pass
+
     if "conversations" in inspect(conn).get_table_names():
         cols = _column_names(conn, "conversations")
         if "client_ip" not in cols:
@@ -122,6 +137,55 @@ def apply_schema_patches(conn: Connection) -> list[str]:
             )
         except Exception:
             pass
+
+    if "knowledge_bases" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "knowledge_bases")
+        kb_patches = [
+            ("chunk_strategy", "VARCHAR(20) NOT NULL DEFAULT 'fixed'"),
+            ("chunk_size", "INTEGER NOT NULL DEFAULT 500"),
+            ("chunk_overlap", "INTEGER NOT NULL DEFAULT 50"),
+            ("chunk_min_size", "INTEGER NOT NULL DEFAULT 80"),
+            ("embedding_provider", "VARCHAR(50) NULL"),
+            ("embedding_model", "VARCHAR(100) NULL"),
+            ("embedding_api_base", "VARCHAR(500) NULL"),
+            ("embedding_dimension", "INTEGER NOT NULL DEFAULT 1536"),
+            ("retrieval_mode", "VARCHAR(20) NOT NULL DEFAULT 'hybrid'"),
+            ("retrieval_top_k", "INTEGER NOT NULL DEFAULT 5"),
+            ("retrieval_candidate_k", "INTEGER NOT NULL DEFAULT 20"),
+            ("rerank_enabled", "BOOLEAN NOT NULL DEFAULT 1" if dialect == "mysql" else "BOOLEAN NOT NULL DEFAULT TRUE"),
+            ("rerank_top_n", "INTEGER NOT NULL DEFAULT 5"),
+            ("retrieval_bm25_enabled", "BOOLEAN NOT NULL DEFAULT 1" if dialect == "mysql" else "BOOLEAN NOT NULL DEFAULT TRUE"),
+            ("retrieval_bm25_k1", "FLOAT NOT NULL DEFAULT 1.5"),
+            ("retrieval_bm25_b", "FLOAT NOT NULL DEFAULT 0.75"),
+            ("rerank_provider", "VARCHAR(20) NOT NULL DEFAULT 'lexical'"),
+            ("rerank_model", "VARCHAR(100) NULL"),
+            ("retrieval_query_rewrite_enabled", "BOOLEAN NOT NULL DEFAULT 0" if dialect == "mysql" else "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("retrieval_query_rewrite_count", "INTEGER NOT NULL DEFAULT 3"),
+            ("chunk_semantic_threshold", "FLOAT NOT NULL DEFAULT 0.7"),
+            ("chunk_parent_enabled", "BOOLEAN NOT NULL DEFAULT 1" if dialect == "mysql" else "BOOLEAN NOT NULL DEFAULT TRUE"),
+            ("indexed_embedding_key", "VARCHAR(255) NULL"),
+            ("reindex_status", "VARCHAR(20) NOT NULL DEFAULT 'idle'"),
+        ]
+        for col_name, col_def in kb_patches:
+            if col_name not in cols:
+                conn.execute(
+                    text(f"ALTER TABLE knowledge_bases ADD COLUMN {col_name} {col_def}")
+                )
+                applied.append(f"knowledge_bases.{col_name}")
+
+    # document_chunks migration
+    if "document_chunks" in inspect(conn).get_table_names():
+        cols = _column_names(conn, "document_chunks")
+        dc_patches = [
+            ("parent_content", "TEXT NULL"),
+            ("chunk_type", "VARCHAR(10) NOT NULL DEFAULT 'child'"),
+        ]
+        for col_name, col_def in dc_patches:
+            if col_name not in cols:
+                conn.execute(
+                    text(f"ALTER TABLE document_chunks ADD COLUMN {col_name} {col_def}")
+                )
+                applied.append(f"document_chunks.{col_name}")
 
     # Ensure any new tables from models exist
     Base.metadata.create_all(conn)

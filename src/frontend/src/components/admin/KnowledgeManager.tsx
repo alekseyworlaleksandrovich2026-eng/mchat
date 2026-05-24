@@ -9,13 +9,23 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Settings2,
 } from 'lucide-react'
 import api from '@/lib/api'
 import {
+  defaultRag,
   mapDocument,
   mapKnowledgeBase,
+  mapReindexResult,
+  mapUploadedEmbeddingModel,
+  ragSettingsToPayload,
+  type UploadedEmbeddingModel,
+  type ChunkStrategy,
   type KnowledgeBase,
+  type KnowledgeBaseRagSettings,
   type KnowledgeDocument,
+  type RetrievalMode,
+  type RerankProvider,
 } from '@/lib/knowledgeApi'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -25,6 +35,22 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Switch } from '@/components/ui/Switch'
 import { toast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/utils'
+
+/** Shared form styles for RAG settings (dark-mode safe + compact). */
+const ragLabel = 'block text-xs font-medium text-gray-600 dark:text-gray-300 mb-0.5'
+const ragSelect =
+  'w-full h-8 rounded-md border border-gray-300 bg-white px-2.5 text-sm text-gray-900 ' +
+  'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ' +
+  'dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:color-scheme-dark'
+const ragHint = 'text-[11px] leading-snug text-gray-500 dark:text-gray-400'
+const ragSectionTitle = 'text-xs font-semibold text-gray-700 dark:text-gray-200'
+const ragSection = 'border-t border-gray-200 dark:border-gray-700 pt-3 space-y-2'
+const ragInputCompact =
+  '[&_label]:text-xs [&_label]:mb-0.5 [&_label]:text-gray-600 dark:[&_label]:text-gray-300 [&_input]:h-8 [&_input]:py-1.5 [&_input]:text-sm'
+const milvusInput =
+  'h-8 rounded-md border border-gray-300 bg-white px-2.5 text-sm text-gray-900 ' +
+  'placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 ' +
+  'dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500'
 
 export function KnowledgeManager() {
   const { t } = useTranslation()
@@ -43,7 +69,24 @@ export function KnowledgeManager() {
   const [kbDesc, setKbDesc] = useState('')
   const [search, setSearch] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [ragSettings, setRagSettings] = useState<KnowledgeBaseRagSettings>(defaultRag)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [reindexRechunk, setReindexRechunk] = useState(true)
+  const [reindexing, setReindexing] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'form' | 'json'>('form')
+  const [jsonText, setJsonText] = useState('')
+  const [jsonError, setJsonError] = useState('')
+  const [embeddingModels, setEmbeddingModels] = useState<UploadedEmbeddingModel[]>([])
+  const [modelUploading, setModelUploading] = useState(false)
+  const embeddingModelInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const embeddingProvider =
+    ragSettings.embeddingProvider?.trim().toLowerCase() || 'openai'
+  const readyEmbeddingModels = embeddingModels.filter((m) => m.status === 'ready')
+
+  const selectedKbMeta = knowledgeBases.find((kb) => kb.id === selectedKB)
 
   const docStatusLabel = (status: string) => {
     switch (status) {
@@ -62,13 +105,100 @@ export function KnowledgeManager() {
   useEffect(() => {
     loadKnowledgeBases()
     loadMilvusSettings()
+    loadEmbeddingModels()
   }, [])
+
+  const loadEmbeddingModels = async () => {
+    try {
+      const data = await api.get<Record<string, unknown>[]>('/knowledge/embedding-models')
+      setEmbeddingModels(data.map(mapUploadedEmbeddingModel))
+    } catch (err) {
+      console.error('Failed to load embedding models:', err)
+    }
+  }
+
+  const handleUploadEmbeddingModel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files?.length) return
+    const file = files[0]
+    setModelUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('name', file.name.replace(/\.zip$/i, ''))
+      const res = await api.upload<{ model: Record<string, unknown> }>(
+        '/knowledge/embedding-models/upload',
+        formData,
+      )
+      const model = mapUploadedEmbeddingModel(res.model)
+      setEmbeddingModels((prev) => [model, ...prev])
+      toast(t('knowledge.toastModelUploaded'), { type: 'success' })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.failed')
+      toast(t('knowledge.toastModelUploadFailed'), { type: 'error', message })
+    } finally {
+      setModelUploading(false)
+      if (embeddingModelInputRef.current) embeddingModelInputRef.current.value = ''
+    }
+  }
+
+  const handleDeleteEmbeddingModel = async (modelId: string) => {
+    if (!window.confirm(t('knowledge.deleteModelConfirm'))) return
+    try {
+      await api.delete(`/knowledge/embedding-models/${modelId}`)
+      setEmbeddingModels((prev) => prev.filter((m) => m.id !== modelId))
+      toast(t('knowledge.toastModelDeleted'), { type: 'success' })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.failed')
+      toast(t('knowledge.toastModelDeleteFailed'), { type: 'error', message })
+    }
+  }
+
+  const handleSelectLocalModel = (modelId: string) => {
+    const model = readyEmbeddingModels.find((m) => m.id === modelId)
+    if (!model) return
+    setRagSettings((s) => ({
+      ...s,
+      embeddingProvider: 'local',
+      embeddingModel: model.id,
+      embeddingDimension: model.dimension,
+      embeddingApiBase: undefined,
+    }))
+  }
 
   useEffect(() => {
     if (selectedKB) {
       loadDocuments(selectedKB)
+      const meta = knowledgeBases.find((k) => k.id === selectedKB)
+      if (meta) {
+        setRagSettings({
+          ...defaultRag,
+          chunkStrategy: meta.chunkStrategy,
+          chunkSize: meta.chunkSize,
+          chunkOverlap: meta.chunkOverlap,
+          chunkMinSize: meta.chunkMinSize,
+          chunkSemanticThreshold: meta.chunkSemanticThreshold,
+          chunkParentEnabled: meta.chunkParentEnabled,
+          embeddingProvider: meta.embeddingProvider,
+          embeddingModel: meta.embeddingModel,
+          embeddingApiBase: meta.embeddingApiBase,
+          embeddingDimension: meta.embeddingDimension,
+          retrievalMode: meta.retrievalMode,
+          retrievalTopK: meta.retrievalTopK,
+          retrievalCandidateK: meta.retrievalCandidateK,
+          rerankEnabled: meta.rerankEnabled,
+          rerankTopN: meta.rerankTopN,
+          rerankProvider: meta.rerankProvider,
+          rerankModel: meta.rerankModel,
+          retrievalBm25Enabled: meta.retrievalBm25Enabled,
+          retrievalBm25K1: meta.retrievalBm25K1,
+          retrievalBm25B: meta.retrievalBm25B,
+          retrievalQueryRewriteEnabled: meta.retrievalQueryRewriteEnabled,
+          retrievalQueryRewriteCount: meta.retrievalQueryRewriteCount,
+        })
+      }
     }
-  }, [selectedKB])
+  }, [selectedKB, knowledgeBases])
 
   const loadMilvusSettings = async () => {
     try {
@@ -201,6 +331,64 @@ export function KnowledgeManager() {
     }
   }
 
+  const handleReindex = async () => {
+    if (!selectedKB) return
+    if (
+      !window.confirm(
+        t('knowledge.reindexConfirm', {
+          count: selectedKbMeta?.documentCount ?? 0,
+        }),
+      )
+    ) {
+      return
+    }
+    setReindexing(true)
+    try {
+      const raw = await api.post<Record<string, unknown>>(
+        `/knowledge/bases/${selectedKB}/reindex`,
+        { rechunk: reindexRechunk },
+      )
+      const result = mapReindexResult(raw)
+      await loadKnowledgeBases()
+      if (selectedKB) loadDocuments(selectedKB)
+      toast(
+        t('knowledge.toastReindexDone', {
+          succeeded: result.succeeded,
+          total: result.total,
+          failed: result.failed,
+        }),
+        { type: result.failed > 0 ? 'warning' : 'success' },
+      )
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.failed')
+      toast(t('knowledge.toastReindexFailed'), { type: 'error', message })
+    } finally {
+      setReindexing(false)
+    }
+  }
+
+  const handleSaveRagSettings = async () => {
+    if (!selectedKB) return
+    setSettingsSaving(true)
+    try {
+      const kb = await api.patch<Record<string, unknown>>(
+        `/knowledge/bases/${selectedKB}`,
+        ragSettingsToPayload(ragSettings),
+      )
+      const mapped = mapKnowledgeBase(kb)
+      setKnowledgeBases((prev) =>
+        prev.map((item) => (item.id === mapped.id ? mapped : item)),
+      )
+      toast(t('knowledge.toastRagSaved'), { type: 'success' })
+      setSettingsOpen(false)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.failed')
+      toast(t('knowledge.toastSaveFailed'), { type: 'error', message })
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
   const handleDeleteKB = async (kbId: string) => {
     try {
       await api.delete(`/knowledge/bases/${kbId}`)
@@ -242,17 +430,80 @@ export function KnowledgeManager() {
   }
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-3 h-full flex flex-col">
       <Card>
-        <CardContent className="py-4 space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap lg:flex-nowrap">
-            <div className="min-w-0 shrink-0">
-              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('knowledge.milvusTitle')}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {t('knowledge.milvusHint')}
-              </p>
+        <CardContent className="py-3 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                {t('knowledge.localModelsTitle')}
+              </h3>
+              <p className={`${ragHint} mt-0.5`}>{t('knowledge.localModelsHint')}</p>
             </div>
-            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 ml-auto">
+            <Button
+              size="sm"
+              leftIcon={<Upload className="w-4 h-4" />}
+              isLoading={modelUploading}
+              onClick={() => embeddingModelInputRef.current?.click()}
+            >
+              {t('knowledge.uploadModelZip')}
+            </Button>
+            <input
+              ref={embeddingModelInputRef}
+              type="file"
+              accept=".zip"
+              className="hidden"
+              onChange={handleUploadEmbeddingModel}
+            />
+          </div>
+          {embeddingModels.length > 0 ? (
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {embeddingModels.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between gap-2 text-sm py-1 px-2 rounded-md bg-gray-50 dark:bg-gray-900/60 border border-transparent dark:border-gray-700/80"
+                >
+                  <div className="min-w-0">
+                    <span className="font-medium text-gray-800 dark:text-gray-100">{m.name}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                      {m.status === 'ready'
+                        ? t('knowledge.modelDim', { dim: m.dimension })
+                        : m.status === 'failed'
+                          ? t('knowledge.modelFailed')
+                          : t('knowledge.modelProcessing')}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    {m.status === 'ready' ? (
+                      <Button size="sm" variant="ghost" onClick={() => handleSelectLocalModel(m.id)}>
+                        {t('knowledge.useModel')}
+                      </Button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteEmbeddingModel(m.id)}
+                      className="p-1 text-gray-400 hover:text-red-500"
+                      aria-label={t('common.delete')}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={ragHint}>{t('knowledge.noLocalModels')}</p>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="py-3 space-y-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap lg:flex-nowrap">
+            <div className="min-w-0 shrink-0">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">{t('knowledge.milvusTitle')}</h3>
+              <p className={`${ragHint} mt-0.5`}>{t('knowledge.milvusHint')}</p>
+            </div>
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 ml-auto">
               <div className="shrink-0">
                 <Switch checked={milvusEnabled} onChange={setMilvusEnabled} />
               </div>
@@ -264,7 +515,7 @@ export function KnowledgeManager() {
                     value={milvusHost}
                     onChange={(e) => setMilvusHost(e.target.value)}
                     placeholder={t('knowledge.host')}
-                    className="h-10 w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                    className={`w-48 ${milvusInput}`}
                   />
                   <input
                     aria-label={t('knowledge.port')}
@@ -272,7 +523,7 @@ export function KnowledgeManager() {
                     value={milvusPort}
                     onChange={(e) => setMilvusPort(e.target.value.replace(/[^\d]/g, ''))}
                     placeholder={t('knowledge.port')}
-                    className="h-10 w-28 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                    className={`w-24 ${milvusInput}`}
                   />
                   <Button variant="secondary" size="sm" onClick={testMilvus} isLoading={milvusTesting}>{t('knowledge.testConnection')}</Button>
                 </>
@@ -318,6 +569,11 @@ export function KnowledgeManager() {
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {t('knowledge.documentCount', { count: kb.documentCount })}
+                        {kb.needsReindex ? (
+                          <span className="text-amber-600 dark:text-amber-400 ml-1">
+                            · {t('knowledge.needsReindexBadge')}
+                          </span>
+                        ) : null}
                       </p>
                     </div>
                     <button
@@ -346,8 +602,21 @@ export function KnowledgeManager() {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {t('knowledge.docListTitle')}
+                {selectedKbMeta ? (
+                  <span className="text-gray-400 font-normal ml-2">
+                    · {selectedKbMeta.name}
+                  </span>
+                ) : null}
               </h3>
               <div className="flex gap-2">
+                <Button
+                  size="actionWide"
+                  variant="secondary"
+                  leftIcon={<Settings2 className="w-4 h-4" />}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  {t('knowledge.ragSettings')}
+                </Button>
                 <Input
                   placeholder={t('knowledge.searchDocsPlaceholder')}
                   value={search}
@@ -452,6 +721,582 @@ export function KnowledgeManager() {
           </Card>
         )}
       </div>
+
+      <Dialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title={t('knowledge.dialogRagTitle')}
+        size="md"
+        className="max-w-md"
+        bodyClassName="p-4 pt-3"
+      >
+        <div className="space-y-3 max-h-[75vh] overflow-y-auto pr-0.5 text-gray-900 dark:text-gray-100">
+          {selectedKbMeta?.needsReindex ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-700/80 dark:bg-amber-950/40 px-2.5 py-1.5 text-xs text-amber-900 dark:text-amber-100">
+              {t('knowledge.needsReindexHint')}
+            </div>
+          ) : null}
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
+            <button
+              type="button"
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                settingsTab === 'form'
+                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+              onClick={() => {
+                setSettingsTab('form')
+                setJsonError('')
+              }}
+            >
+              {t('knowledge.ragSettingsTabForm')}
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                settingsTab === 'json'
+                  ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+              onClick={() => {
+                setJsonText(JSON.stringify(ragSettingsToPayload(ragSettings), null, 2))
+                setJsonError('')
+                setSettingsTab('json')
+              }}
+            >
+              {t('knowledge.ragSettingsTabJson')}
+            </button>
+          </div>
+          {settingsTab === 'form' ? (
+          <>
+          <div>
+            <label className={ragLabel}>{t('knowledge.chunkStrategy')}</label>
+            <select
+              className={ragSelect}
+              value={ragSettings.chunkStrategy}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  chunkStrategy: e.target.value as ChunkStrategy,
+                }))
+              }
+            >
+              <option value="fixed">{t('knowledge.chunkFixed')}</option>
+              <option value="paragraph">{t('knowledge.chunkParagraph')}</option>
+              <option value="markdown">{t('knowledge.chunkMarkdown')}</option>
+              <option value="semantic">{t('knowledge.chunkSemantic')}</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <Input
+              className={ragInputCompact}
+              label={t('knowledge.chunkSize')}
+              type="number"
+              value={String(ragSettings.chunkSize)}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  chunkSize: Number(e.target.value) || 500,
+                }))
+              }
+            />
+            <Input
+              className={ragInputCompact}
+              label={t('knowledge.chunkOverlap')}
+              type="number"
+              value={String(ragSettings.chunkOverlap)}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  chunkOverlap: Number(e.target.value) || 0,
+                }))
+              }
+            />
+            <Input
+              className={ragInputCompact}
+              label={t('knowledge.chunkMinSize')}
+              type="number"
+              value={String(ragSettings.chunkMinSize)}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  chunkMinSize: Number(e.target.value) || 80,
+                }))
+              }
+            />
+          </div>
+          {ragSettings.chunkStrategy === 'semantic' && (
+            <div className="flex items-center gap-3">
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.chunkSemanticThreshold')}
+                type="number"
+                step={0.05}
+                min={0.5}
+                max={0.95}
+                value={String(ragSettings.chunkSemanticThreshold)}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    chunkSemanticThreshold: Number(e.target.value) || 0.7,
+                  }))
+                }
+              />
+              <div className="text-xs text-gray-500 mt-5">
+                {t('knowledge.chunkSemanticThresholdHint')}
+              </div>
+            </div>
+          )}
+          <div
+            className={
+              'flex items-center gap-2 rounded-md border px-2.5 py-2 mt-2 ' +
+              'border-gray-200 bg-gray-50/80 dark:border-gray-600 dark:bg-gray-900/50'
+            }
+          >
+            <Switch
+              checked={ragSettings.chunkParentEnabled}
+              onChange={(v) =>
+                setRagSettings((s) => ({ ...s, chunkParentEnabled: v }))
+              }
+            />
+            <span className="text-xs text-gray-700 dark:text-gray-200">
+              {t('knowledge.chunkParentEnabled')}
+            </span>
+            <span className="text-[10px] text-gray-400 ml-auto">
+              {t('knowledge.chunkParentEnabledHint')}
+            </span>
+          </div>
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.embeddingSection')}</p>
+            <div>
+              <label className={ragLabel}>{t('knowledge.embeddingProvider')}</label>
+              <select
+                className={ragSelect}
+                value={embeddingProvider}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setRagSettings((s) => ({
+                    ...s,
+                    embeddingProvider: v,
+                    embeddingModel: v === 'local' ? s.embeddingModel : undefined,
+                    embeddingApiBase:
+                      v === 'local' ? undefined : s.embeddingApiBase,
+                  }))
+                }}
+              >
+                <option value="openai">OpenAI API</option>
+                <option value="openai-compatible">{t('knowledge.providerCompatible')}</option>
+                <option value="local">{t('knowledge.providerLocal')}</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+            {embeddingProvider === 'local' ? (
+              <div>
+                <label className={ragLabel}>{t('knowledge.localModelSelect')}</label>
+                <select
+                  className={ragSelect}
+                  value={ragSettings.embeddingModel ?? ''}
+                  onChange={(e) => handleSelectLocalModel(e.target.value)}
+                >
+                  <option value="">{t('knowledge.pickLocalModel')}</option>
+                  {readyEmbeddingModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.dimension}d)
+                    </option>
+                  ))}
+                </select>
+                <p className={`${ragHint} mt-1`}>{t('knowledge.localModelReindexHint')}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  className={ragInputCompact}
+                  label={t('knowledge.embeddingModel')}
+                  value={ragSettings.embeddingModel ?? ''}
+                  onChange={(e) =>
+                    setRagSettings((s) => ({
+                      ...s,
+                      embeddingModel: e.target.value || undefined,
+                    }))
+                  }
+                  placeholder={
+                    embeddingProvider === 'ollama'
+                      ? 'nomic-embed-text'
+                      : 'text-embedding-3-small'
+                  }
+                />
+                <Input
+                  className={ragInputCompact}
+                  label={t('knowledge.embeddingApiBase')}
+                  value={ragSettings.embeddingApiBase ?? ''}
+                  onChange={(e) =>
+                    setRagSettings((s) => ({
+                      ...s,
+                      embeddingApiBase: e.target.value || undefined,
+                    }))
+                  }
+                  placeholder={
+                    embeddingProvider === 'ollama'
+                      ? 'http://localhost:11434'
+                      : 'https://api.openai.com/v1'
+                  }
+                />
+              </div>
+            )}
+            <Input
+              className={ragInputCompact}
+              label={t('knowledge.embeddingDimension')}
+              type="number"
+              value={String(ragSettings.embeddingDimension)}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  embeddingDimension: Number(e.target.value) || 1536,
+                }))
+              }
+            />
+          </div>
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.retrievalSection')}</p>
+            <select
+              className={ragSelect}
+              value={ragSettings.retrievalMode}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  retrievalMode: e.target.value as RetrievalMode,
+                }))
+              }
+            >
+              <option value="hybrid">{t('knowledge.retrievalHybrid')}</option>
+              <option value="vector">{t('knowledge.retrievalVector')}</option>
+              <option value="keyword">{t('knowledge.retrievalKeyword')}</option>
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.retrievalTopK')}
+                type="number"
+                min={1}
+                max={50}
+                value={String(ragSettings.retrievalTopK)}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    retrievalTopK: Number(e.target.value) || 5,
+                  }))
+                }
+              />
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.retrievalCandidateK')}
+                type="number"
+                min={5}
+                max={100}
+                value={String(ragSettings.retrievalCandidateK)}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    retrievalCandidateK: Number(e.target.value) || 20,
+                  }))
+                }
+              />
+            </div>
+            <p className={ragHint}>{t('knowledge.retrievalCountHint')}</p>
+            <div
+              className={
+                'flex items-center gap-2 rounded-md border px-2.5 py-2 ' +
+                'border-gray-200 bg-gray-50/80 dark:border-gray-600 dark:bg-gray-900/50'
+              }
+            >
+              <Switch
+                checked={ragSettings.rerankEnabled}
+                onChange={(v) =>
+                  setRagSettings((s) => ({ ...s, rerankEnabled: v }))
+                }
+              />
+              <span className="text-xs text-gray-700 dark:text-gray-200 shrink-0">
+                {t('knowledge.rerankEnabled')}
+              </span>
+              {ragSettings.rerankEnabled && (
+                <span className="flex items-center gap-1 text-xs text-gray-700 dark:text-gray-200">
+                  Top{' '}
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    className="w-12 h-6 rounded border border-gray-300 bg-white px-1 text-center text-xs text-gray-900
+                      focus:outline-none focus:ring-1 focus:ring-primary-500
+                      dark:border-gray-500 dark:bg-gray-800 dark:text-gray-100"
+                    value={ragSettings.rerankTopN}
+                    onChange={(e) =>
+                      setRagSettings((s) => ({
+                        ...s,
+                        rerankTopN: Number(e.target.value) || 5,
+                      }))
+                    }
+                  />
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Reranker provider */}
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.rerankProviderSection')}</p>
+            <p className={`${ragHint} -mt-1`}>{t('knowledge.rerankProviderHint')}</p>
+            <select
+              className={ragSelect}
+              value={ragSettings.rerankProvider}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  rerankProvider: e.target.value as RerankProvider,
+                }))
+              }
+            >
+              <option value="lexical">{t('knowledge.rerankProviderLexical')}</option>
+              <option value="cohere">{t('knowledge.rerankProviderCohere')}</option>
+              <option value="bge">{t('knowledge.rerankProviderBge')}</option>
+              <option value="cross-encoder">{t('knowledge.rerankProviderCrossEncoder')}</option>
+              <option value="none">{t('knowledge.rerankProviderNone')}</option>
+            </select>
+            {(ragSettings.rerankProvider === 'cohere' ||
+              ragSettings.rerankProvider === 'bge' ||
+              ragSettings.rerankProvider === 'cross-encoder') && (
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.rerankModel')}
+                value={ragSettings.rerankModel ?? ''}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    rerankModel: e.target.value || undefined,
+                  }))
+                }
+                placeholder={t('knowledge.rerankModelPlaceholder')}
+              />
+            )}
+          </div>
+          {/* BM25 */}
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.bm25Section')}</p>
+            <div
+              className={
+                'flex items-center gap-2 rounded-md border px-2.5 py-2 ' +
+                'border-gray-200 bg-gray-50/80 dark:border-gray-600 dark:bg-gray-900/50'
+              }
+            >
+              <Switch
+                checked={ragSettings.retrievalBm25Enabled}
+                onChange={(v) =>
+                  setRagSettings((s) => ({ ...s, retrievalBm25Enabled: v }))
+                }
+              />
+              <span className="text-xs text-gray-700 dark:text-gray-200">
+                {t('knowledge.bm25Enabled')}
+              </span>
+              <span className="text-[10px] text-gray-400 ml-auto">
+                {t('knowledge.bm25EnabledHint')}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.bm25K1')}
+                type="number"
+                step={0.1}
+                min={0.5}
+                max={3.0}
+                disabled={!ragSettings.retrievalBm25Enabled}
+                value={String(ragSettings.retrievalBm25K1)}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    retrievalBm25K1: Number(e.target.value) || 1.5,
+                  }))
+                }
+              />
+              <Input
+                className={ragInputCompact}
+                label={t('knowledge.bm25B')}
+                type="number"
+                step={0.05}
+                min={0.0}
+                max={1.0}
+                disabled={!ragSettings.retrievalBm25Enabled}
+                value={String(ragSettings.retrievalBm25B)}
+                onChange={(e) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    retrievalBm25B: Number(e.target.value) || 0.75,
+                  }))
+                }
+              />
+            </div>
+          </div>
+          {/* Query rewrite */}
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.queryRewriteSection')}</p>
+            <div
+              className={
+                'flex items-center gap-2 rounded-md border px-2.5 py-2 ' +
+                'border-gray-200 bg-gray-50/80 dark:border-gray-600 dark:bg-gray-900/50'
+              }
+            >
+              <Switch
+                checked={ragSettings.retrievalQueryRewriteEnabled}
+                onChange={(v) =>
+                  setRagSettings((s) => ({
+                    ...s,
+                    retrievalQueryRewriteEnabled: v,
+                  }))
+                }
+              />
+              <span className="text-xs text-gray-700 dark:text-gray-200">
+                {t('knowledge.queryRewriteEnabled')}
+              </span>
+              <span className="text-[10px] text-gray-400 ml-auto">
+                {t('knowledge.queryRewriteEnabledHint')}
+              </span>
+            </div>
+            <Input
+              className={ragInputCompact}
+              label={t('knowledge.queryRewriteCount')}
+              type="number"
+              min={1}
+              max={5}
+              disabled={!ragSettings.retrievalQueryRewriteEnabled}
+              value={String(ragSettings.retrievalQueryRewriteCount)}
+              onChange={(e) =>
+                setRagSettings((s) => ({
+                  ...s,
+                  retrievalQueryRewriteCount: Number(e.target.value) || 3,
+                }))
+              }
+            />
+          </div>
+          <div className={ragSection}>
+            <p className={ragSectionTitle}>{t('knowledge.reindexSection')}</p>
+            <p className={`${ragHint} -mt-1`}>{t('knowledge.reindexSectionHint')}</p>
+            <div
+              className={
+                'flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-2 ' +
+                'border-gray-200 bg-gray-50/80 dark:border-gray-600 dark:bg-gray-900/50'
+              }
+            >
+              <Switch checked={reindexRechunk} onChange={setReindexRechunk} />
+              <span className="text-xs text-gray-700 dark:text-gray-200 flex-1 min-w-[10rem]">
+                {t('knowledge.reindexRechunk')}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                onClick={handleReindex}
+                isLoading={reindexing}
+                disabled={!selectedKB || (selectedKbMeta?.documentCount ?? 0) === 0}
+              >
+                {t('knowledge.reindexRun')}
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+            <Button variant="secondary" onClick={() => setSettingsOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleSaveRagSettings} isLoading={settingsSaving}>
+              {t('common.save')}
+            </Button>
+          </div>
+          </>
+          ) : (
+          <>
+            {/* JSON editor */}
+            <div className="space-y-2">
+              <textarea
+                className="w-full h-[55vh] font-mono text-xs p-3 rounded-md border border-gray-300 bg-gray-50
+                  text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+                  dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 resize-none"
+                value={jsonText}
+                onChange={(e) => {
+                  setJsonText(e.target.value)
+                  setJsonError('')
+                }}
+                spellCheck={false}
+              />
+              {jsonError && (
+                <p className="text-xs text-red-600 dark:text-red-400">{jsonError}</p>
+              )}
+              <p className="text-[11px] text-gray-400">{t('knowledge.jsonEditorHint')}</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1 border-t border-gray-200 dark:border-gray-700">
+              <Button variant="secondary" onClick={() => setSettingsOpen(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(jsonText)
+                    // Basic validation: should be an object
+                    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                      setJsonError(t('knowledge.jsonEditorInvalidObject'))
+                      return
+                    }
+                    // Apply parsed settings
+                    const mapped = mapKnowledgeBase({
+                      ...parsed,
+                      id: selectedKB || '',
+                      name: selectedKbMeta?.name || '',
+                      document_count: selectedKbMeta?.documentCount || 0,
+                      created_at: selectedKbMeta?.createdAt || '',
+                      updated_at: selectedKbMeta?.updatedAt || '',
+                    })
+                    setRagSettings({
+                      ...defaultRag,
+                      chunkStrategy: mapped.chunkStrategy,
+                      chunkSize: mapped.chunkSize,
+                      chunkOverlap: mapped.chunkOverlap,
+                      chunkMinSize: mapped.chunkMinSize,
+                      chunkSemanticThreshold: mapped.chunkSemanticThreshold,
+                      chunkParentEnabled: mapped.chunkParentEnabled,
+                      embeddingProvider: mapped.embeddingProvider,
+                      embeddingModel: mapped.embeddingModel,
+                      embeddingApiBase: mapped.embeddingApiBase,
+                      embeddingDimension: mapped.embeddingDimension,
+                      retrievalMode: mapped.retrievalMode,
+                      retrievalTopK: mapped.retrievalTopK,
+                      retrievalCandidateK: mapped.retrievalCandidateK,
+                      rerankEnabled: mapped.rerankEnabled,
+                      rerankTopN: mapped.rerankTopN,
+                      rerankProvider: mapped.rerankProvider,
+                      rerankModel: mapped.rerankModel,
+                      retrievalBm25Enabled: mapped.retrievalBm25Enabled,
+                      retrievalBm25K1: mapped.retrievalBm25K1,
+                      retrievalBm25B: mapped.retrievalBm25B,
+                      retrievalQueryRewriteEnabled: mapped.retrievalQueryRewriteEnabled,
+                      retrievalQueryRewriteCount: mapped.retrievalQueryRewriteCount,
+                    })
+                    setSettingsTab('form')
+                    setJsonError('')
+                    toast(t('knowledge.toastJsonApplied'), { type: 'success' })
+                  } catch (err) {
+                    setJsonError(
+                      err instanceof SyntaxError
+                        ? t('knowledge.jsonEditorParseError', { message: err.message })
+                        : t('common.failed'),
+                    )
+                  }
+                }}
+                disabled={!jsonText.trim()}
+              >
+                {t('knowledge.jsonEditorApply')}
+              </Button>
+            </div>
+          </>
+          )}
+        </div>
+      </Dialog>
 
       {/* Create Knowledge Base Dialog */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title={t('knowledge.dialogCreateKbTitle')} size="sm">

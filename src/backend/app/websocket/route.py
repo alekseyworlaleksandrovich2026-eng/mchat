@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
+from app.middleware.auth import has_global_scope
 from app.models.conversation import Conversation
 from app.models.user import User
 from app.websocket import ws_manager
@@ -54,7 +55,7 @@ async def _check_subscribe_permission(
             return False, "NOT_FOUND"
 
         if user is not None:
-            if user.role == "admin":
+            if await has_global_scope(user, db):
                 return True, ""
             if conv.user_id == user.id:
                 return True, ""

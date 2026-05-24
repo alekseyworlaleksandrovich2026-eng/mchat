@@ -4,6 +4,11 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator
 
+# Use in-memory SQLite for tests — must be set BEFORE app imports so the
+# application-level engine (database.py) also uses SQLite instead of MySQL.
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -14,9 +19,6 @@ from sqlalchemy.pool import NullPool
 from app.core.database import Base, get_db
 from app.core.config import settings as app_settings
 from app.main import create_app
-
-# Use in-memory SQLite for tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
 test_engine = create_async_engine(
     TEST_DATABASE_URL,

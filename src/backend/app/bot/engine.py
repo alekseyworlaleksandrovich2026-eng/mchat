@@ -115,6 +115,7 @@ async def _append_rag_context(
     query: str,
     user_id: str,
     customer_config: CustomerConfig | None,
+    chat_fn=None,
 ) -> tuple[str, list[dict[str, Any]]]:
     kb_ids = knowledge_base_ids_for_chat(customer_config)
     rag = RagService()
@@ -128,6 +129,7 @@ async def _append_rag_context(
                     user_id=user_id,
                     knowledge_base_id=kb_id,
                     top_k=3,
+                    chat_fn=chat_fn,
                 )
                 all_results.extend(search_results.results)
         else:
@@ -135,6 +137,7 @@ async def _append_rag_context(
                 query=query,
                 user_id=user_id,
                 top_k=3,
+                chat_fn=chat_fn,
             )
             all_results.extend(search_results.results)
     except Exception as e:
@@ -216,11 +219,20 @@ async def process_message(
                 template=str(patent_links["template"]),
             )
 
+        # Create chat_fn for optional query rewriting
+        _chat_fn = None
+        try:
+            from app.bot.query_rewrite_chat import create_rewrite_chat_fn
+            _chat_fn = await create_rewrite_chat_fn(ai_config)
+        except Exception:
+            pass
+
         system_prompt, knowledge_hits = await _append_rag_context(
             system_prompt,
             message.content,
             ai_config.user_id,
             customer_config,
+            chat_fn=_chat_fn,
         )
 
         auto_reply_matches = await match_auto_reply_rules(

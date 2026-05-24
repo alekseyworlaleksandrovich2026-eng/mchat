@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.middleware.auth import get_current_user, get_current_agent
+from app.middleware.auth import get_current_user, has_global_scope
 from app.models.user import User
 from app.schemas.chat import (
     ConversationList,
@@ -118,7 +118,7 @@ async def list_conversations(
 ):
     """List conversations (admin sees all, agent sees own)."""
     chat_service = ChatService(db)
-    user_id = None if current_user.role == "admin" else current_user.id
+    user_id = None if await has_global_scope(current_user, db) else current_user.id
     conversations, total = await chat_service.list_conversations(
         user_id=user_id,
         skip=skip,
@@ -136,7 +136,7 @@ async def get_conversation_stats(
 ):
     """Get aggregate conversation stats for admin/agent scope."""
     chat_service = ChatService(db)
-    user_id = None if current_user.role == "admin" else current_user.id
+    user_id = None if await has_global_scope(current_user, db) else current_user.id
     stats = await chat_service.get_conversation_stats(user_id=user_id)
     return ConversationStatsResponse(**stats)
 
@@ -166,7 +166,7 @@ async def get_conversation(
 ):
     """Get conversation with messages."""
     chat_service = ChatService(db)
-    user_id = None if current_user.role == "admin" else current_user.id
+    user_id = None if await has_global_scope(current_user, db) else current_user.id
     conversation = await chat_service.get_conversation(
         conversation_id=conversation_id,
         user_id=user_id,
@@ -187,7 +187,7 @@ async def close_conversation(
 ):
     """Close a conversation."""
     chat_service = ChatService(db)
-    user_id = None if current_user.role == "admin" else current_user.id
+    user_id = None if await has_global_scope(current_user, db) else current_user.id
     success = await chat_service.close_conversation(
         conversation_id=conversation_id,
         user_id=user_id,

@@ -13,6 +13,7 @@ MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流
 - [英文主站](http://mchat.chat)
 - [中文主站](https://mchat.9235.net)
 - [完整图片说明](docs/product-tour.zh.md)
+- [产品路线图](docs/roadmap.zh.md)（知识库、Widget、渠道、API、运营、权限）
 
 ## 界面预览
 
@@ -50,10 +51,10 @@ MChat 是一款**轻量、可嵌入、多租户**的 AI 客服平台，整合流
 
 - **Bot 引擎** — 流式 LLM 推理与工具调用，支持 OpenAI、Anthropic、Google、DeepSeek、Ollama、Groq 等
 - **Skill 插件** — 支持从磁盘、zip、URL 热加载 `SKILL.md`，兼容 OpenClaw 风格技能包
-- **RAG 知识库** — 文档导入、分块、Milvus 向量检索、上下文注入
+- **RAG 知识库** — 多策略分块、多 provider 嵌入（OpenAI / 本地上传 / Ollama）、混合检索（向量 + BM25 + RRF）、多 provider 重排序、查询改写、Parent-Child 上下文增强
 - **嵌入式 Widget** — 一行 `<script>` 即可为任意网站接入品牌化客服窗口
 - **多租户** — 多个客服 Agent，独立 AI 配置、技能与知识库
-- **多渠道** — Web Widget、REST、WebSocket、微信公众号
+- **多渠道** — Web Widget、REST、WebSocket、微信公众号（钉钉/WhatsApp/Telegram 等 [规划中](docs/roadmap.zh.md#3-多渠道频道)）
 - **语音输入** — 支持 OpenAI Whisper 转写（可选本地模型）
 - **安全认证** — JWT 与 API Key 管理
 - **Docker 部署** — `docker compose up -d` 一键启动
@@ -120,7 +121,7 @@ mchat/
 │           ├── i18n/     # 中英文 (react-i18next)
 │           └── pages/    # 落地页 + 管理后台
 ├── skills/               # 技能包目录
-├── docs/                 # 架构、API、部署文档
+├── docs/                 # 架构、API、部署、路线图
 ├── ops/docker/           # Docker Compose
 └── Makefile
 ```

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.middleware.auth import get_current_admin
+from app.middleware.auth import require_permission, Permission
 from app.models.user import User
 from app.schemas.agent import (
     AIConfigCreate,
@@ -28,7 +28,7 @@ router = APIRouter()
 @router.post("/ai-configs", response_model=AIConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_ai_config(
     request: AIConfigCreate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new AI configuration."""
@@ -38,7 +38,7 @@ async def create_ai_config(
 
 @router.get("/ai-configs", response_model=list[AIConfigResponse])
 async def list_ai_configs(
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """List all AI configurations for current user."""
@@ -49,7 +49,7 @@ async def list_ai_configs(
 @router.get("/ai-configs/{config_id}", response_model=AIConfigResponse)
 async def get_ai_config(
     config_id: str,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific AI configuration."""
@@ -69,7 +69,7 @@ async def get_ai_config(
 async def update_ai_config(
     config_id: str,
     request: AIConfigUpdate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an AI configuration."""
@@ -88,7 +88,7 @@ async def update_ai_config(
 @router.post("/ai-configs/models", response_model=ModelCatalogResponse)
 async def fetch_model_catalog(
     request: ModelCatalogRequest,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """List models from provider API (OpenAI-compatible, Anthropic, Google)."""
@@ -111,7 +111,7 @@ async def fetch_model_catalog(
 @router.post("/ai-configs/test", response_model=ConnectionTestResponse)
 async def test_ai_connection(
     request: ConnectionTestRequest,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Send a minimal chat request to verify API credentials."""
@@ -140,7 +140,7 @@ async def test_ai_connection(
 @router.delete("/ai-configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_ai_config(
     config_id: str,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an AI configuration."""
@@ -159,7 +159,7 @@ async def delete_ai_config(
 @router.post("/customer-configs", response_model=CustomerConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer_config(
     request: CustomerConfigCreate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new customer service configuration."""
@@ -171,7 +171,7 @@ async def create_customer_config(
 
 @router.get("/customer-configs", response_model=list[CustomerConfigResponse])
 async def list_customer_configs(
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """List all customer configurations for current user."""
@@ -183,7 +183,7 @@ async def list_customer_configs(
 async def update_customer_config(
     config_id: str,
     request: CustomerConfigCreate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a customer configuration."""
@@ -202,7 +202,7 @@ async def update_customer_config(
 @router.get("/customer-configs/{config_id}", response_model=CustomerConfigResponse)
 async def get_customer_config(
     config_id: str,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific customer configuration."""
@@ -225,7 +225,7 @@ async def get_customer_config(
 )
 async def upload_customer_config_asset(
     file: UploadFile = File(...),
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.AGENTS_WRITE)),
 ):
     """Upload an asset that can be attached by customer-config auto replies."""
     del admin

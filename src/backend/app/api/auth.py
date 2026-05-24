@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.middleware.auth import get_current_admin, get_current_user
+from app.middleware.auth import get_current_user, require_permission, Permission
 from app.models.user import User
 from app.schemas.auth import (
     BootstrapResponse,
@@ -107,7 +107,7 @@ async def change_password(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.USERS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ) -> list[User]:
     """List all users (admin only)."""
@@ -118,7 +118,7 @@ async def list_users(
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     request: CreateUserRequest,
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.USERS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Create a new user (admin only)."""
@@ -135,7 +135,7 @@ async def create_user(
 async def update_user(
     user_id: str,
     request: UpdateUserRequest,
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.USERS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Update user role or reset password (admin only)."""
@@ -151,7 +151,7 @@ async def update_user(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: str,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.USERS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Delete a user (admin only)."""

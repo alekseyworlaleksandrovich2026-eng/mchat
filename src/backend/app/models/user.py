@@ -21,8 +21,8 @@ class User(Base):
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="agent"
-    )  # admin, agent
+        String(50), nullable=False, default="agent"
+    )  # admin, agent, or custom roles
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     display_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True
@@ -48,6 +48,9 @@ class User(Base):
     skills = relationship("Skill", back_populates="user", lazy="selectin")
     knowledge_bases = relationship(
         "KnowledgeBase", back_populates="user", lazy="selectin"
+    )
+    embedding_models = relationship(
+        "EmbeddingModel", back_populates="user", lazy="selectin"
     )
     customer_configs = relationship(
         "CustomerConfig", back_populates="user", lazy="selectin"

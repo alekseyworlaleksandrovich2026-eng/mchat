@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 from loguru import logger
 
+from app.core.config import settings
 from app.knowledge.milvus_runtime import get_milvus_runtime
 
 
@@ -19,7 +20,10 @@ class MilvusClient:
     def __init__(self) -> None:
         self._connected = False
         self._collection_name = "document_chunks"
-        self._dimension = 1536  # text-embedding-3-small default
+
+    @property
+    def dimension(self) -> int:
+        return int(settings.embedding_dimension)
 
     def _connect_kwargs(self) -> tuple[dict[str, Any], str]:
         cfg = get_milvus_runtime()
@@ -143,7 +147,7 @@ class MilvusClient:
                 FieldSchema(
                     name="embedding",
                     dtype=DataType.FLOAT_VECTOR,
-                    dim=self._dimension,
+                    dim=self.dimension,
                 ),
             ]
 
@@ -167,7 +171,7 @@ class MilvusClient:
 
             logger.info(
                 f"Created collection '{self._collection_name}' "
-                f"with dimension {self._dimension}"
+                f"with dimension {self.dimension}"
             )
             return True
         except Exception as e:

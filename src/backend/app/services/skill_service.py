@@ -611,6 +611,160 @@ class SkillService:
             ),
         )
 
+    async def list_skill_files(self, skill_id: str, user_id: str) -> list[dict]:
+        """List all files in a skill directory."""
+        result = await self.db.execute(
+            select(Skill).where(Skill.id == skill_id, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None or not skill.path:
+            raise HTTPException(status_code=404, detail="Skill not found")
+
+        directory = self._skill_directory(skill)
+        if directory is None or not directory.exists():
+            return []
+
+        files: list[dict] = []
+        for fpath in sorted(directory.rglob("*")):
+            if not fpath.is_file():
+                continue
+            rel = fpath.relative_to(directory)
+            files.append({
+                "path": str(rel),
+                "name": fpath.name,
+                "size": fpath.stat().st_size,
+                "updated_at": fpath.stat().st_mtime,
+            })
+        return files
+
+    async def read_skill_file(self, skill_id: str, user_id: str, file_path: str) -> dict:
+        """Read a text file from a skill directory."""
+        result = await self.db.execute(
+            select(Skill).where(Skill.id == skill_id, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None or not skill.path:
+            raise HTTPException(status_code=404, detail="Skill not found")
+
+        directory = self._skill_directory(skill)
+        if directory is None:
+            raise HTTPException(status_code=404, detail="Skill directory not found")
+
+        target = (directory / file_path).resolve()
+        try:
+            target.relative_to(directory)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path traversal denied")
+
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        try:
+            content = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="File is not a readable text file")
+
+        return {
+            "path": str(target.relative_to(directory)),
+            "name": target.name,
+            "content": content,
+        }
+
+    async def upload_skill_file(self, skill_id: str, user_id: str, file: UploadFile, relative_path: str = "") -> dict:
+        """Upload a file into a skill directory."""
+        result = await self.db.execute(
+            select(Skill).where(Skill.id == skill_id, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None or not skill.path:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        if skill.skill_type == "builtin":
+            raise HTTPException(status_code=403, detail="Cannot modify built-in skills")
+
+        directory = self._skill_directory(skill)
+        if directory is None or not directory.exists():
+            raise HTTPException(status_code=404, detail="Skill directory not found")
+
+        file_name = relative_path.strip() or (file.filename or "untitled")
+        target = (directory / file_name).resolve()
+        try:
+            target.relative_to(directory)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path traversal denied")
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        content = await file.read()
+        target.write_bytes(content)
+        return {"path": str(target.relative_to(directory)), "name": target.name, "written": True}
+
+    async def write_skill_file(self, skill_id: str, user_id: str, file_path: str, content: str) -> dict:
+        """Write a text file in a skill directory."""
+        result = await self.db.execute(
+            select(Skill).where(Skill.id == skill_id, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None or not skill.path:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        if skill.skill_type == "builtin":
+            raise HTTPException(status_code=403, detail="Cannot edit built-in skills")
+
+        directory = self._skill_directory(skill)
+        if directory is None or not directory.exists():
+            raise HTTPException(status_code=404, detail="Skill directory not found")
+
+        target = (directory / file_path).resolve()
+        try:
+            target.relative_to(directory)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path traversal denied")
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return {"path": str(target.relative_to(directory)), "name": target.name, "written": True}
+
+    async def create_skill(
+        self, *, user_id: str, name: str, description: str | None = None, skill_type: str = "tool"
+    ) -> SkillResponse:
+        """Create a new skill directory with a minimal SKILL.md."""
+        skills_dir = self._skills_root()
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        folder_name = self._safe_folder_name(name)
+        skill_dir = skills_dir / folder_name
+
+        if skill_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Skill directory already exists: {folder_name}",
+            )
+
+        skill_dir.mkdir(parents=True, exist_ok=True)
+
+        desc = (description or "").strip()
+        frontmatter = f"---\nname: {name}\n"
+        if desc:
+            frontmatter += f"description: \"{desc}\"\n"
+        frontmatter += f"type: {skill_type}\n---\n"
+
+        skill_md = skill_dir / "SKILL.md"
+        skill_md.write_text(frontmatter, encoding="utf-8")
+
+        await self.reload_skills(user_id)
+
+        result = await self.db.execute(
+            select(Skill).where(
+                Skill.user_id == user_id,
+                Skill.name == name,
+            )
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Skill created on disk but not registered. Check SKILL.md metadata.",
+            )
+        return SkillResponse.model_validate(skill)
+
     async def upload_skill(
         self, user_id: str, file: UploadFile
     ) -> SkillResponse:

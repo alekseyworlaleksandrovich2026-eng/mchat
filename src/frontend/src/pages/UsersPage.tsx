@@ -1,16 +1,18 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2, UserPlus } from 'lucide-react'
+import { Plus, Trash2, UserPlus, Shield, ChevronDown, ChevronUp, KeyRound } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Dialog } from '@/components/ui/Dialog'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
 import { toast } from '@/components/ui/Toast'
 import { ChangePasswordForm } from '@/components/admin/ChangePasswordForm'
 import { formatDate } from '@/lib/utils'
+import { ALL_PERMISSIONS, PERMISSION_LABELS, FALLBACK_ROLE_PERMISSIONS } from '@/lib/permissions'
 
 interface UserRow {
   id: string
@@ -27,6 +29,10 @@ export function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [expandedPerms, setExpandedPerms] = useState<Set<string>>(new Set())
+  const [rolePermsData, setRolePermsData] = useState<Record<string, string[]>>(FALLBACK_ROLE_PERMISSIONS)
+  const [permsLoaded, setPermsLoaded] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [form, setForm] = useState({
     username: '',
     password: '',
@@ -46,9 +52,31 @@ export function UsersPage() {
     }
   }
 
+  const loadRolePerms = useCallback(async () => {
+    try {
+      const data = await api.get<{ role_permissions: Record<string, string[]> }>('/settings/role-permissions')
+      if (data.role_permissions && Object.keys(data.role_permissions).length > 0) {
+        setRolePermsData(data.role_permissions)
+      }
+    } catch (err) {
+      console.error('Failed to load role permissions:', err)
+    } finally {
+      setPermsLoaded(true)
+    }
+  }, [])
+
   useEffect(() => {
     void loadUsers()
+    void loadRolePerms()
   }, [])
+
+  const getRolePerms = (role: string): string[] => {
+    return rolePermsData[role] || FALLBACK_ROLE_PERMISSIONS[role] || []
+  }
+
+  const knownRoles = Object.keys(rolePermsData).length > 0
+    ? Object.keys(rolePermsData)
+    : Object.keys(FALLBACK_ROLE_PERMISSIONS)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -115,12 +143,22 @@ export function UsersPage() {
             {t('users.subtitle')}
           </p>
         </div>
-        <Button
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={() => setShowCreate((v) => !v)}
-        >
-          {t('users.createUser')}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            leftIcon={<KeyRound className="w-4 h-4" />}
+            onClick={() => setShowPasswordDialog(true)}
+          >
+            {t('users.changePassword')}
+          </Button>
+          <Button
+            leftIcon={<Plus className="w-4 h-4" />}
+            onClick={() => setShowCreate((v) => !v)}
+            className="w-[120px]"
+          >
+            {t('users.createUser')}
+          </Button>
+        </div>
       </div>
 
       {showCreate && (
@@ -153,15 +191,18 @@ export function UsersPage() {
                 minLength={6}
                 required
               />
-              <Select
+              <Input
                 label={t('users.role')}
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
-                options={[
-                  { value: 'agent', label: t('users.roleAgent') },
-                  { value: 'admin', label: t('users.roleAdmin') },
-                ]}
+                list="role-options-create"
+                placeholder="admin / agent / custom"
               />
+              <datalist id="role-options-create">
+                {knownRoles.map((r) => (
+                  <option key={r} value={r} />
+                ))}
+              </datalist>
               <div className="sm:col-span-2 flex gap-2">
                 <Button type="submit" isLoading={creating}>
                   {t('users.createUser')}
@@ -192,6 +233,7 @@ export function UsersPage() {
                     <th className="py-2 pr-4">{t('auth.username')}</th>
                     <th className="py-2 pr-4">{t('users.displayName')}</th>
                     <th className="py-2 pr-4">{t('users.role')}</th>
+                    <th className="py-2 pr-4">{t('users.permissions')}</th>
                     <th className="py-2 pr-4">{t('users.createdAt')}</th>
                     <th className="py-2">{t('users.actions')}</th>
                   </tr>
@@ -218,11 +260,39 @@ export function UsersPage() {
                           value={user.role}
                           onChange={(e) => handleRoleChange(user, e.target.value)}
                           disabled={user.id === currentUser?.id}
-                          options={[
-                            { value: 'agent', label: t('users.roleAgent') },
-                            { value: 'admin', label: t('users.roleAdmin') },
-                          ]}
+                          options={knownRoles.map((r) => ({ value: r, label: r }))}
                         />
+                      </td>
+                      <td className="py-3 pr-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = new Set(expandedPerms)
+                            if (next.has(user.id)) next.delete(user.id)
+                            else next.add(user.id)
+                            setExpandedPerms(next)
+                          }}
+                          className="flex items-center gap-1 text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"
+                        >
+                          <Shield className="w-3.5 h-3.5" />
+                          {(getRolePerms(user.role)).length}
+                          {expandedPerms.has(user.id) ? (
+                            <ChevronUp className="w-3 h-3" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3" />
+                          )}
+                        </button>
+                        {expandedPerms.has(user.id) && (
+                          <div className="mt-2 flex flex-wrap gap-1 max-w-48">
+                            {getRolePerms(user.role).map((perm) => (
+                              <span key={perm} title={PERMISSION_LABELS[perm] || perm}>
+                                <Badge variant="info" size="sm">
+                                  {perm}
+                                </Badge>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 pr-4 text-gray-500 dark:text-gray-400">
                         {formatDate(user.created_at)}
@@ -247,12 +317,14 @@ export function UsersPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>{t('users.changePassword')}</CardHeader>
-        <CardContent>
-          <ChangePasswordForm />
-        </CardContent>
-      </Card>
+      <Dialog
+        open={showPasswordDialog}
+        onClose={() => setShowPasswordDialog(false)}
+        title={t('users.changePassword')}
+        size="sm"
+      >
+        <ChangePasswordForm />
+      </Dialog>
     </div>
   )
 }

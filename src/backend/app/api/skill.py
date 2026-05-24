@@ -1,13 +1,15 @@
 """Skill management API router."""
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.middleware.auth import get_current_admin
+from app.middleware.auth import require_permission, Permission
 from app.models.user import User
 from app.schemas.skill import (
     SkillCatalogResponse,
+    SkillCreate,
     SkillInstallUrlRequest,
     SkillResponse,
     SkillUpdate,
@@ -19,7 +21,7 @@ router = APIRouter()
 
 @router.get("", response_model=list[SkillResponse])
 async def list_skills(
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
     db: AsyncSession = Depends(get_db),
 ):
     """List all skills for current user."""
@@ -27,11 +29,27 @@ async def list_skills(
     return await service.list_skills(user_id=admin.id)
 
 
+@router.post("", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
+async def create_skill(
+    request: SkillCreate,
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new skill directory with a minimal SKILL.md."""
+    service = SkillService(db)
+    return await service.create_skill(
+        user_id=admin.id,
+        name=request.name,
+        description=request.description,
+        skill_type=request.skill_type,
+    )
+
+
 @router.patch("/{skill_id}", response_model=SkillResponse)
 async def update_skill(
     skill_id: str,
     request: SkillUpdate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Enable or disable a skill, or update its config."""
@@ -49,7 +67,7 @@ async def update_skill(
 
 @router.post("/reload")
 async def reload_skills(
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Reload skills from filesystem."""
@@ -61,7 +79,7 @@ async def reload_skills(
 @router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_skill(
     skill_id: str,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a skill."""
@@ -80,7 +98,7 @@ async def delete_skill(
 @router.post("/upload")
 async def upload_skill(
     file: UploadFile,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a new skill (zip file)."""
@@ -106,7 +124,7 @@ async def upload_skill(
 @router.post("/install-url", response_model=SkillResponse)
 async def install_skill_from_url(
     request: SkillInstallUrlRequest,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Install a skill package from direct URL or ClawHub skill name."""
@@ -128,10 +146,70 @@ async def install_skill_from_url(
 async def list_skill_catalog(
     query: str | None = None,
     limit: int = 24,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
     db: AsyncSession = Depends(get_db),
 ):
     """Browse remote skill catalog (best-effort ClawHub integration)."""
     service = SkillService(db)
     items = await service.fetch_clawhub_catalog(query=query, limit=limit)
     return SkillCatalogResponse(source="clawhub", items=items)
+
+
+# ── Skill file browser & editor ──────────────────────────────────
+
+
+@router.get("/{skill_id}/files")
+async def list_skill_files(
+    skill_id: str,
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all files in a skill directory."""
+    service = SkillService(db)
+    return await service.list_skill_files(skill_id=skill_id, user_id=admin.id)
+
+
+@router.post("/{skill_id}/files")
+async def upload_skill_file(
+    skill_id: str,
+    file: UploadFile = File(...),
+    path: str = Form(""),
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a file into a skill directory."""
+    service = SkillService(db)
+    return await service.upload_skill_file(
+        skill_id=skill_id, user_id=admin.id, file=file, relative_path=path,
+    )
+
+
+@router.get("/{skill_id}/files/{file_path:path}")
+async def read_skill_file(
+    skill_id: str,
+    file_path: str,
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read a text file from a skill directory."""
+    service = SkillService(db)
+    return await service.read_skill_file(skill_id=skill_id, user_id=admin.id, file_path=file_path)
+
+
+class WriteSkillFileRequest(BaseModel):
+    content: str
+
+
+@router.put("/{skill_id}/files/{file_path:path}")
+async def write_skill_file(
+    skill_id: str,
+    file_path: str,
+    request: WriteSkillFileRequest,
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Write content to a text file in a skill directory."""
+    service = SkillService(db)
+    return await service.write_skill_file(
+        skill_id=skill_id, user_id=admin.id, file_path=file_path, content=request.content,
+    )

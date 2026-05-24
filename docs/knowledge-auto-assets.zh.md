@@ -242,3 +242,66 @@
 - 自动发送资料里放“需要发给用户的文件、视频、下载链接”
 
 这样拆分后，命中路径会清晰很多。
+
+## 当前限制与规划改进
+
+以下为知识库/RAG 在代码中的**现状**与**路线图**（完整产品规划见 [roadmap.zh.md](roadmap.zh.md)）。
+
+### 现状（已实现）
+
+| 项目 | 行为 |
+|------|------|
+| 分块 | 知识库级 `fixed` / `paragraph` / `markdown` / `semantic`，可配 size / overlap / min_chunk / semantic_threshold |
+| Embedding | 知识库可覆盖 provider / model / api_base / dimension；全局 `.env` 为默认；本地上传 zip / Ollama |
+| 检索 | `vector` / `keyword` / `hybrid`；hybrid 使用 RRF 融合向量与 BM25 关键词结果 |
+| Rerank | `lexical`（内置）/ `cohere` / `bge` / `cross-encoder`，可配 provider、model、top_n |
+| Query Rewriting | LLM 改写多视角查询（可开关），多查询结果 RRF 合并 |
+| Parent-Child | semantic 策略下子块检索命中后替换为父块上下文 |
+| 存储 | `document_chunks` 表持久化分块（含 `parent_content`）；Milvus 存向量 |
+| 重嵌入 | 知识库级 `POST .../reindex`，含 `reindex_status` 进度与 `indexed_embedding_key` 指纹 |
+
+管理后台：知识库 → **RAG 设置**。API：`PATCH /api/knowledge/bases/{id}`。
+
+### 本地上传 Embedding 模型
+
+无需 API，可将 [sentence-transformers](https://www.sbert.net/) / HuggingFace 模型目录打成 **zip** 上传：
+
+1. 管理后台 **知识库** 页顶部 → **上传模型 zip**
+2. 校验通过后，在 **RAG 设置** 中将提供商选为 **本地上传模型**，并选择对应模型
+3. 将 **向量维度** 设为模型输出维度（选用模型时会自动填入）
+4. 执行 **全量重嵌入**
+
+依赖（后端需安装）：
+
+```bash
+pip install sentence-transformers
+```
+
+API：
+
+- `GET /api/knowledge/embedding-models` — 列表
+- `POST /api/knowledge/embedding-models/upload` — 上传 zip
+- `DELETE /api/knowledge/embedding-models/{id}` — 删除
+
+另支持 **Ollama** 本地推理（`embedding_provider=ollama`，无需上传，需本机运行 Ollama）。
+
+### 全量重嵌入
+
+切换 Embedding（或可选地变更分块策略）后：
+
+1. 保存 RAG 设置
+2. 在 **RAG 设置** 底部点击 **全量重嵌入**
+3. 可选勾选 **同时按当前策略重新分块**
+
+API：`POST /api/knowledge/bases/{id}/reindex`，body：`{ "rechunk": true }`。
+
+系统会记录 `indexed_embedding_key`；配置与指纹不一致时，列表显示 **待重嵌入**。
+
+### 后续规划
+
+- 异步后台重嵌入任务与实时进度条
+- 检索日志与零结果分析
+- 评估集（Q&A 对 + Recall@k / MRR）
+- 检索 A/B 对比
+
+详见 [产品路线图](roadmap.zh.md#1-知识库与-rag)。

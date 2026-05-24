@@ -10,6 +10,8 @@ import {
   Link2,
   Download,
   ExternalLink,
+  FolderOpen,
+  Plus,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -20,6 +22,7 @@ import { Switch } from '@/components/ui/Switch'
 import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/utils'
+import { SkillFileBrowser } from '@/components/admin/SkillFileBrowser'
 
 interface Skill {
   id: string
@@ -66,6 +69,14 @@ export function SkillManager() {
   const [catalogQuery, setCatalogQuery] = useState('')
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([])
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false)
+  const [fileBrowserSkillId, setFileBrowserSkillId] = useState('')
+  const [fileBrowserSkillName, setFileBrowserSkillName] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [createDescription, setCreateDescription] = useState('')
+  const [createType, setCreateType] = useState('tool')
+  const [creating, setCreating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -154,7 +165,8 @@ export function SkillManager() {
     }
   }
 
-  const deleteSkill = async (id: string) => {
+  const deleteSkill = async (id: string, name: string) => {
+    if (!window.confirm(t('skills.deleteConfirm', { name }))) return
     try {
       await api.delete(`/skills/${id}`)
       setSkills((prev) => prev.filter((s) => s.id !== id))
@@ -191,6 +203,29 @@ export function SkillManager() {
     }
   }
 
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!createName.trim()) return
+    setCreating(true)
+    try {
+      await api.post<Skill>('/skills', {
+        name: createName.trim(),
+        description: createDescription.trim() || null,
+        skill_type: createType,
+      })
+      setCreateOpen(false)
+      setCreateName('')
+      setCreateDescription('')
+      setCreateType('tool')
+      toast(t('skills.toastCreated'), { type: 'success' })
+      await loadSkills()
+    } catch (err: any) {
+      toast(err.message || t('skills.toastOperationFailed'), { type: 'error' })
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const filtered = skills.filter(
     (s) =>
       !search ||
@@ -222,6 +257,13 @@ export function SkillManager() {
           />
         </div>
         <div className="flex gap-2">
+          <Button
+            leftIcon={<Plus className="w-4 h-4" />}
+            onClick={() => setCreateOpen(true)}
+            className="w-[120px]"
+          >
+            {t('skills.createSkill')}
+          </Button>
           <Button
             variant="secondary"
             leftIcon={<Link2 className="w-4 h-4" />}
@@ -320,16 +362,30 @@ export function SkillManager() {
                       {skill.enabled ? t('common.enabled') : t('common.disabled')}
                     </span>
                   </div>
-                  {skill.skill_type !== 'builtin' && (
+                  <div className="flex items-center gap-1">
                     <button
-                      onClick={() => deleteSkill(skill.id)}
-                      aria-label={t('common.delete')}
-                      title={t('common.delete')}
-                      className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      onClick={() => {
+                        setFileBrowserSkillId(skill.id)
+                        setFileBrowserSkillName(skill.name)
+                        setFileBrowserOpen(true)
+                      }}
+                      aria-label={t('skills.browseFiles')}
+                      title={t('skills.browseFiles')}
+                      className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <FolderOpen className="w-4 h-4" />
                     </button>
-                  )}
+                    {skill.skill_type !== 'builtin' && (
+                      <button
+                        onClick={() => deleteSkill(skill.id, skill.name)}
+                        aria-label={t('common.delete')}
+                        title={t('common.delete')}
+                        className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -372,20 +428,6 @@ export function SkillManager() {
                 {selectedSkill.description}
               </p>
             )}
-            {typeof selectedSkill.config?.prompt_body === 'string' &&
-              selectedSkill.config.prompt_body.trim() && (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {t('skills.skillInstructions')}
-                  </p>
-                  <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900/40 p-3 text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                    {selectedSkill.config.prompt_body}
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    {t('skills.skillMdSyncHint')}
-                  </p>
-                </div>
-              )}
             <div className="text-xs text-gray-400 space-y-1">
               <p>{t('skills.metaType', { type: typeLabel(selectedSkill.skill_type) })}</p>
               <p>{t('skills.metaCreatedAt', { date: formatDate(selectedSkill.created_at) })}</p>
@@ -573,6 +615,58 @@ export function SkillManager() {
           </div>
         </div>
       </Dialog>
+
+      {/* Create Skill Dialog */}
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title={t('skills.dialogCreateTitle')}
+        size="sm"
+      >
+        <form onSubmit={handleCreate} className="space-y-4">
+          <Input
+            label={t('skills.createNameLabel')}
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            placeholder="my-skill"
+            required
+          />
+          <Input
+            label={t('skills.createDescriptionLabel')}
+            value={createDescription}
+            onChange={(e) => setCreateDescription(e.target.value)}
+            placeholder={t('skills.createDescriptionLabel')}
+          />
+          <Input
+            label={t('skills.createTypeLabel')}
+            value={createType}
+            onChange={(e) => setCreateType(e.target.value)}
+            list="skill-types"
+            placeholder="tool"
+          />
+          <datalist id="skill-types">
+            <option value="tool" />
+            <option value="function" />
+            <option value="webhook" />
+          </datalist>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setCreateOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" isLoading={creating}>
+              {t('common.create')}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* File Browser */}
+      <SkillFileBrowser
+        skillId={fileBrowserSkillId}
+        skillName={fileBrowserSkillName}
+        open={fileBrowserOpen}
+        onClose={() => setFileBrowserOpen(false)}
+      />
 
       {/* Upload Dialog */}
       <Dialog

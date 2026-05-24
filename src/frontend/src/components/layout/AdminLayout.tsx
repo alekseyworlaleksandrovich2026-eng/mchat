@@ -39,6 +39,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       '/admin/settings',
       '/admin/channels',
       '/admin/users',
+      '/admin/roles',
     ]
 
     const blocked = adminOnlyPrefixes.some(

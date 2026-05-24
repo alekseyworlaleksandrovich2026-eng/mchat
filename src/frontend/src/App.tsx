@@ -16,7 +16,9 @@ import { SkillShowcasePage } from './pages/SkillShowcasePage'
 import { WxMiniPage } from './pages/WxMiniPage'
 import { MpJump } from './pages/MpJump'
 import { LandingPage } from './pages/LandingPage'
+import { HelpPage } from './pages/HelpPage'
 import { UsersPage } from './pages/UsersPage'
+import { RolesPage } from './pages/RolesPage'
 import { DocumentTitle } from './components/common/DocumentTitle'
 
 export default function App() {
@@ -91,6 +93,14 @@ export default function App() {
         }
       />
       <Route
+        path="/admin/roles"
+        element={
+          <AdminLayout>
+            <RolesPage />
+          </AdminLayout>
+        }
+      />
+      <Route
         path="/admin/users"
         element={
           <AdminLayout>
@@ -103,6 +113,7 @@ export default function App() {
       <Route path="/widget" element={<WidgetPage />} />
       <Route path="/wx-mini" element={<WxMiniPage />} />
       <Route path="/mini-program" element={<MpJump />} />
+      <Route path="/help" element={<HelpPage />} />
       <Route path="/showcase" element={<SkillShowcasePage />} />
     </Routes>
     </>

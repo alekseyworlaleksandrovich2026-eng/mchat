@@ -1,18 +1,25 @@
 """System settings and widget configuration API router."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.middleware.auth import get_current_admin
+from app.middleware.auth import (
+    DEFAULT_ROLE_PERMISSIONS,
+    Permission,
+    require_permission,
+)
+from app.models.setting import Setting
 from app.models.user import User
 from app.models.customer import CustomerConfig
 from app.schemas.agent import (
     CustomerConfigCreate,
     CustomerConfigResponse,
 )
-from pydantic import BaseModel, Field
 
 from app.schemas.settings import AppLogResponse, AppSettingsResponse, AppSettingsUpdate
 from app.services.settings_service import SettingsService
@@ -24,7 +31,7 @@ router = APIRouter()
 
 @router.get("", response_model=AppSettingsResponse)
 async def get_settings(
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get current system settings."""
@@ -35,7 +42,7 @@ async def get_settings(
 @router.put("", response_model=AppSettingsResponse)
 async def update_settings(
     request: AppSettingsUpdate,
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Update system settings."""
@@ -52,7 +59,7 @@ class MilvusTestRequest(BaseModel):
 @router.post("/milvus/test")
 async def test_milvus_settings(
     request: MilvusTestRequest,
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Test Milvus connection with provided settings."""
@@ -68,7 +75,7 @@ async def test_milvus_settings(
 async def get_backend_logs(
     source: str = "app",
     lines: int = 200,
-    _admin: User = Depends(get_current_admin),
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get backend log tail for admin troubleshooting."""
@@ -78,11 +85,67 @@ async def get_backend_logs(
     return AppLogResponse(**result)
 
 
+# ─── Role Permissions ────────────────────────────────────────────
+
+
+class RolePermissionsResponse(BaseModel):
+    role_permissions: dict[str, list[str]]
+
+
+@router.get("/role-permissions", response_model=RolePermissionsResponse)
+async def get_role_permissions(
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current role-to-permission mapping (from DB or defaults)."""
+    result = await db.execute(
+        select(Setting).where(Setting.key == "role_permissions")
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        try:
+            stored = json.loads(row.value)
+            if isinstance(stored, dict):
+                return RolePermissionsResponse(role_permissions=stored)
+        except json.JSONDecodeError:
+            pass
+    return RolePermissionsResponse(
+        role_permissions={k: list(v) for k, v in DEFAULT_ROLE_PERMISSIONS.items()}
+    )
+
+
+@router.put("/role-permissions", response_model=RolePermissionsResponse)
+async def update_role_permissions(
+    request: RolePermissionsResponse,
+    _admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update role-to-permission mapping. Only valid permissions are kept."""
+    valid_perms = set(Permission.all())
+    sanitised: dict[str, list[str]] = {}
+    for role, perms in request.role_permissions.items():
+        if not isinstance(perms, list):
+            continue
+        sanitised[role] = [p for p in perms if p in valid_perms]
+
+    result = await db.execute(
+        select(Setting).where(Setting.key == "role_permissions")
+    )
+    existing = result.scalar_one_or_none()
+    value_str = json.dumps(sanitised, ensure_ascii=False)
+    if existing:
+        existing.value = value_str
+    else:
+        db.add(Setting(key="role_permissions", value=value_str, category="general"))
+    await db.flush()
+    return RolePermissionsResponse(role_permissions=sanitised)
+
+
 # ─── Widget / Customer Config ──────────────────────────────────
 
 @router.get("/widget", response_model=CustomerConfigResponse)
 async def get_widget_settings(
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Get the first customer (widget) config for the current user."""
@@ -100,7 +163,7 @@ async def get_widget_settings(
 @router.put("/widget", response_model=CustomerConfigResponse)
 async def update_widget_settings(
     request: CustomerConfigCreate,
-    admin: User = Depends(get_current_admin),
+    admin: User = Depends(require_permission(Permission.SETTINGS_WRITE)),
     db: AsyncSession = Depends(get_db),
 ):
     """Create or update the first widget config for the current user."""

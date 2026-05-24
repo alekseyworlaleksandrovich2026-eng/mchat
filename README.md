@@ -13,6 +13,7 @@ MChat is a **lightweight, embeddable, multi-tenant AI customer service platform*
 - [English main site](http://mchat.chat)
 - [Chinese main site](https://mchat.9235.net)
 - [Full screenshot tour](docs/product-tour.en.md)
+- [Product roadmap](docs/roadmap.en.md) (knowledge base, Widget, channels, API, ops, RBAC)
 
 ## UI preview
 
@@ -50,10 +51,10 @@ Click any screenshot to open the full image.
 
 - **Bot engine** — Streaming LLM inference + tool calling; OpenAI, Anthropic, Google, DeepSeek, Ollama, Groq, and more
 - **Skill plugins** — Hot-reload `SKILL.md` packages from disk/zip/URL, including OpenClaw-compatible formats
-- **RAG knowledge base** — Document import, chunking, Milvus vector search, context injection
+- **RAG knowledge base** — Multi-strategy chunking, multi-provider embeddings (OpenAI / local / Ollama), hybrid retrieval (vector + BM25 + RRF), multi-provider rerank, query rewriting, parent-child context
 - **Embeddable Widget** — One `<script>` tag for branded chat on any website
 - **Multi-tenant** — Multiple customer agents with isolated AI config, skills, and knowledge bases
-- **Multi-channel** — Web Widget, REST, WebSocket, WeChat Official Account
+- **Multi-channel** — Web Widget, REST, WebSocket, WeChat Official Account (DingTalk/WhatsApp/Telegram [planned](docs/roadmap.en.md#3-channels))
 - **Speech input** — Voice-to-text via OpenAI Whisper (optional local models)
 - **Security** — JWT authentication and API key management
 - **Docker** — `docker compose up -d` for full stack deployment

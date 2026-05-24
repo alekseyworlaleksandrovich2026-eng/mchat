@@ -45,6 +45,8 @@ export function SkillShowcasePage() {
   const [config, setConfig] = useState<ShowcaseConfig | null>(null)
   const [activeSkill, setActiveSkill] = useState<ShowcaseSkill | null>(null)
   const [hubItems, setHubItems] = useState<ShowcaseHubItem[]>([])
+  // Direct overlay from hub card click (skips detail page)
+  const [hubDirectConfig, setHubDirectConfig] = useState<ShowcaseConfig | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +90,18 @@ export function SkillShowcasePage() {
       cancelled = true
     }
   }, [agentId, t])
+
+  // Listen for close events from embedded iframe chat windows
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'mchat:close') {
+        setActiveSkill(null)
+        setHubDirectConfig(null)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   const apiBase = useMemo(() => {
     if (typeof window === 'undefined') return '/api'
@@ -141,10 +155,21 @@ export function SkillShowcasePage() {
         {!loading && !error && !agentId && hubItems.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {hubItems.map((item) => (
-              <Link
+              <button
                 key={item.customer_id}
-                to={`/showcase?agentId=${item.customer_id}`}
-                className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                type="button"
+                onClick={() => {
+                  const cfg: ShowcaseConfig = {
+                    customer_id: item.customer_id,
+                    name: item.name,
+                    welcome_message: item.welcome_message,
+                    theme: item.theme,
+                    skills: item.skills,
+                  }
+                  setHubDirectConfig(cfg)
+                  setActiveSkill(item.skills[0] || null)
+                }}
+                className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -168,7 +193,7 @@ export function SkillShowcasePage() {
                   {t('showcase.openAgentShowcase', { count: item.skill_count })}
                   <ExternalLink className="w-4 h-4" />
                 </div>
-              </Link>
+              </button>
             ))}
           </div>
         )}
@@ -210,15 +235,17 @@ export function SkillShowcasePage() {
         )}
       </div>
 
-      {config && activeSkill && (() => {
+      {(config || hubDirectConfig) && activeSkill && (() => {
+        const effectiveConfig = config || hubDirectConfig!
+        const effectiveAgentId = effectiveConfig.customer_id
         const query = new URLSearchParams({
           mode: 'embed',
-          agentId,
+          agentId: effectiveAgentId,
           apiUrl: apiBase,
           skillId: activeSkill.id,
-          botName: `${config.theme?.botName || config.name} · ${activeSkill.name}`,
-          primaryColor: config.theme?.primaryColor || '#3b82f6',
-          welcomeMessage: config.welcome_message || t('showcase.defaultWelcome'),
+          botName: `${effectiveConfig.theme?.botName || effectiveConfig.name} · ${activeSkill.name}`,
+          primaryColor: effectiveConfig.theme?.primaryColor || '#3b82f6',
+          welcomeMessage: effectiveConfig.welcome_message || t('showcase.defaultWelcome'),
         })
         return (
           <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm p-4 md:p-8">
@@ -231,7 +258,7 @@ export function SkillShowcasePage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setActiveSkill(null)}
+                    onClick={() => { setActiveSkill(null); setHubDirectConfig(null) }}
                     className="rounded-xl border border-gray-200 dark:border-gray-700 p-2 text-gray-500 hover:text-gray-900 dark:hover:text-white"
                     title={t('chat.widgetClose')}
                   >
@@ -241,6 +268,27 @@ export function SkillShowcasePage() {
                 <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
                   {activeSkill.description || t('showcase.cardHint')}
                 </p>
+                {hubDirectConfig && (
+                  <div className="mt-4 border-t border-gray-100 dark:border-gray-700 pt-4">
+                    <p className="text-xs text-gray-400 mb-2">{t('showcase.pageSubtitle')}</p>
+                    <div className="space-y-1">
+                      {hubDirectConfig.skills.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setActiveSkill(s)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                            activeSkill.id === s.id
+                              ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
+                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => window.open(`/widget.html?${query.toString()}`, '_blank', 'noopener,noreferrer')}

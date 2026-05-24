@@ -28,9 +28,12 @@ class Settings(BaseSettings):
     milvus_port: int = 19530
     milvus_enabled: bool = False
 
-    # Embedding
+    # Embedding (global defaults; per knowledge base can override)
     embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-3-small"
+    embedding_api_base: str = ""
+    embedding_dimension: int = 1536
+    embedding_model_max_mb: int = 2048
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -67,6 +70,11 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = False
     s3_public_base_url: str = ""
     s3_force_path_style: bool = True
+
+    # Reranker (global defaults; per KB can override)
+    rerank_provider: str = "lexical"  # none, lexical, cohere, bge, cross-encoder
+    rerank_model: str = ""
+    cohere_api_key: str = ""
 
     # Speech-to-text (STT)
     stt_enabled: bool = True

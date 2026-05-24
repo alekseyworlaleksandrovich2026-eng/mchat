@@ -34,6 +34,13 @@ class SkillInstallUrlRequest(BaseModel):
     name: str | None = Field(None, max_length=100)
 
 
+class SkillCreate(BaseModel):
+    """Request body for creating a new skill."""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = None
+    skill_type: str = Field(default="tool", pattern=r"^(tool|function|webhook)$")
+
+
 class SkillCatalogItem(BaseModel):
     """Remote skill catalog item."""
     name: str

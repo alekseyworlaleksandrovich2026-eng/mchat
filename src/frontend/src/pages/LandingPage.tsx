@@ -47,6 +47,9 @@ export function LandingPage() {
             <a href="#quickstart" className="hover:text-primary-600 transition-colors">
               {t('landing.quickTitle')}
             </a>
+            <Link to="/help" className="hover:text-primary-600 transition-colors">
+              {t('landing.navHelp')}
+            </Link>
             <Link to="/showcase" className="hover:text-primary-600 transition-colors">
               {t('landing.navShowcase')}
             </Link>

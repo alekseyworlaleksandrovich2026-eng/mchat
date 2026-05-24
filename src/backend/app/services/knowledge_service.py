@@ -4,11 +4,15 @@ import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.knowledge.chunk_store import delete_document_chunks
+from app.knowledge.embedding_fingerprint import needs_reindex
 from app.knowledge.importer import DocumentImporter
+from app.knowledge.milvus_client import milvus_client
 from app.knowledge.rag import RagService
+from app.knowledge.rag_config import rag_settings_from_kb
 from app.models.knowledge import Document, KnowledgeBase
 from app.services.storage_service import storage_service
 from app.schemas.knowledge import (
@@ -17,7 +21,11 @@ from app.schemas.knowledge import (
     DocumentResponse,
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
+    KnowledgeBaseUpdate,
+    ReindexRequest,
+    ReindexResponse,
     SearchResponse,
+    DocumentReindexResult,
 )
 
 
@@ -29,9 +37,65 @@ def _kb_to_response(kb: KnowledgeBase) -> KnowledgeBaseResponse:
         description=kb.description,
         enabled=kb.enabled,
         document_count=len(kb.documents) if kb.documents is not None else 0,
+        chunk_strategy=kb.chunk_strategy,
+        chunk_size=kb.chunk_size,
+        chunk_overlap=kb.chunk_overlap,
+        chunk_min_size=kb.chunk_min_size,
+        chunk_semantic_threshold=kb.chunk_semantic_threshold,
+        chunk_parent_enabled=kb.chunk_parent_enabled,
+        embedding_provider=kb.embedding_provider,
+        embedding_model=kb.embedding_model,
+        embedding_api_base=kb.embedding_api_base,
+        embedding_dimension=kb.embedding_dimension,
+        retrieval_mode=kb.retrieval_mode,
+        retrieval_top_k=kb.retrieval_top_k,
+        retrieval_candidate_k=kb.retrieval_candidate_k,
+        rerank_enabled=kb.rerank_enabled,
+        rerank_top_n=kb.rerank_top_n,
+        retrieval_bm25_enabled=kb.retrieval_bm25_enabled,
+        retrieval_bm25_k1=kb.retrieval_bm25_k1,
+        retrieval_bm25_b=kb.retrieval_bm25_b,
+        rerank_provider=kb.rerank_provider,
+        rerank_model=kb.rerank_model,
+        retrieval_query_rewrite_enabled=kb.retrieval_query_rewrite_enabled,
+        retrieval_query_rewrite_count=kb.retrieval_query_rewrite_count,
+        indexed_embedding_key=kb.indexed_embedding_key,
+        needs_reindex=needs_reindex(kb),
+        reindex_status=kb.reindex_status,
         created_at=kb.created_at,
         updated_at=kb.updated_at,
     )
+
+
+def _apply_rag_fields(kb: KnowledgeBase, data: KnowledgeBaseCreate | KnowledgeBaseUpdate) -> None:
+    fields = [
+        "chunk_strategy",
+        "chunk_size",
+        "chunk_overlap",
+        "chunk_min_size",
+        "chunk_semantic_threshold",
+        "chunk_parent_enabled",
+        "embedding_provider",
+        "embedding_model",
+        "embedding_api_base",
+        "embedding_dimension",
+        "retrieval_mode",
+        "retrieval_top_k",
+        "retrieval_candidate_k",
+        "rerank_enabled",
+        "rerank_top_n",
+        "retrieval_bm25_enabled",
+        "retrieval_bm25_k1",
+        "retrieval_bm25_b",
+        "rerank_provider",
+        "rerank_model",
+        "retrieval_query_rewrite_enabled",
+        "retrieval_query_rewrite_count",
+    ]
+    for field in fields:
+        value = getattr(data, field, None)
+        if value is not None:
+            setattr(kb, field, value)
 
 
 def _doc_to_list_item(doc: Document) -> DocumentListItem:
@@ -54,17 +118,43 @@ class KnowledgeService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _get_kb_row(self, kb_id: str, user_id: str) -> KnowledgeBase | None:
+        result = await self.db.execute(
+            select(KnowledgeBase).where(
+                KnowledgeBase.id == kb_id,
+                KnowledgeBase.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create_knowledge_base(
         self, user_id: str, data: KnowledgeBaseCreate
     ) -> KnowledgeBaseResponse:
-        """Create a new knowledge base."""
         kb = KnowledgeBase(
             user_id=user_id,
             name=data.name,
             description=data.description,
             enabled=data.enabled,
         )
+        _apply_rag_fields(kb, data)
         self.db.add(kb)
+        await self.db.flush()
+        await self.db.refresh(kb)
+        return _kb_to_response(kb)
+
+    async def update_knowledge_base(
+        self, kb_id: str, user_id: str, data: KnowledgeBaseUpdate
+    ) -> KnowledgeBaseResponse | None:
+        kb = await self._get_kb_row(kb_id, user_id)
+        if kb is None:
+            return None
+        if data.name is not None:
+            kb.name = data.name
+        if data.description is not None:
+            kb.description = data.description
+        if data.enabled is not None:
+            kb.enabled = data.enabled
+        _apply_rag_fields(kb, data)
         await self.db.flush()
         await self.db.refresh(kb)
         return _kb_to_response(kb)
@@ -72,7 +162,6 @@ class KnowledgeService:
     async def list_knowledge_bases(
         self, user_id: str
     ) -> list[KnowledgeBaseResponse]:
-        """List all knowledge bases for a user."""
         result = await self.db.execute(
             select(KnowledgeBase)
             .where(KnowledgeBase.user_id == user_id)
@@ -84,14 +173,7 @@ class KnowledgeService:
     async def get_knowledge_base(
         self, kb_id: str, user_id: str
     ) -> KnowledgeBaseResponse | None:
-        """Get a specific knowledge base."""
-        result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        kb = result.scalar_one_or_none()
+        kb = await self._get_kb_row(kb_id, user_id)
         if kb is None:
             return None
         return _kb_to_response(kb)
@@ -99,14 +181,7 @@ class KnowledgeService:
     async def delete_knowledge_base(
         self, kb_id: str, user_id: str
     ) -> bool:
-        """Delete a knowledge base and its documents."""
-        result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        kb = result.scalar_one_or_none()
+        kb = await self._get_kb_row(kb_id, user_id)
         if kb is None:
             return False
         await self.db.delete(kb)
@@ -116,15 +191,7 @@ class KnowledgeService:
     async def list_documents(
         self, kb_id: str, user_id: str
     ) -> list[DocumentListItem]:
-        """List all documents in a knowledge base."""
-        # Verify ownership
-        kb_result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        if kb_result.scalar_one_or_none() is None:
+        if await self._get_kb_row(kb_id, user_id) is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Knowledge base not found",
@@ -141,22 +208,13 @@ class KnowledgeService:
     async def create_document(
         self, kb_id: str, user_id: str, data: DocumentCreate
     ) -> DocumentResponse:
-        """Create a document and index it."""
-        # Verify ownership
-        kb_result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        kb = kb_result.scalar_one_or_none()
+        kb = await self._get_kb_row(kb_id, user_id)
         if kb is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Knowledge base not found",
             )
 
-        # Create document record
         doc = Document(
             knowledge_base_id=kb_id,
             title=data.title,
@@ -168,12 +226,15 @@ class KnowledgeService:
         self.db.add(doc)
         await self.db.flush()
 
-        # Index in Milvus
         try:
-            importer = DocumentImporter()
+            importer = DocumentImporter(
+                rag_settings=rag_settings_from_kb(kb), db=self.db
+            )
             chunk_count = await importer.index_document(doc, user_id=kb.user_id)
             doc.status = "indexed"
             doc.chunk_count = chunk_count
+            if chunk_count > 0:
+                await importer.mark_kb_indexed(kb)
         except Exception:
             doc.status = "failed"
 
@@ -181,11 +242,145 @@ class KnowledgeService:
         await self.db.refresh(doc)
         return DocumentResponse.model_validate(doc)
 
+    async def reindex_knowledge_base(
+        self,
+        kb_id: str,
+        user_id: str,
+        options: ReindexRequest | None = None,
+    ) -> ReindexResponse:
+        """Re-embed all documents in a knowledge base."""
+        opts = options or ReindexRequest()
+        kb = await self._get_kb_row(kb_id, user_id)
+        if kb is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Knowledge base not found",
+            )
+        if kb.reindex_status == "running":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Reindex already in progress for this knowledge base",
+            )
+
+        result = await self.db.execute(
+            select(Document)
+            .where(Document.knowledge_base_id == kb_id)
+            .order_by(Document.created_at.asc())
+        )
+        documents = list(result.scalars().all())
+
+        kb.reindex_status = "running"
+        await self.db.flush()
+
+        importer = DocumentImporter(rag_settings=rag_settings_from_kb(kb), db=self.db)
+        outcomes: list[DocumentReindexResult] = []
+        succeeded = 0
+        failed = 0
+
+        try:
+            outcomes, succeeded, failed = await self._run_reindex_documents(
+                kb=kb,
+                documents=documents,
+                importer=importer,
+                rechunk=opts.rechunk,
+            )
+        except Exception:
+            kb.reindex_status = "failed"
+            await self.db.flush()
+            raise
+        finally:
+            if kb.reindex_status == "running":
+                kb.reindex_status = (
+                    "completed" if succeeded > 0 else "failed"
+                )
+                await self.db.flush()
+
+        if succeeded > 0:
+            await importer.mark_kb_indexed(kb)
+
+        return ReindexResponse(
+            knowledge_base_id=kb_id,
+            total=len(documents),
+            succeeded=succeeded,
+            failed=failed,
+            rechunk=opts.rechunk,
+            milvus_enabled=milvus_client._connected,
+            indexed_embedding_key=kb.indexed_embedding_key,
+            documents=outcomes,
+        )
+
+    async def _run_reindex_documents(
+        self,
+        *,
+        kb: KnowledgeBase,
+        documents: list[Document],
+        importer: DocumentImporter,
+        rechunk: bool,
+    ) -> tuple[list[DocumentReindexResult], int, int]:
+        outcomes: list[DocumentReindexResult] = []
+        succeeded = 0
+        failed = 0
+
+        for doc in documents:
+            if not (doc.content or "").strip():
+                doc.status = "failed"
+                doc.chunk_count = 0
+                outcomes.append(
+                    DocumentReindexResult(
+                        document_id=doc.id,
+                        title=doc.title,
+                        status="failed",
+                        error="Empty document content",
+                    )
+                )
+                failed += 1
+                continue
+
+            try:
+                count = await importer.reindex_document(
+                    doc,
+                    user_id=kb.user_id,
+                    rechunk=rechunk,
+                )
+                if count > 0:
+                    succeeded += 1
+                    outcomes.append(
+                        DocumentReindexResult(
+                            document_id=doc.id,
+                            title=doc.title,
+                            status=doc.status,
+                            chunk_count=count,
+                        )
+                    )
+                else:
+                    failed += 1
+                    outcomes.append(
+                        DocumentReindexResult(
+                            document_id=doc.id,
+                            title=doc.title,
+                            status=doc.status,
+                            error="No chunks produced",
+                        )
+                    )
+            except Exception as exc:
+                doc.status = "failed"
+                failed += 1
+                outcomes.append(
+                    DocumentReindexResult(
+                        document_id=doc.id,
+                        title=doc.title,
+                        status="failed",
+                        error=str(exc),
+                    )
+                )
+
+        kb.reindex_status = "completed" if succeeded > 0 else "failed"
+        await self.db.flush()
+        return outcomes, succeeded, failed
+
     async def delete_document(
         self, doc_id: str, user_id: str
     ) -> bool:
-        """Delete a document."""
-        # Verify ownership through KB
         result = await self.db.execute(
             select(Document).join(KnowledgeBase).where(
                 Document.id == doc_id,
@@ -195,6 +390,9 @@ class KnowledgeService:
         doc = result.scalar_one_or_none()
         if doc is None:
             return False
+        if milvus_client._connected:
+            await milvus_client.delete_vectors(doc.id)
+        await delete_document_chunks(self.db, doc.id)
         await self.db.delete(doc)
         await self.db.flush()
         return True
@@ -206,28 +404,23 @@ class KnowledgeService:
         knowledge_base_id: str | None = None,
         top_k: int = 5,
     ) -> SearchResponse:
-        """Search documents using semantic search."""
-        rag = RagService()
-        results = await rag.search(
+        rag_settings = None
+        if knowledge_base_id:
+            kb = await self._get_kb_row(knowledge_base_id, user_id)
+            if kb:
+                rag_settings = rag_settings_from_kb(kb)
+        rag = RagService(rag_settings=rag_settings)
+        return await rag.search(
             query=query,
             user_id=user_id,
             knowledge_base_id=knowledge_base_id,
             top_k=top_k,
         )
-        return results
 
     async def import_file(
         self, kb_id: str, user_id: str, file: UploadFile
     ) -> DocumentListItem:
-        """Import a file into a knowledge base."""
-        # Verify ownership
-        kb_result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        kb = kb_result.scalar_one_or_none()
+        kb = await self._get_kb_row(kb_id, user_id)
         if kb is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -251,17 +444,20 @@ class KnowledgeService:
                 temp_path = Path(f.name)
             file_path = temp_path
 
-        # Import and index
-        importer = DocumentImporter()
+        importer = DocumentImporter(rag_settings=rag_settings_from_kb(kb), db=self.db)
         try:
             doc = await importer.import_file(
                 kb_id=kb_id,
                 user_id=kb.user_id,
                 file_path=file_path,
                 original_filename=file.filename or "unknown",
+                kb=kb,
             )
-            doc.knowledge_base_id = kb_id
-            self.db.add(doc)
+            if sa_inspect(doc).session is None:
+                doc.knowledge_base_id = kb_id
+                self.db.add(doc)
+            if doc.status == "indexed" and doc.chunk_count > 0:
+                await importer.mark_kb_indexed(kb)
             await self.db.flush()
             await self.db.refresh(doc)
             return _doc_to_list_item(doc)
@@ -277,30 +473,26 @@ class KnowledgeService:
     async def import_url(
         self, kb_id: str, user_id: str, url: str
     ) -> DocumentResponse:
-        """Import content from a URL."""
-        # Verify ownership
-        kb_result = await self.db.execute(
-            select(KnowledgeBase).where(
-                KnowledgeBase.id == kb_id,
-                KnowledgeBase.user_id == user_id,
-            )
-        )
-        kb = kb_result.scalar_one_or_none()
+        kb = await self._get_kb_row(kb_id, user_id)
         if kb is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Knowledge base not found",
             )
 
-        importer = DocumentImporter()
+        importer = DocumentImporter(rag_settings=rag_settings_from_kb(kb), db=self.db)
         try:
             doc = await importer.import_url(
                 kb_id=kb_id,
                 user_id=kb.user_id,
                 url=url,
+                kb=kb,
             )
-            doc.knowledge_base_id = kb_id
-            self.db.add(doc)
+            if sa_inspect(doc).session is None:
+                doc.knowledge_base_id = kb_id
+                self.db.add(doc)
+            if doc.status == "indexed" and doc.chunk_count > 0:
+                await importer.mark_kb_indexed(kb)
             await self.db.flush()
             await self.db.refresh(doc)
             return DocumentResponse.model_validate(doc)

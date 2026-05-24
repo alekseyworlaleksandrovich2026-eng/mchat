@@ -9,20 +9,6 @@ on:
 jobs:
   backend-test:
     runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: mchat_test
-          MYSQL_DATABASE: mchat_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +26,6 @@ jobs:
 
       - name: Run tests
         env:
-          DATABASE_URL: mysql+aiomysql://root:mchat_test@127.0.0.1:3306/mchat_test
           JWT_SECRET: test-secret-key
           ADMIN_USERNAME: admin
           ADMIN_PASSWORD: admin123
@@ -51,13 +36,15 @@ jobs:
 
   frontend-test:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: src/frontend/package-lock.json
 

@@ -190,3 +190,65 @@ A useful rule of thumb is:
 - Put files, videos, and delivery links into auto-sent asset rules
 
 That split keeps the trigger path much clearer.
+
+## Current limits and planned improvements
+
+Below is the **current state** of the knowledge base / RAG pipeline in code (see [roadmap.en.md](roadmap.en.md) for the full product plan).
+
+### Current (implemented)
+
+| Area | Behavior |
+|------|----------|
+| Chunking | Per-KB `fixed` / `paragraph` / `markdown` / `semantic`, configurable size / overlap / min_chunk / semantic_threshold |
+| Embedding | Per-KB provider / model / api_base / dimension; global `.env` as default; local zip upload + Ollama |
+| Retrieval | `vector` / `keyword` / `hybrid`; hybrid uses RRF to fuse vector + BM25 keyword results |
+| Rerank | `lexical` (built-in) / `cohere` / `bge` / `cross-encoder`, configurable provider / model / top_n |
+| Query rewriting | LLM-based multi-perspective queries (on/off switch), multi-query results merged via RRF |
+| Parent-child | Semantic strategy auto-generates parent context; child hits enriched with parent content |
+| Storage | `document_chunks` table (with `parent_content`) + Milvus vector store |
+| Reindex | Per-KB `POST .../reindex`, `reindex_status` progress tracking, `indexed_embedding_key` fingerprint |
+
+Admin UI: Knowledge Base → **RAG Settings**. API: `PATCH /api/knowledge/bases/{id}`.
+
+### Local embedding model upload
+
+Upload a [sentence-transformers](https://www.sbert.net/) / HuggingFace model directory as **zip**:
+
+1. Admin panel **Knowledge Base** page top → **Upload model zip**
+2. After validation, in **RAG Settings** set provider to **Local uploaded model** and select the model
+3. Set **Vector dimension** to the model's output dimension (auto-filled on model selection)
+4. Run **Full re-embed**
+
+Dependency (backend):
+
+```bash
+pip install sentence-transformers
+```
+
+API:
+- `GET /api/knowledge/embedding-models` — list
+- `POST /api/knowledge/embedding-models/upload` — upload zip
+- `DELETE /api/knowledge/embedding-models/{id}` — delete
+
+**Ollama** is also supported (`embedding_provider=ollama`, no upload needed, requires local Ollama running).
+
+### Full re-embed
+
+After switching embedding (or optionally chunking strategy):
+
+1. Save RAG settings
+2. Click **Full re-embed** at the bottom of **RAG Settings**
+3. Optionally check **Re-chunk with current strategy**
+
+API: `POST /api/knowledge/bases/{id}/reindex`, body: `{ "rechunk": true }`.
+
+The system records `indexed_embedding_key`; when config differs from fingerprint, the list shows **Reindex needed**.
+
+### Further planned
+
+- Async background reindex with real-time progress
+- Retrieval observability logs & zero-result analysis
+- Eval dataset (Q&A pairs + Recall@k / MRR)
+- A/B retrieval comparison
+
+See [product roadmap](roadmap.en.md#1-knowledge-base--rag).

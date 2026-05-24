@@ -67,7 +67,8 @@ app/
 │   ├── message.py
 │   ├── skill.py
 │   ├── knowledge.py
-│   └── customer.py
+│   ├── customer.py
+│   └── embedding_model.py
 ├── schemas/             # Pydantic 请求/响应模型
 │   ├── auth.py
 │   ├── chat.py
@@ -93,9 +94,18 @@ app/
 │   └── provider.py      # LLM Provider 抽象
 ├── knowledge/           # 知识库模块
 │   ├── milvus_client.py # Milvus 客户端
-│   ├── embedder.py      # 向量嵌入
-│   ├── rag.py           # RAG 检索增强
-│   └── importer.py      # 文档导入
+│   ├── embedder.py      # 向量嵌入（OpenAI / Ollama 兼容）
+│   ├── local_embedder.py # 本地上传模型加载
+│   ├── model_storage.py # 模型文件存储
+│   ├── rag.py           # RAG 检索增强服务
+│   ├── rag_config.py    # 知识库级 RAG 配置模型
+│   ├── importer.py      # 文档导入
+│   ├── chunking.py      # 多策略分块（fixed/paragraph/markdown/semantic）
+│   ├── chunk_store.py   # Chunk 持久化存储
+│   ├── bm25.py          # BM25 关键词索引
+│   ├── rerank.py        # 多 Provider 重排序
+│   ├── query_rewriter.py # LLM 查询改写
+│   └── embedding_fingerprint.py # Embedding 配置指纹追踪
 ├── skill/               # 技能系统
 │   ├── loader.py        # 技能加载器
 │   └── executor.py      # 技能执行器
@@ -134,11 +144,14 @@ app/
 文件上传 → KnowledgeService.import_document()
   → Document.status = "processing"
     → Importer.parse_file() → 提取文本
-    → Importer.chunk_text() → 文本分块
-    → Embedder.embed() → 向量化
+    → chunking.chunk_text() → 按知识库策略分块（fixed / paragraph / markdown / semantic）
+    → chunk_store 持久化存储分块
+    → embedder_for_config() → 按知识库配置选择 Embedding provider（OpenAI / 本地上传 / Ollama）
     → MilvusClient.insert() → 存储向量
-  → Document.status = "ready"
+  → Document.status = "indexed"
 ```
+
+检索阶段：`RagService.search()` 支持 `vector` / `keyword` / `hybrid` 三种模式。hybrid 模式通过 RRF 融合 BM25 关键词与向量检索结果，可配置 Rerank 精排（lexical / cohere / bge / cross-encoder），支持 LLM Query Rewriting 多视角召回与 Parent-Child 上下文增强。详见 [产品路线图](roadmap.zh.md#1-知识库与-rag)。
 
 ### 技能系统
 
