@@ -37,6 +37,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         widget: path.resolve(__dirname, 'widget.html'),
         'wx-mini': path.resolve(__dirname, 'wx-mini.html'),
+        portal: path.resolve(__dirname, 'portal.html'),
       },
       output: {
         manualChunks: {
