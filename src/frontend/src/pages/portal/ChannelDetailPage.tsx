@@ -72,7 +72,7 @@ export function ChannelDetailPage() {
   if (!channel) return <div className="text-red-500 text-sm p-4">{error || 'Not found'}</div>
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <button onClick={() => navigate('/portal/channels')}
         className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400">
         <ArrowLeft className="w-4 h-4" /> {t('portal.myChannels')}

@@ -52,6 +52,18 @@ async def on_message_created(
                 ai_config = cfg_result.scalar_one_or_none()
 
             if ai_config is None:
+                # Fallback: use any available AI config with an API key
+                cfg_result = await db.execute(
+                    select(AIConfig).where(AIConfig.api_key != "").limit(1)
+                )
+                ai_config = cfg_result.scalar_one_or_none()
+
+            if ai_config is None:
+                # Last resort: use literally any AI config
+                cfg_result = await db.execute(select(AIConfig).limit(1))
+                ai_config = cfg_result.scalar_one_or_none()
+
+            if ai_config is None:
                 error_msg = (
                     "No AI configuration found. "
                     "Please configure an AI provider in the admin panel."

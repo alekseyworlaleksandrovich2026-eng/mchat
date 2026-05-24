@@ -11,11 +11,14 @@ interface Template {
   id: string; name: string; description: string | null; category: string
   icon: string | null; price_monthly_cents: number; price_yearly_cents: number
   trial_days: number; is_published: boolean; sort_order: number
-  default_ai_config_spec: any; default_skill_ids: string[] | null
+  default_ai_config_id: string | null; default_ai_config_spec: any
+  default_skill_ids: string[] | null
   default_knowledge_base_spec: any; default_theme: any
   default_welcome_message: string | null; default_offline_message: string | null
   created_at: string; updated_at: string
 }
+
+interface AiConfigItem { id: string; name: string; provider: string; model: string }
 
 const ICONS: { name: string; icon: React.ComponentType<{className?: string}>; label: string }[] = [
   { name: 'MessageSquare', icon: MessageSquare, label: 'Chat/客服' },
@@ -47,6 +50,7 @@ export function TemplateManager() {
   const [editing, setEditing] = useState<Template | null>(null)
   const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [aiConfigs, setAiConfigs] = useState<AiConfigItem[]>([])
   const [activeTab, setActiveTab] = useState('basic')
 
   const emptyForm = {
@@ -54,7 +58,7 @@ export function TemplateManager() {
     price_monthly_cents: 0, price_yearly_cents: 0, trial_days: 14,
     is_published: false, sort_order: 0,
     default_welcome_message: '', default_offline_message: '',
-    default_ai_config_spec: JSON.stringify({ provider: 'openai', model: 'gpt-4o-mini', system_prompt: '' }, null, 2),
+    default_ai_config_id: '',
     default_theme: JSON.stringify({ primaryColor: '#3b82f6', botName: 'Assistant', widgetTitle: 'Chat' }, null, 2),
   }
   const [form, setForm] = useState(emptyForm)
@@ -62,8 +66,14 @@ export function TemplateManager() {
 
   const load = async () => {
     setLoading(true)
-    try { setTemplates(await api.get<Template[]>('/admin/templates')) }
-    catch (e: any) { setError(e.message) }
+    try {
+      const [tpl, aic] = await Promise.all([
+        api.get<Template[]>('/admin/templates'),
+        api.get<AiConfigItem[]>('/agents/ai-configs').catch(() => []),
+      ])
+      setTemplates(tpl)
+      setAiConfigs(aic)
+    } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
@@ -77,7 +87,7 @@ export function TemplateManager() {
       trial_days: tmpl.trial_days, is_published: tmpl.is_published, sort_order: tmpl.sort_order,
       default_welcome_message: tmpl.default_welcome_message || '',
       default_offline_message: tmpl.default_offline_message || '',
-      default_ai_config_spec: JSON.stringify(tmpl.default_ai_config_spec || {}, null, 2),
+      default_ai_config_id: tmpl.default_ai_config_id || '',
       default_theme: JSON.stringify(tmpl.default_theme || {}, null, 2),
     })
   }
@@ -89,10 +99,17 @@ export function TemplateManager() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      let parsedAi: any = {}, parsedTheme: any = {}
-      try { parsedAi = JSON.parse(form.default_ai_config_spec) } catch {}
+      let parsedTheme: any = {}
       try { parsedTheme = JSON.parse(form.default_theme) } catch {}
-      const payload = { ...form, price_monthly_cents: Number(form.price_monthly_cents), price_yearly_cents: Number(form.price_yearly_cents), trial_days: Number(form.trial_days), sort_order: Number(form.sort_order), default_ai_config_spec: parsedAi, default_theme: parsedTheme }
+      const payload = {
+        ...form,
+        price_monthly_cents: Number(form.price_monthly_cents),
+        price_yearly_cents: Number(form.price_yearly_cents),
+        trial_days: Number(form.trial_days),
+        sort_order: Number(form.sort_order),
+        default_ai_config_id: form.default_ai_config_id || null,
+        default_theme: parsedTheme,
+      }
       if (editing) await api.put(`/admin/templates/${editing.id}`, payload)
       else await api.post('/admin/templates', payload)
       setEditing(null); setCreating(false); load()
@@ -204,11 +221,16 @@ export function TemplateManager() {
               </TabPanel>
               <TabPanel id="ai" activeTab={activeTab}>
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">新用户租用此通道时，自动使用以下 AI 配置。支持的 key: provider, model, system_prompt, temperature, max_tokens</p>
+                  <p className="text-xs text-gray-500">选择引用的 AI 配置。新用户租用时会自动关联此配置。选"自定义"则在租用时实时创建。</p>
                   <div>
-                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">AI Config (JSON)</label>
-                    <textarea className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-2 text-xs font-mono" rows={8}
-                      value={form.default_ai_config_spec} onChange={e => set('default_ai_config_spec', e.target.value)} />
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">引用 AI 配置 (在「AI 配置」页面管理)</label>
+                    <select className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 text-sm"
+                      value={form.default_ai_config_id} onChange={e => set('default_ai_config_id', e.target.value)}>
+                      <option value="">-- 自定义（租用时创建新配置）--</option>
+                      {aiConfigs.map(ac => (
+                        <option key={ac.id} value={ac.id}>{ac.name} ({ac.provider} / {ac.model})</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </TabPanel>

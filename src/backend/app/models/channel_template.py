@@ -35,6 +35,9 @@ class ChannelTemplate(Base):
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    default_ai_config_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("ai_configs.id"), nullable=True
+    )
     default_ai_config_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_skill_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     default_knowledge_base_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)

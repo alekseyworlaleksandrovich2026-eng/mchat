@@ -23,6 +23,7 @@ class TemplateUpdate(BaseModel):
     trial_days: int | None = None
     is_published: bool | None = None
     sort_order: int | None = None
+    default_ai_config_id: str | None = None
     default_ai_config_spec: dict | None = None
     default_skill_ids: list | None = None
     default_knowledge_base_spec: dict | None = None
@@ -53,6 +54,7 @@ async def list_templates(
             "trial_days": t.trial_days,
             "is_published": t.is_published,
             "sort_order": t.sort_order,
+            "default_ai_config_id": t.default_ai_config_id,
             "default_ai_config_spec": t.default_ai_config_spec,
             "default_skill_ids": t.default_skill_ids,
             "default_knowledge_base_spec": t.default_knowledge_base_spec,

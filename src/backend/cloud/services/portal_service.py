@@ -65,29 +65,50 @@ class PortalService:
         if template is None:
             raise HTTPException(status_code=404, detail="Template not found")
 
+        # Prevent duplicate channels from the same template
+        dup_result = await self.db.execute(
+            select(CustomerConfig).where(
+                CustomerConfig.user_id == user.id,
+                CustomerConfig.template_id == request.template_id,
+            )
+        )
+        if dup_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="You already have a channel from this template",
+            )
+
         trial_end = (
             datetime.now(timezone.utc) + timedelta(days=template.trial_days)
             if template.trial_days > 0
             else None
         )
 
-        # Create AIConfig from template spec
+        # Use template's referenced AI config, or create from spec
         ai_config_id = None
-        ai_spec = template.default_ai_config_spec or {}
-        if ai_spec:
-            ai_config = AIConfig(
-                name=f"{template.name} AI",
-                user_id=user.id,
-                provider=ai_spec.get("provider", "openai"),
-                model=ai_spec.get("model", "gpt-4o-mini"),
-                api_key=ai_spec.get("api_key", ""),
-                system_prompt=ai_spec.get("system_prompt", ""),
-                temperature=ai_spec.get("temperature", 0.7),
-                max_tokens=ai_spec.get("max_tokens", 2048),
+        if template.default_ai_config_id:
+            # Verify the referenced config exists
+            result = await self.db.execute(
+                select(AIConfig).where(AIConfig.id == template.default_ai_config_id)
             )
-            self.db.add(ai_config)
-            await self.db.flush()
-            ai_config_id = ai_config.id
+            if result.scalar_one_or_none() is not None:
+                ai_config_id = template.default_ai_config_id
+        if ai_config_id is None:
+            ai_spec = template.default_ai_config_spec or {}
+            if ai_spec:
+                ai_config = AIConfig(
+                    name=f"{template.name} AI",
+                    user_id=user.id,
+                    provider=ai_spec.get("provider", "openai"),
+                    model=ai_spec.get("model", "gpt-4o-mini"),
+                    api_key=ai_spec.get("api_key", ""),
+                    system_prompt=ai_spec.get("system_prompt", ""),
+                    temperature=ai_spec.get("temperature", 0.7),
+                    max_tokens=ai_spec.get("max_tokens", 2048),
+                )
+                self.db.add(ai_config)
+                await self.db.flush()
+                ai_config_id = ai_config.id
 
         config = CustomerConfig(
             name=request.name or template.name,
