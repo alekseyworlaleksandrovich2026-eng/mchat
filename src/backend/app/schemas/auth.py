@@ -14,7 +14,7 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """Request body for user registration."""
+    """Request body for user registration (admin/agent only)."""
 
     username: str = Field(
         ..., min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_]+$"
@@ -24,12 +24,25 @@ class RegisterRequest(BaseModel):
     avatar_url: str | None = Field(None, max_length=500)
 
 
+class SignupRequest(BaseModel):
+    """Request body for public user signup."""
+
+    username: str = Field(
+        ..., min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_]+$"
+    )
+    email: str | None = Field(None, max_length=255)
+    password: str = Field(..., min_length=6, max_length=255)
+    display_name: str | None = Field(None, max_length=100)
+
+
 class UserResponse(BaseModel):
     """User info response."""
 
     id: str
     username: str
     role: str
+    email: str | None = None
+    account_status: str = "active"
     avatar_url: str | None = None
     display_name: str | None = None
     created_at: datetime
@@ -67,13 +80,13 @@ class CreateUserRequest(BaseModel):
         ..., min_length=3, max_length=100, pattern=r"^[a-zA-Z0-9_]+$"
     )
     password: str = Field(..., min_length=6, max_length=255)
-    role: Literal["admin", "agent"] = "agent"
+    role: Literal["admin", "agent", "user"] = "agent"
     display_name: str | None = Field(None, max_length=100)
 
 
 class UpdateUserRequest(BaseModel):
     """Admin: update user role or display name."""
 
-    role: Literal["admin", "agent"] | None = None
+    role: Literal["admin", "agent", "user"] | None = None
     display_name: str | None = Field(None, max_length=100)
     password: str | None = Field(None, min_length=6, max_length=255)

@@ -10,7 +10,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.auth import TokenResponse, UserResponse
+from app.schemas.auth import SignupRequest, TokenResponse, UserResponse
 
 
 class AuthService:
@@ -85,6 +85,52 @@ class AuthService:
             user=UserResponse.model_validate(user),
         )
 
+    async def signup(
+        self,
+        username: str,
+        password: str,
+        email: str | None = None,
+        display_name: str | None = None,
+    ) -> TokenResponse:
+        """Register a new public user with role='user'."""
+        result = await self.db.execute(
+            select(User).where(User.username == username)
+        )
+        if result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already exists",
+            )
+        if email:
+            result = await self.db.execute(
+                select(User).where(User.email == email)
+            )
+            if result.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered",
+                )
+
+        user = User(
+            username=username,
+            email=email,
+            password_hash=get_password_hash(password),
+            role="user",
+            display_name=display_name or username,
+            account_status="active",
+        )
+        self.db.add(user)
+        await self.db.flush()
+        await self.db.refresh(user)
+
+        access_token = create_access_token(
+            data={"sub": user.id, "username": user.username, "role": user.role}
+        )
+        return TokenResponse(
+            access_token=access_token,
+            user=UserResponse.model_validate(user),
+        )
+
     async def create_default_admin(
         self, username: str, password: str
     ) -> User | None:
@@ -136,7 +182,7 @@ class AuthService:
         display_name: str | None = None,
     ) -> User:
         """Create a user (admin)."""
-        if role not in ("admin", "agent"):
+        if role not in ("admin", "agent", "user"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid role",
@@ -177,7 +223,7 @@ class AuthService:
                 detail="User not found",
             )
         if role is not None:
-            if role not in ("admin", "agent"):
+            if role not in ("admin", "agent", "user"):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid role",

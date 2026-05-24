@@ -77,6 +77,11 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
         Permission.SPEECH_WRITE,
         Permission.CHANNELS_READ,
     ],
+    "user": [
+        Permission.CONVERSATIONS_READ,
+        Permission.CONVERSATIONS_WRITE,
+        Permission.DASHBOARD_READ,
+    ],
 }
 
 
