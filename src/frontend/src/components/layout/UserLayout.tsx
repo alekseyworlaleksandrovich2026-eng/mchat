@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
   ShoppingBag,
+  Receipt,
   MessageSquare,
   LogOut,
   Menu,
@@ -19,6 +20,8 @@ const navItems = [
   { path: '/portal/dashboard', label: 'portal.dashboard', icon: LayoutDashboard },
   { path: '/portal/templates', label: 'portal.templates', icon: ShoppingBag },
   { path: '/portal/channels', label: 'portal.myChannels', icon: MessageSquare },
+  { path: '/portal/orders', label: 'portal.orders', icon: Receipt },
+  { path: '/portal/account', label: 'portal.account', icon: Settings },
 ]
 
 export function UserLayout({ children }: { children: ReactNode }) {
@@ -104,7 +107,7 @@ export function UserLayout({ children }: { children: ReactNode }) {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-h-screen p-4 lg:p-6">
+        <main className="flex-1 min-h-screen p-4 lg:p-6 text-gray-900 dark:text-gray-200">
           {children}
         </main>
       </div>

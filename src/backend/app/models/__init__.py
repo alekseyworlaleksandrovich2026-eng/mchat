@@ -10,6 +10,7 @@ from app.models.customer import CustomerConfig, WebhookConfig
 from app.models.setting import Setting
 from app.models.channel import Channel
 from app.models.channel_template import ChannelTemplate
+from app.models.portal_order import PortalOrder
 
 __all__ = [
     "User",

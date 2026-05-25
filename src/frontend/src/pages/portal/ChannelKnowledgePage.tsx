@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ArrowLeft, FileUp, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, FileUp, Plus, Trash2 } from 'lucide-react'
 import { portalApi, type ChannelKnowledgeBase } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -128,6 +128,29 @@ export function ChannelKnowledgePage() {
           {error}
         </div>
       )}
+
+      <div className="rounded-2xl border border-primary-200 dark:border-primary-800 bg-primary-50/80 dark:bg-primary-900/20 p-5">
+        <div className="flex gap-3">
+          <div className="shrink-0 w-9 h-9 rounded-lg bg-primary-600 text-white flex items-center justify-center">
+            <BookOpen className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {t('portal.knowledgeHowToTitle')}
+            </h2>
+            <ol className="text-sm text-gray-600 dark:text-gray-300 space-y-2 list-decimal list-inside">
+              <li>{t('portal.knowledgeStep1')}</li>
+              <li>{t('portal.knowledgeStep2')}</li>
+              <li>{t('portal.knowledgeStep3')}</li>
+              <li>{t('portal.knowledgeStep4')}</li>
+            </ol>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{t('portal.knowledgeFormats')}</p>
+            {systemItems.length > 0 && (
+              <p className="text-xs text-violet-700 dark:text-violet-300">{t('portal.knowledgeSystemNote')}</p>
+            )}
+          </div>
+        </div>
+      </div>
 
       {systemItems.length > 0 && (
         <section className="space-y-3">

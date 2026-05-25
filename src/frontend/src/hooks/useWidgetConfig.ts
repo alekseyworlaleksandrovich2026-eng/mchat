@@ -15,6 +15,7 @@ export interface WidgetRemoteConfig {
     showcaseSkillIds?: string[]
   }
   enabled: boolean
+  subscription_active?: boolean
 }
 
 export function useWidgetConfig(agentId: string, apiUrl: string) {

@@ -1,7 +1,10 @@
 """Auth service - business logic for authentication."""
 
+import secrets
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -44,7 +47,7 @@ class AuthService:
 
         return TokenResponse(
             access_token=access_token,
-            user=UserResponse.model_validate(user),
+            user=self.user_response(user),
         )
 
     async def register(
@@ -82,7 +85,7 @@ class AuthService:
 
         return TokenResponse(
             access_token=access_token,
-            user=UserResponse.model_validate(user),
+            user=self.user_response(user),
         )
 
     async def signup(
@@ -128,7 +131,7 @@ class AuthService:
         )
         return TokenResponse(
             access_token=access_token,
-            user=UserResponse.model_validate(user),
+            user=self.user_response(user),
         )
 
     async def create_default_admin(
@@ -152,6 +155,12 @@ class AuthService:
         await self.db.refresh(user)
         return user
 
+    @staticmethod
+    def user_response(user: User) -> UserResponse:
+        data = UserResponse.model_validate(user)
+        data.can_set_password = not bool(getattr(user, "external_provider", None))
+        return data
+
     async def change_password(
         self,
         user: User,
@@ -159,10 +168,41 @@ class AuthService:
         new_password: str,
     ) -> None:
         """Change password for the authenticated user."""
+        if getattr(user, "external_provider", None):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="9235 账号请使用 9235.net 修改密码",
+            )
         if not verify_password(current_password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current password is incorrect",
+            )
+        user.password_hash = get_password_hash(new_password)
+        await self.db.flush()
+
+    async def set_password(
+        self,
+        user: User,
+        new_password: str,
+        current_password: str | None = None,
+    ) -> None:
+        """Portal: set password; 9235-linked accounts cannot set here."""
+        if getattr(user, "external_provider", None):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="9235 账号请使用 9235.net 修改密码",
+            )
+        if current_password:
+            if not verify_password(current_password, user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect",
+                )
+        elif user.role in ("admin", "agent"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is required",
             )
         user.password_hash = get_password_hash(new_password)
         await self.db.flush()
@@ -253,3 +293,111 @@ class AuthService:
             )
         await self.db.delete(user)
         await self.db.flush()
+
+    async def signup_by_phone(self, phone: str) -> TokenResponse:
+        """Register portal user with verified phone; email/nickname optional later."""
+        result = await self.db.execute(select(User).where(User.phone == phone))
+        if result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Phone already registered",
+            )
+        result = await self.db.execute(select(User).where(User.username == phone))
+        if result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already exists",
+            )
+
+        now = datetime.now(timezone.utc)
+        user = User(
+            username=phone,
+            phone=phone,
+            phone_verified_at=now,
+            password_hash=get_password_hash(secrets.token_urlsafe(32)),
+            role="user",
+            display_name=phone,
+            account_status="active",
+        )
+        self.db.add(user)
+        await self.db.flush()
+        await self.db.refresh(user)
+        access_token = create_access_token(
+            data={"sub": user.id, "username": user.username, "role": user.role}
+        )
+        return TokenResponse(
+            access_token=access_token,
+            user=self.user_response(user),
+        )
+
+    async def login_or_link_9235(
+        self,
+        *,
+        account: str,
+        external_id: str | None = None,
+        email: str | None = None,
+        display_name: str | None = None,
+    ) -> TokenResponse:
+        """JIT login: link 9235 account by phone/external_id or create mchat user."""
+        from cloud.services.patent9235_auth import PROVIDER
+
+        phone = account if account.isdigit() or account.startswith("1") else None
+        user: User | None = None
+
+        if external_id:
+            result = await self.db.execute(
+                select(User).where(
+                    User.external_provider == PROVIDER,
+                    User.external_id == str(external_id),
+                )
+            )
+            user = result.scalar_one_or_none()
+
+        if user is None and phone:
+            result = await self.db.execute(select(User).where(User.phone == phone))
+            user = result.scalar_one_or_none()
+        if user is None:
+            result = await self.db.execute(
+                select(User).where(
+                    or_(User.username == account, User.email == account)
+                )
+            )
+            user = result.scalar_one_or_none()
+
+        now = datetime.now(timezone.utc)
+        if user is None:
+            uname = phone or account
+            user = User(
+                username=uname,
+                phone=phone,
+                phone_verified_at=now if phone else None,
+                email=email,
+                password_hash=get_password_hash(secrets.token_urlsafe(32)),
+                role="user",
+                display_name=display_name or uname,
+                account_status="active",
+                external_provider=PROVIDER,
+                external_id=str(external_id) if external_id else None,
+            )
+            self.db.add(user)
+        else:
+            if phone and not user.phone:
+                user.phone = phone
+                user.phone_verified_at = now
+            if email and not user.email:
+                user.email = email
+            if display_name and not user.display_name:
+                user.display_name = display_name
+            if external_id:
+                user.external_provider = PROVIDER
+                user.external_id = str(external_id)
+
+        await self.db.flush()
+        await self.db.refresh(user)
+        access_token = create_access_token(
+            data={"sub": user.id, "username": user.username, "role": user.role}
+        )
+        return TokenResponse(
+            access_token=access_token,
+            user=self.user_response(user),
+        )

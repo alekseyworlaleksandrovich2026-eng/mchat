@@ -33,6 +33,18 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
+    phone: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, unique=True, index=True
+    )
+    phone_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    external_provider: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

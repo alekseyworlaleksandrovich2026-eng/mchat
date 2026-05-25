@@ -28,8 +28,7 @@ class Settings(BaseSettings):
     milvus_port: int = 19530
     milvus_enabled: bool = False
 
-    # Embedding (global defaults; per knowledge base can override)
-    # Prefer local Ollama in dev; override with EMBEDDING_* in .env if needed
+    # Embedding global defaults (admin UI → DB overrides these at runtime; .env is fallback only)
     embedding_provider: str = "ollama"
     embedding_model: str = "nomic-embed-text"
     embedding_api_base: str = "http://localhost:11434"
@@ -38,6 +37,44 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+
+    # Cloud portal: SMS OTP (dev: fixed code when sms_dev_mode=true)
+    sms_dev_mode: bool = False
+    sms_dev_code: str = "123456"
+    otp_expire_seconds: int = 600
+    otp_send_cooldown_seconds: int = 60
+    # Aliyun SMS (same template as www.9235.net — patentapi UserService)
+    aliyun_sms_access_key_id: str = ""
+    aliyun_sms_access_key_secret: str = ""
+    aliyun_sms_sign_name: str = "笑溢网络"
+    aliyun_sms_template_code: str = "SMS_289525897"
+    aliyun_sms_region: str = "cn-hangzhou"
+    patent9235_base_url: str = "https://www.9235.net"
+
+    # 9235.net SSO (same JWT as trade.9235.net product auth)
+    patent9235_jwt_secret: str = ""
+    patent9235_sso_product_id: str = "pdmchat"
+    patent9235_sso_channel_id: str = "mchat01"
+    patent9235_sso_login_url: str = "https://www.9235.net/user/login"
+
+    # Encrypt skill_bindings secrets at rest (Fernet key or any string — hashed if needed)
+    secrets_encryption_key: str = ""
+
+    # Invoice header (portal order PDF/HTML)
+    invoice_company_name: str = "MChat Cloud"
+    invoice_company_tax_id: str = ""
+    invoice_support_email: str = "support@9235.net"
+
+    # Payment (same merchant as www.9235.net / buycdk)
+    mchat_public_base_url: str = "https://mchat.9235.net"
+    alipay_app_id: str = ""
+    alipay_private_key: str = ""
+    alipay_public_key: str = ""
+    alipay_notify_path: str = "/api/pay/alipay/notify"
+    wechat_pay_app_id: str = "wx72863a0d11e809e0"
+    wechat_pay_mch_id: str = "1679561189"
+    wechat_pay_api_key: str = ""
+    wechat_pay_notify_path: str = "/api/pay/wechat/notify"
 
     # Default admin (created on first startup if missing)
     admin_username: str = "admin"

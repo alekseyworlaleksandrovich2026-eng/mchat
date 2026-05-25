@@ -36,13 +36,24 @@ export function TemplateDetailPage() {
   }, [id])
 
   const handleRent = async () => {
-    if (!id) return
+    if (!id || !template) return
+    const needsPay =
+      template.price_monthly_cents > 0 || template.price_yearly_cents > 0
+    if (needsPay) {
+      navigate(`/portal/checkout?template=${id}&period=monthly`)
+      return
+    }
     setRenting(true)
     try {
       await portalApi.rentChannel(id)
       navigate('/portal/channels', { replace: true })
     } catch (e: any) {
-      setError(e.message || t('portal.rentFailed'))
+      const msg = e.message || ''
+      if (msg.includes('402') || msg.toLowerCase().includes('payment')) {
+        navigate(`/portal/checkout?template=${id}&period=monthly`)
+        return
+      }
+      setError(msg || t('portal.rentFailed'))
     } finally {
       setRenting(false)
     }

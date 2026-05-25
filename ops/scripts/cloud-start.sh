@@ -32,6 +32,8 @@ trap cleanup EXIT
 kill_port "$BACKEND_PORT"
 kill_port "$FRONTEND_PORT"
 
+bash "$ROOT/ops/scripts/ensure-dev-mysql.sh"
+
 # ---- Backend (Cloud: cloud.main:app) ----
 cd "$ROOT/src/backend"
 if [ ! -d venv ]; then

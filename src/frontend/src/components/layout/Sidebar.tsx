@@ -16,6 +16,7 @@ import {
   Users,
   Lock,
   Store,
+  DollarSign,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
@@ -44,7 +45,10 @@ export function Sidebar({ onClose }: SidebarProps) {
     { path: '/admin/users', labelKey: 'nav.users', icon: Users },
     { path: '/admin/roles', labelKey: 'nav.roles', icon: Lock },
     ...(isCloudEdition
-      ? [{ path: '/admin/templates', labelKey: 'nav.templates', icon: Store }]
+      ? [
+          { path: '/admin/templates', labelKey: 'nav.templates', icon: Store },
+          { path: '/admin/orders', labelKey: 'nav.orders', icon: DollarSign },
+        ]
       : []),
   ]
 

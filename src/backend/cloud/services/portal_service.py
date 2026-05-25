@@ -7,19 +7,40 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_config import AIConfig
+from app.schemas.agent import AIConfigCreate, AIConfigUpdate
+from app.services.agent_service import AgentService
 from app.services.llm_credentials import is_usable_api_key, resolve_api_key
 from app.models.channel_template import ChannelTemplate
+from app.models.skill import Skill
 from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
 from app.models.message import Message
 from app.models.user import User
 from cloud.schemas.portal import (
+    ChannelIntegrationsResponse,
     ChannelTemplateResponse,
     EmbedCodeResponse,
     MyChannelResponse,
     MyChannelUpdate,
+    PortalAiConfigCreate,
+    PortalAiConfigOption,
+    PortalAiConfigUpdate,
     PortalDashboardStats,
     RentChannelRequest,
+    SkillIntegrationBlockSchema,
+    SkillIntegrationFieldSchema,
+)
+from app.skill.integration import (
+    integration_spec_from_config,
+    merge_integration_schemas,
+)
+from app.services.field_encryption import (
+    decrypt_skill_bindings,
+    encrypt_skill_bindings,
+)
+from app.services.subscription_gate import (
+    channel_subscription_active,
+    subscription_end_from_period,
 )
 
 
@@ -28,6 +49,30 @@ class PortalService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def _to_channel_response(self, config: CustomerConfig) -> MyChannelResponse:
+        data = MyChannelResponse.model_validate(config)
+        data.subscription_active = channel_subscription_active(config)
+        if config.skill_bindings:
+            data.skill_bindings = decrypt_skill_bindings(config.skill_bindings)
+        template_default_ai: str | None = None
+        if config.template_id:
+            t_result = await self.db.execute(
+                select(ChannelTemplate.default_ai_config_id).where(
+                    ChannelTemplate.id == config.template_id
+                )
+            )
+            template_default_ai = t_result.scalar_one_or_none()
+        data.template_default_ai_config_id = template_default_ai
+        if config.ai_config_id:
+            ai_result = await self.db.execute(
+                select(AIConfig).where(AIConfig.id == config.ai_config_id)
+            )
+            ai = ai_result.scalar_one_or_none()
+            if ai:
+                data.ai_provider = ai.provider
+                data.ai_model = ai.model
+        return data
 
     # ── Templates ───────────────────────────────────────────────────
 
@@ -54,7 +99,14 @@ class PortalService:
     # ── Channel rental ──────────────────────────────────────────────
 
     async def rent_channel(
-        self, user: User, request: RentChannelRequest
+        self,
+        user: User,
+        request: RentChannelRequest,
+        *,
+        paid_order: bool = False,
+        billing_period: str = "monthly",
+        active_order_id: str | None = None,
+        subscription_ends_at: datetime | None = None,
     ) -> MyChannelResponse:
         result = await self.db.execute(
             select(ChannelTemplate).where(
@@ -65,6 +117,17 @@ class PortalService:
         template = result.scalar_one_or_none()
         if template is None:
             raise HTTPException(status_code=404, detail="Template not found")
+
+        price = (
+            template.price_yearly_cents
+            if billing_period == "yearly" and template.price_yearly_cents > 0
+            else template.price_monthly_cents
+        )
+        if price > 0 and not paid_order:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Payment required for this template",
+            )
 
         # Prevent duplicate channels from the same template
         dup_result = await self.db.execute(
@@ -153,14 +216,25 @@ class PortalService:
             if kb_id:
                 knowledge_base_ids.append(kb_id)
 
+        if paid_order:
+            plan = "pro"
+            sub_end = subscription_ends_at or subscription_end_from_period(
+                billing_period
+            )
+        else:
+            plan = "free_trial" if template.trial_days > 0 else "free"
+            sub_end = None
+
         config = CustomerConfig(
             name=request.name or template.name,
             user_id=user.id,
             template_id=template.id,
             ai_config_id=ai_config_id,
             channel_category=template.category,
-            plan="free_trial" if template.trial_days > 0 else "free",
-            trial_ends_at=trial_end,
+            plan=plan,
+            trial_ends_at=trial_end if not paid_order else None,
+            subscription_ends_at=sub_end,
+            active_order_id=active_order_id,
             welcome_message=template.default_welcome_message,
             offline_message=template.default_offline_message,
             theme=template.default_theme or {},
@@ -173,7 +247,7 @@ class PortalService:
         self.db.add(config)
         await self.db.flush()
         await self.db.refresh(config)
-        return MyChannelResponse.model_validate(config)
+        return await self._to_channel_response(config)
 
     # ── My channels ─────────────────────────────────────────────────
 
@@ -183,7 +257,10 @@ class PortalService:
             .where(CustomerConfig.user_id == user.id)
             .order_by(CustomerConfig.created_at.desc())
         )
-        return [MyChannelResponse.model_validate(c) for c in result.scalars().all()]
+        out: list[MyChannelResponse] = []
+        for c in result.scalars().all():
+            out.append(await self._to_channel_response(c))
+        return out
 
     async def get_my_channel(self, user: User, channel_id: str) -> MyChannelResponse:
         result = await self.db.execute(
@@ -195,7 +272,131 @@ class PortalService:
         config = result.scalar_one_or_none()
         if config is None:
             raise HTTPException(status_code=404, detail="Channel not found")
-        return MyChannelResponse.model_validate(config)
+        return await self._to_channel_response(config)
+
+    async def list_user_ai_configs(self, user: User) -> list[PortalAiConfigOption]:
+        result = await self.db.execute(
+            select(AIConfig)
+            .where(AIConfig.user_id == user.id)
+            .order_by(AIConfig.is_default.desc(), AIConfig.name)
+        )
+        return [
+            PortalAiConfigOption(
+                id=c.id,
+                name=c.name,
+                provider=c.provider,
+                model=c.model,
+                is_default=bool(c.is_default),
+                has_api_key=bool((c.api_key or "").strip()),
+            )
+            for c in result.scalars().all()
+        ]
+
+    async def create_user_ai_config(
+        self, user: User, data: PortalAiConfigCreate
+    ) -> PortalAiConfigOption:
+        cfg = await AgentService(self.db).create_ai_config(
+            user_id=user.id,
+            data=AIConfigCreate(**data.model_dump()),
+        )
+        return PortalAiConfigOption(
+            id=cfg.id,
+            name=cfg.name,
+            provider=cfg.provider,
+            model=cfg.model,
+            is_default=bool(cfg.is_default),
+            has_api_key=bool((cfg.api_key or "").strip()),
+        )
+
+    async def update_user_ai_config(
+        self, user: User, config_id: str, data: PortalAiConfigUpdate
+    ) -> PortalAiConfigOption:
+        payload = data.model_dump(exclude_unset=True)
+        if "api_key" in payload and not (payload.get("api_key") or "").strip():
+            payload.pop("api_key", None)
+        cfg = await AgentService(self.db).update_ai_config(
+            config_id=config_id,
+            user_id=user.id,
+            data=AIConfigUpdate(**payload),
+        )
+        return PortalAiConfigOption(
+            id=cfg.id,
+            name=cfg.name,
+            provider=cfg.provider,
+            model=cfg.model,
+            is_default=bool(cfg.is_default),
+            has_api_key=bool((cfg.api_key or "").strip()),
+        )
+
+    async def get_channel_integrations(
+        self, user: User, channel_id: str
+    ) -> ChannelIntegrationsResponse:
+        result = await self.db.execute(
+            select(CustomerConfig).where(
+                CustomerConfig.id == channel_id,
+                CustomerConfig.user_id == user.id,
+            )
+        )
+        config = result.scalar_one_or_none()
+        if config is None:
+            raise HTTPException(status_code=404, detail="Channel not found")
+
+        template_schema: list | None = None
+        if config.template_id:
+            t_result = await self.db.execute(
+                select(ChannelTemplate).where(ChannelTemplate.id == config.template_id)
+            )
+            tmpl = t_result.scalar_one_or_none()
+            if tmpl and tmpl.integration_schema:
+                template_schema = tmpl.integration_schema
+
+        skill_specs: list[dict] = []
+        channel_skills: list[Skill] = []
+        skill_ids = [str(s) for s in (config.skill_ids or []) if s]
+        if skill_ids:
+            s_result = await self.db.execute(
+                select(Skill).where(Skill.id.in_(skill_ids), Skill.enabled == True)
+            )
+            channel_skills = list(s_result.scalars().all())
+            for skill in channel_skills:
+                spec = integration_spec_from_config(skill.name, skill.config)
+                if spec:
+                    skill_specs.append(spec)
+
+        merged = merge_integration_schemas(template_schema, skill_specs)
+        merged_names = {b.get("skill") for b in merged}
+        for skill in channel_skills:
+            if skill.name in merged_names:
+                continue
+            merged.append(
+                {
+                    "skill": skill.name,
+                    "fields": [
+                        {
+                            "key": "api_token",
+                            "label": "API Token / Key",
+                            "secret": True,
+                            "help": "技能所需接口密钥",
+                        }
+                    ],
+                    "allow_channel_override": True,
+                    "source": "channel",
+                }
+            )
+            merged_names.add(skill.name)
+        blocks = [
+            SkillIntegrationBlockSchema(
+                skill=b["skill"],
+                fields=[SkillIntegrationFieldSchema(**f) for f in b.get("fields", [])],
+                allow_channel_override=bool(b.get("allow_channel_override", True)),
+                source=b.get("source"),
+            )
+            for b in merged
+        ]
+        return ChannelIntegrationsResponse(
+            integrations=blocks,
+            skill_bindings=decrypt_skill_bindings(config.skill_bindings),
+        )
 
     async def update_my_channel(
         self, user: User, channel_id: str, data: MyChannelUpdate
@@ -211,11 +412,29 @@ class PortalService:
             raise HTTPException(status_code=404, detail="Channel not found")
 
         update_data = data.model_dump(exclude_unset=True)
+        if "skill_bindings" in update_data and update_data["skill_bindings"] is not None:
+            if not isinstance(update_data["skill_bindings"], dict):
+                raise HTTPException(
+                    status_code=400, detail="skill_bindings must be an object"
+                )
+            update_data["skill_bindings"] = encrypt_skill_bindings(
+                update_data["skill_bindings"]
+            )
+        if "ai_config_id" in update_data and update_data["ai_config_id"]:
+            ai_result = await self.db.execute(
+                select(AIConfig).where(
+                    AIConfig.id == update_data["ai_config_id"],
+                    AIConfig.user_id == user.id,
+                )
+            )
+            if ai_result.scalar_one_or_none() is None:
+                raise HTTPException(status_code=400, detail="Invalid AI config")
+
         for key, value in update_data.items():
             setattr(config, key, value)
         await self.db.flush()
         await self.db.refresh(config)
-        return MyChannelResponse.model_validate(config)
+        return await self._to_channel_response(config)
 
     async def delete_my_channel(self, user: User, channel_id: str) -> None:
         result = await self.db.execute(
@@ -384,6 +603,8 @@ class PortalService:
         from app.services.knowledge_service import KnowledgeService
 
         channel = await self._get_owned_channel(user, channel_id)
+        from app.core.config import settings as app_settings
+
         kb = await KnowledgeService(self.db).create_knowledge_base(
             user.id,
             KnowledgeBaseCreate(

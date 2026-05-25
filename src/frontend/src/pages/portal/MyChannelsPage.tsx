@@ -126,6 +126,9 @@ export function MyChannelsPage() {
                     {channel.trial_ends_at && (
                       <> · {t('portal.trialRemaining', { days: Math.max(0, Math.ceil((new Date(channel.trial_ends_at).getTime() - Date.now()) / 86400000)) })}</>
                     )}
+                    {channel.subscription_ends_at && (
+                      <> · {t('portal.subscriptionUntil', { date: new Date(channel.subscription_ends_at).toLocaleDateString() })}</>
+                    )}
                   </p>
                 </div>
               </div>

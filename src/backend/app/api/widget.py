@@ -16,6 +16,10 @@ from app.schemas.chat import ConversationResponse, InitConversationRequest
 from app.schemas.speech import SpeechConfigResponse, TranscribeResponse
 from app.services.stt_service import STTError, STTService
 from app.services.chat_service import ChatService
+from app.services.subscription_gate import (
+    channel_subscription_active,
+    subscription_inactive_message,
+)
 from app.services.widget_chat_service import (
     ensure_widget_domain_allowed,
     prepare_widget_chat,
@@ -148,12 +152,18 @@ async def get_widget_config_full(
 
     ensure_widget_domain_allowed(config, request)
 
+    sub_active = channel_subscription_active(config)
     theme = config.theme or {}
     return {
         "id": config.id,
         "name": config.name,
         "welcome_message": config.welcome_message or "你好！有什么可以帮助你的？",
-        "offline_message": config.offline_message,
+        "offline_message": (
+            config.offline_message
+            if sub_active
+            else subscription_inactive_message(config)
+        ),
+        "subscription_active": sub_active,
         "position": config.position,
         "theme": {
             "primaryColor": theme.get("primaryColor", "#3b82f6"),

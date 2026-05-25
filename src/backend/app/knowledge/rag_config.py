@@ -68,7 +68,7 @@ class KnowledgeBaseRagSettings(BaseModel):
     embedding_provider: str | None = None
     embedding_model: str | None = None
     embedding_api_base: str | None = None
-    embedding_dimension: int = Field(1536, ge=128, le=4096)
+    embedding_dimension: int = Field(default_factory=lambda: int(settings.embedding_dimension), ge=128, le=4096)
     retrieval_mode: RetrievalMode = "hybrid"
     retrieval_top_k: int = Field(5, ge=1, le=50)
     retrieval_candidate_k: int = Field(20, ge=5, le=100)
@@ -133,7 +133,10 @@ def rag_settings_from_kb(kb: Any | None) -> KnowledgeBaseRagSettings:
         embedding_provider=getattr(kb, "embedding_provider", None),
         embedding_model=getattr(kb, "embedding_model", None),
         embedding_api_base=getattr(kb, "embedding_api_base", None),
-        embedding_dimension=int(getattr(kb, "embedding_dimension", None) or 1536),
+        embedding_dimension=int(
+            getattr(kb, "embedding_dimension", None) or settings.embedding_dimension
+        ),
+        # Note: importer aligns KB row to Milvus before indexing
         retrieval_mode=getattr(kb, "retrieval_mode", None) or "hybrid",
         retrieval_top_k=int(getattr(kb, "retrieval_top_k", None) or 5),
         retrieval_candidate_k=int(getattr(kb, "retrieval_candidate_k", None) or 20),

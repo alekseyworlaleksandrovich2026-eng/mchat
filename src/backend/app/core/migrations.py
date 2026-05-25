@@ -187,6 +187,10 @@ def apply_schema_patches(conn: Connection) -> list[str]:
         user_patches = [
             ("email", "VARCHAR(255) NULL"),
             ("account_status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+            ("phone", "VARCHAR(20) NULL"),
+            ("phone_verified_at", "DATETIME NULL"),
+            ("external_provider", "VARCHAR(50) NULL"),
+            ("external_id", "VARCHAR(64) NULL"),
         ]
         for col_name, col_def in user_patches:
             if col_name not in cols:
@@ -210,6 +214,15 @@ def apply_schema_patches(conn: Connection) -> list[str]:
             ("usage_messages_limit", "INTEGER NOT NULL DEFAULT 1000"),
             ("usage_tokens_limit", "INTEGER NOT NULL DEFAULT 100000"),
             ("last_usage_reset_at", "DATETIME NULL"),
+            ("subscription_ends_at", "DATETIME NULL"),
+            ("active_order_id", "VARCHAR(36) NULL"),
+            ("skill_bindings", "JSON NULL" if dialect == "mysql" else "TEXT NULL"),
+            (
+                "ai_override",
+                "BOOLEAN NOT NULL DEFAULT 0"
+                if dialect == "mysql"
+                else "BOOLEAN NOT NULL DEFAULT FALSE",
+            ),
         ]
         for col_name, col_def in cc_patches:
             if col_name not in cols:
@@ -271,6 +284,30 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                     )
                 )
             applied.append("channel_templates.default_knowledge_base_ids")
+        if "integration_schema" not in cols:
+            if dialect == "mysql":
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_templates "
+                        "ADD COLUMN integration_schema JSON NULL"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE channel_templates "
+                        "ADD COLUMN integration_schema TEXT NULL"
+                    )
+                )
+            applied.append("channel_templates.integration_schema")
+
+    if "portal_orders" in inspect(conn).get_table_names():
+        po_cols = _column_names(conn, "portal_orders")
+        if "subscription_ends_at" not in po_cols:
+            conn.execute(
+                text("ALTER TABLE portal_orders ADD COLUMN subscription_ends_at DATETIME NULL")
+            )
+            applied.append("portal_orders.subscription_ends_at")
 
     # document_chunks migration
     if "document_chunks" in inspect(conn).get_table_names():

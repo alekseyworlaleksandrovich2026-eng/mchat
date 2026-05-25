@@ -1,11 +1,11 @@
 /**
- * MChat Widget Loader v13 — iframe embed with in-page expand/shrink.
+ * MChat Widget Loader v16 — iframe embed; drag inner edge to resize width (ew).
  * Bump ?v= on the script tag when embedding; version is passed through to widget.html.
  */
 (function () {
   'use strict'
 
-  var LOADER_VERSION = '13'
+  var LOADER_VERSION = '16'
 
   var scripts = document.getElementsByTagName('script')
   var script = scripts[scripts.length - 1]
@@ -222,22 +222,16 @@
 
     var rect = elements.panel.getBoundingClientRect()
     var startX = event.clientX
-    var startY = event.clientY
     var startW = rect.width
-    var startH = rect.height
 
     function onMove(e) {
       var dx = e.clientX - startX
-      var dy = e.clientY - startY
       var maxW = Math.max(320, window.innerWidth - 24)
-      var maxH = Math.max(420, window.innerHeight - 24)
       var nextW =
         posSide === 'right'
           ? clamp(startW - dx, 320, maxW)
           : clamp(startW + dx, 320, maxW)
-      var nextH = clamp(startH + dy, 420, maxH)
       state.width = Math.round(nextW)
-      state.height = Math.round(nextH)
       applyPanelLayout()
     }
 
@@ -292,23 +286,24 @@
 
     var resizeHandle = document.createElement('div')
     resizeHandle.id = 'mchat-widget-resize-handle'
-    resizeHandle.title = '拖拽调大小'
-    resizeHandle.setAttribute('role', 'button')
-    resizeHandle.setAttribute('aria-label', 'Resize widget')
+    resizeHandle.title = '左右拖拽调整宽度'
+    resizeHandle.setAttribute('role', 'separator')
+    resizeHandle.setAttribute('aria-label', 'Resize widget width')
+    var edgeSide = posSide === 'right' ? 'left:0;' : 'right:0;'
     resizeHandle.style.cssText =
-      'position:absolute;left:0;bottom:0;z-index:2147483647;width:16px;height:16px;' +
-      'cursor:nesw-resize;pointer-events:auto;' +
-      'background:linear-gradient(135deg,transparent 0%,transparent 45%,' +
-      config.primaryColor +
-      ' 46%,' +
-      config.primaryColor +
-      ' 100%);opacity:0.55;border-radius:0 0 0 16px;'
+      'position:absolute;top:0;bottom:0;' +
+      edgeSide +
+      'z-index:2147483647;width:10px;cursor:ew-resize;pointer-events:auto;' +
+      'background:transparent;'
     resizeHandle.onpointerdown = startResize
     resizeHandle.onmouseenter = function () {
-      resizeHandle.style.opacity = '0.85'
+      resizeHandle.style.background =
+        'linear-gradient(to ' +
+        (posSide === 'right' ? 'left' : 'right') +
+        ', rgba(0,0,0,0.06), transparent)'
     }
     resizeHandle.onmouseleave = function () {
-      resizeHandle.style.opacity = '0.55'
+      resizeHandle.style.background = 'transparent'
     }
     panel.appendChild(resizeHandle)
 

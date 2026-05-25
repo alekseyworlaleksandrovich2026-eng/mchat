@@ -9,15 +9,52 @@ from app.models.user import User
 from app.schemas.chat import ConversationResponse
 from app.services.chat_service import ChatService
 from cloud.schemas.portal import (
+    ChannelIntegrationsResponse,
     EmbedCodeResponse,
     MyChannelResponse,
     MyChannelUpdate,
+    PortalAiConfigCreate,
+    PortalAiConfigOption,
+    PortalAiConfigUpdate,
     PortalDashboardStats,
+    PortalInvoiceResponse,
+    PortalOrderDetailResponse,
+    PortalOrderResponse,
     RentChannelRequest,
 )
+from cloud.services.portal_payment_service import PortalPaymentService
 from cloud.services.portal_service import PortalService
 
 router = APIRouter()
+
+
+@router.get("/orders", response_model=list[PortalOrderResponse])
+async def list_my_orders(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[PortalOrderResponse]:
+    """List checkout / subscription orders for the current user."""
+    return await PortalPaymentService(db).list_user_orders(current_user)
+
+
+@router.get("/orders/{order_id}", response_model=PortalOrderDetailResponse)
+async def get_my_order(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PortalOrderDetailResponse:
+    """Order detail for portal UI."""
+    return await PortalPaymentService(db).get_order_detail(current_user, order_id)
+
+
+@router.get("/orders/{order_id}/invoice", response_model=PortalInvoiceResponse)
+async def get_order_invoice(
+    order_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PortalInvoiceResponse:
+    """Invoice payload (client renders printable view)."""
+    return await PortalPaymentService(db).get_order_invoice(current_user, order_id)
 
 
 @router.get("/dashboard", response_model=PortalDashboardStats)
@@ -54,6 +91,51 @@ async def rent_channel(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create channel: {e}",
         )
+
+
+@router.get("/ai-configs", response_model=list[PortalAiConfigOption])
+async def list_portal_ai_configs(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[PortalAiConfigOption]:
+    """AI configs owned by the user (for per-channel override)."""
+    return await PortalService(db).list_user_ai_configs(current_user)
+
+
+@router.post("/ai-configs", response_model=PortalAiConfigOption, status_code=status.HTTP_201_CREATED)
+async def create_portal_ai_config(
+    body: PortalAiConfigCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PortalAiConfigOption:
+    """Create user-owned AI config (API key, model)."""
+    return await PortalService(db).create_user_ai_config(current_user, body)
+
+
+@router.put("/ai-configs/{config_id}", response_model=PortalAiConfigOption)
+async def update_portal_ai_config(
+    config_id: str,
+    body: PortalAiConfigUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PortalAiConfigOption:
+    """Update user-owned AI config."""
+    return await PortalService(db).update_user_ai_config(
+        current_user, config_id, body
+    )
+
+
+@router.get(
+    "/channels/{channel_id}/integrations",
+    response_model=ChannelIntegrationsResponse,
+)
+async def get_channel_integrations(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ChannelIntegrationsResponse:
+    """Skills on this channel that support per-assistant API token overrides."""
+    return await PortalService(db).get_channel_integrations(current_user, channel_id)
 
 
 @router.get("/channels/{channel_id}", response_model=MyChannelResponse)

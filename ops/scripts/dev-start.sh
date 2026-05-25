@@ -24,6 +24,8 @@ kill_port "$BACKEND_PORT"
 # Vite binds 5173; kill so `make dev` can restart frontend too
 kill_port "$FRONTEND_PORT"
 
+bash "$ROOT/ops/scripts/ensure-dev-mysql.sh"
+
 cd "$ROOT/src/backend"
 if [ ! -d venv ]; then
   echo "Missing venv. Run: make install"

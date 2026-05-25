@@ -79,6 +79,20 @@ class ChatService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Active conversation not found",
                 )
+            if conversation.customer_id and role == "user":
+                from app.models.customer import CustomerConfig
+                from app.services.subscription_gate import (
+                    ensure_channel_subscription_active,
+                )
+
+                ch_result = await self.db.execute(
+                    select(CustomerConfig).where(
+                        CustomerConfig.id == conversation.customer_id
+                    )
+                )
+                channel = ch_result.scalar_one_or_none()
+                if channel is not None:
+                    ensure_channel_subscription_active(channel)
         else:
             import uuid
             conversation = Conversation(
@@ -474,6 +488,11 @@ class ChatService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Channel not found",
                 )
+            from app.services.subscription_gate import (
+                ensure_channel_subscription_active,
+            )
+
+            ensure_channel_subscription_active(channel)
             resolved_ai_config_id = channel.ai_config_id or ai_config_id
 
         conversation = Conversation(
@@ -506,11 +525,15 @@ class ChatService:
                 CustomerConfig.enabled == True,
             )
         )
-        if channel_result.scalar_one_or_none() is None:
+        channel = channel_result.scalar_one_or_none()
+        if channel is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Channel not found",
             )
+        from app.services.subscription_gate import ensure_channel_subscription_active
+
+        ensure_channel_subscription_active(channel)
 
         result = await self.db.execute(
             select(Conversation)

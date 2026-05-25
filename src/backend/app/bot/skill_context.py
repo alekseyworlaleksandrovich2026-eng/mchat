@@ -7,9 +7,62 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import copy
+
 from app.models.customer import CustomerConfig
 from app.models.skill import Skill
+from app.services.field_encryption import decrypt_skill_bindings
 from app.skill.utils import get_prompt_body, has_executable_script
+
+
+def _merge_channel_skill_bindings(
+    skills: list[Skill],
+    customer_config: CustomerConfig | None,
+) -> list[Skill]:
+    """Overlay per-channel skill_bindings onto skill.config (e.g. earth2037 game_api_key)."""
+    if customer_config is None:
+        return skills
+    bindings = decrypt_skill_bindings(
+        getattr(customer_config, "skill_bindings", None) or {}
+    )
+    if not isinstance(bindings, dict) or not bindings:
+        return skills
+
+    merged: list[Skill] = []
+    for skill in skills:
+        binding = bindings.get(skill.name)
+        if not isinstance(binding, dict):
+            merged.append(skill)
+            continue
+        if not binding.get("override", False):
+            merged.append(skill)
+            continue
+        cfg = copy.deepcopy(skill.config or {})
+        channel_secrets = binding.get("secrets") or binding.get("env") or {}
+        if isinstance(channel_secrets, dict) and channel_secrets:
+            base_secrets = dict(cfg.get("secrets") or cfg.get("env") or {})
+            base_secrets.update(channel_secrets)
+            cfg["secrets"] = base_secrets
+        for key, value in binding.items():
+            if key in ("secrets", "env", "override"):
+                continue
+            if isinstance(value, (dict, list)):
+                continue
+            cfg[key] = value
+        clone = Skill(
+            id=skill.id,
+            user_id=skill.user_id,
+            name=skill.name,
+            description=skill.description,
+            skill_type=skill.skill_type,
+            path=skill.path,
+            config=cfg,
+            enabled=skill.enabled,
+            created_at=skill.created_at,
+            updated_at=skill.updated_at,
+        )
+        merged.append(clone)
+    return merged
 
 
 def _ids_from_config(value: list[str] | None) -> list[str] | None:
@@ -48,6 +101,8 @@ async def load_skills_for_chat(
             return [], []
         allowed_set = set(allowed_ids)
         all_skills = [s for s in all_skills if s.id in allowed_set]
+
+    all_skills = _merge_channel_skill_bindings(all_skills, customer_config)
 
     prompt_skills: list[Skill] = []
     tool_skills: list[Skill] = []
@@ -121,6 +176,12 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             },
             "page": {"type": "integer", "description": "页码"},
             "page_size": {"type": "integer", "description": "每页条数"},
+            "scope": {
+                "type": "string",
+                "enum": ["cn", "us", "jp", "kr", "tw", "wo", "ep", "all"],
+                "description": "数据范围：cn、all、us、jp、kr、tw、wo、ep",
+            },
+            "details": {"type": "boolean", "description": "search 时展示 IPC、摘要等明细列"},
         },
         "required": ["command"],
     },
@@ -210,7 +271,8 @@ _PATENT_LINK_PRESERVE_HINT = (
     "- analysis: 必须同时传 command=analysis、query、dimension（applicant|ipc|"
     "applicationYear|legalStatus|province）\n"
     "- detail/claims/legal 等: 传 patent_id\n"
-    "- company: 传 company_name\n"
+    "- company: 传 company_name（企业工商全称）\n"
+    "- scope: cn 默认；全球/各国用 all|us|jp|kr|tw|wo|ep\n"
     "统计分析/详情/企业画像等命令会一次性返回完整结果，不要再次调用 search 重复列表。\n"
     "仅 search 成功且表格已展示后：再写「初步观察」式自然语言总结（要点列表），"
     "勿重复表格、勿向用户展示 command=/page= 等技术参数。"

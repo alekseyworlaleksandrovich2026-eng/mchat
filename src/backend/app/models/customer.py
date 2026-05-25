@@ -26,6 +26,9 @@ class CustomerConfig(Base):
     ai_config_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("ai_configs.id"), nullable=True
     )
+    ai_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )  # True = use this channel's ai_config_id instead of only template default
     skill_ids: Mapped[list | None] = mapped_column(
         JSON, nullable=True
     )  # enabled skill ids for this agent; null/[] = none selected
@@ -61,6 +64,15 @@ class CustomerConfig(Base):
     trial_ends_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    subscription_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    active_order_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True
+    )
+    skill_bindings: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # per-channel secrets for skills, e.g. {"earth2037": {"secrets": {"game_api_key": "..."}}}
     template_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("channel_templates.id"), nullable=True, index=True
     )

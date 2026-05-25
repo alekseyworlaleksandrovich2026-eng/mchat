@@ -62,6 +62,12 @@ export function KnowledgeManager() {
   const [milvusPort, setMilvusPort] = useState('19530')
   const [milvusSaving, setMilvusSaving] = useState(false)
   const [milvusTesting, setMilvusTesting] = useState(false)
+  const [globalEmbedProvider, setGlobalEmbedProvider] = useState('ollama')
+  const [globalEmbedModel, setGlobalEmbedModel] = useState('nomic-embed-text')
+  const [globalEmbedApiBase, setGlobalEmbedApiBase] = useState('http://localhost:11434')
+  const [globalEmbedDimension, setGlobalEmbedDimension] = useState('768')
+  const [globalEmbedApiKey, setGlobalEmbedApiKey] = useState('')
+  const [globalEmbedSaving, setGlobalEmbedSaving] = useState(false)
   const [selectedKB, setSelectedKB] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -105,7 +111,7 @@ export function KnowledgeManager() {
 
   useEffect(() => {
     loadKnowledgeBases()
-    loadMilvusSettings()
+    loadPlatformKnowledgeSettings()
     loadEmbeddingModels()
   }, [])
 
@@ -180,10 +186,12 @@ export function KnowledgeManager() {
           chunkMinSize: meta.chunkMinSize,
           chunkSemanticThreshold: meta.chunkSemanticThreshold,
           chunkParentEnabled: meta.chunkParentEnabled,
-          embeddingProvider: meta.embeddingProvider,
-          embeddingModel: meta.embeddingModel,
-          embeddingApiBase: meta.embeddingApiBase,
-          embeddingDimension: meta.embeddingDimension,
+          embeddingProvider: meta.embeddingProvider ?? globalEmbedProvider,
+          embeddingModel: meta.embeddingModel ?? globalEmbedModel,
+          embeddingApiBase: meta.embeddingApiBase ?? (globalEmbedApiBase || undefined),
+          embeddingDimension:
+            meta.embeddingDimension ??
+            (Number(globalEmbedDimension) || defaultRag.embeddingDimension),
           retrievalMode: meta.retrievalMode,
           retrievalTopK: meta.retrievalTopK,
           retrievalCandidateK: meta.retrievalCandidateK,
@@ -201,14 +209,41 @@ export function KnowledgeManager() {
     }
   }, [selectedKB, knowledgeBases])
 
-  const loadMilvusSettings = async () => {
+  const loadPlatformKnowledgeSettings = async () => {
     try {
       const data = await api.get<Record<string, unknown>>('/settings')
       setMilvusEnabled(Boolean(data.milvus_enabled))
       setMilvusHost(String(data.milvus_host ?? 'localhost'))
       setMilvusPort(String(data.milvus_port ?? 19530))
+      setGlobalEmbedProvider(String(data.embedding_provider ?? 'ollama'))
+      setGlobalEmbedModel(String(data.embedding_model ?? 'nomic-embed-text'))
+      setGlobalEmbedApiBase(String(data.embedding_api_base ?? 'http://localhost:11434'))
+      setGlobalEmbedDimension(String(data.embedding_dimension ?? 768))
+      setGlobalEmbedApiKey(String(data.embedding_api_key ?? ''))
     } catch (err) {
-      console.error('Failed to load Milvus settings:', err)
+      console.error('Failed to load platform knowledge settings:', err)
+    }
+  }
+
+  const saveGlobalEmbeddingSettings = async () => {
+    setGlobalEmbedSaving(true)
+    try {
+      const payload: Record<string, unknown> = {
+        embedding_provider: globalEmbedProvider,
+        embedding_model: globalEmbedModel,
+        embedding_api_base: globalEmbedApiBase,
+        embedding_dimension: Number(globalEmbedDimension) || 768,
+      }
+      if (globalEmbedApiKey.trim()) {
+        payload.embedding_api_key = globalEmbedApiKey.trim()
+      }
+      await api.put('/settings', payload)
+      toast(t('knowledge.toastGlobalEmbeddingSaved'), { type: 'success' })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.failed')
+      toast(t('knowledge.toastSaveFailed'), { type: 'error', message })
+    } finally {
+      setGlobalEmbedSaving(false)
     }
   }
 
@@ -495,6 +530,82 @@ export function KnowledgeManager() {
           ) : (
             <p className={ragHint}>{t('knowledge.noLocalModels')}</p>
           )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="py-3 space-y-3">
+          <div>
+            <h3 className="text-sm font-medium text-gray-800 dark:text-gray-100">
+              {t('knowledge.globalEmbeddingTitle')}
+            </h3>
+            <p className={`${ragHint} mt-0.5`}>{t('knowledge.globalEmbeddingHint')}</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className={ragLabel}>{t('knowledge.embeddingProvider')}</label>
+              <select
+                className={ragSelect}
+                value={globalEmbedProvider}
+                onChange={(e) => setGlobalEmbedProvider(e.target.value)}
+              >
+                <option value="ollama">Ollama</option>
+                <option value="openai">OpenAI API</option>
+                <option value="openai-compatible">{t('knowledge.providerCompatible')}</option>
+              </select>
+            </div>
+            <div>
+              <label className={ragLabel}>{t('knowledge.embeddingModel')}</label>
+              <input
+                className={`w-full ${milvusInput}`}
+                value={globalEmbedModel}
+                onChange={(e) => setGlobalEmbedModel(e.target.value)}
+                placeholder={
+                  globalEmbedProvider === 'ollama' ? 'nomic-embed-text' : 'text-embedding-3-small'
+                }
+              />
+            </div>
+            <div>
+              <label className={ragLabel}>{t('knowledge.embeddingApiBase')}</label>
+              <input
+                className={`w-full ${milvusInput}`}
+                value={globalEmbedApiBase}
+                onChange={(e) => setGlobalEmbedApiBase(e.target.value)}
+                placeholder={
+                  globalEmbedProvider === 'ollama'
+                    ? 'http://localhost:11434'
+                    : 'https://api.openai.com/v1'
+                }
+              />
+            </div>
+            <div>
+              <label className={ragLabel}>{t('knowledge.embeddingDimension')}</label>
+              <input
+                type="number"
+                className={`w-full ${milvusInput}`}
+                value={globalEmbedDimension}
+                onChange={(e) => setGlobalEmbedDimension(e.target.value.replace(/[^\d]/g, ''))}
+              />
+            </div>
+          </div>
+          {(globalEmbedProvider === 'openai' ||
+            globalEmbedProvider === 'openai-compatible') && (
+            <div className="max-w-md">
+              <label className={ragLabel}>{t('knowledge.embeddingApiKey')}</label>
+              <input
+                type="password"
+                autoComplete="off"
+                className={`w-full ${milvusInput}`}
+                value={globalEmbedApiKey}
+                onChange={(e) => setGlobalEmbedApiKey(e.target.value)}
+                placeholder={t('knowledge.embeddingApiKeyPlaceholder')}
+              />
+            </div>
+          )}
+          <div>
+            <Button size="sm" onClick={saveGlobalEmbeddingSettings} isLoading={globalEmbedSaving}>
+              {t('common.save')}
+            </Button>
+          </div>
         </CardContent>
       </Card>
       <Card>

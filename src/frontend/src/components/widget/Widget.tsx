@@ -80,9 +80,16 @@ export function Widget({
         themeOverride?.launcherText ??
         remoteConfig?.theme?.launcherText ??
         launcherText,
+      subscriptionActive: remoteConfig?.subscription_active !== false,
+      offlineNotice:
+        remoteConfig?.subscription_active === false
+          ? remoteConfig?.offline_message ||
+            t('portal.subscriptionExpiredWidget', '订阅已到期，暂无法对话。')
+          : null,
     }),
     [
       remoteConfig,
+      t,
       position,
       primaryColor,
       defaultWelcome,
@@ -179,8 +186,17 @@ export function Widget({
       streamingContent={chat.streamingContent}
       onSend={(content, options) => chat.sendMessage(content, options?.file)}
       title={isPage ? resolved.botName : undefined}
-      emptyMessage={resolved.welcomeMessage}
-      disabled={chat.isLoading || chat.isStreaming || configLoading}
+      emptyMessage={
+        resolved.subscriptionActive
+          ? resolved.welcomeMessage
+          : resolved.offlineNotice || resolved.welcomeMessage
+      }
+      disabled={
+        chat.isLoading ||
+        chat.isStreaming ||
+        configLoading ||
+        !resolved.subscriptionActive
+      }
       loading={chat.historyLoading || configLoading}
       accentColor={resolved.primaryColor}
       headerStyle={{ backgroundColor: resolved.primaryColor }}

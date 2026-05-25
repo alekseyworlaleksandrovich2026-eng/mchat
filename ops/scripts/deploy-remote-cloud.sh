@@ -108,8 +108,9 @@ sync_skill_dir() {
 }
 
 sync_skill_dir mchat-help
-for patent_skill in patent-search patent-transaction patent-disclosure; do
-  sync_skill_dir "$patent_skill"
+for patent_dir in "$PROJECT_DIR"/skills/patent-*; do
+  [ -d "$patent_dir" ] || continue
+  sync_skill_dir "$(basename "$patent_dir")"
 done
 
 echo "==> Remote setup (pip, db migrate, restart Cloud services)"
