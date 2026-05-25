@@ -66,8 +66,8 @@ EOF
   rsync -avz "$ENV_FILE" "${REMOTE}:${REMOTE_DIR}/.env"
 fi
 
-echo "==> Fix frontend dist permissions on server"
-ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist 2>/dev/null || true"
+echo "==> Fix frontend dist permissions on server (nginx in Docker must read static files)"
+ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist ${REMOTE_DIR}/src/frontend/public 2>/dev/null || true"
 
 sync_skill_dir() {
   local name="$1"
