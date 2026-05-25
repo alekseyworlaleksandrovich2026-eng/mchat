@@ -1,13 +1,26 @@
 /**
- * MChat Widget Loader v8 — iframe embed with in-page expand/shrink.
+ * MChat Widget Loader v13 — iframe embed with in-page expand/shrink.
+ * Bump ?v= on the script tag when embedding; version is passed through to widget.html.
  */
 (function () {
   'use strict'
 
-  var LOADER_VERSION = '8'
+  var LOADER_VERSION = '13'
 
   var scripts = document.getElementsByTagName('script')
   var script = scripts[scripts.length - 1]
+
+  function resolveLoaderVersion() {
+    try {
+      var fromUrl = new URL(script.src).searchParams.get('v')
+      if (fromUrl) return fromUrl
+    } catch (e) {
+      /* ignore */
+    }
+    return LOADER_VERSION
+  }
+
+  var cacheVersion = resolveLoaderVersion()
 
   function originFromScript() {
     try {
@@ -93,6 +106,7 @@
       botName: config.botName,
       launcherIcon: config.launcherIcon,
       launcherText: config.launcherText,
+      _v: cacheVersion,
     })
     return widgetOrigin + '/widget.html?' + q.toString()
   }
