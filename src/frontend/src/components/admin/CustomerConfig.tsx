@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import i18n from '@/i18n'
 import api from '@/lib/api'
+import { tenantSelectableSkills } from '@/lib/skillUtils'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -34,6 +35,7 @@ interface SkillOption {
   description: string | null
   skill_type: string
   enabled: boolean
+  config?: Record<string, unknown> | null
 }
 
 interface KnowledgeBaseOption {
@@ -241,7 +243,7 @@ export function CustomerConfig() {
   const loadSkills = async () => {
     try {
       const data = await api.get<SkillOption[]>('/skills')
-      setSkills(data.filter((s) => s.enabled))
+      setSkills(tenantSelectableSkills(data.filter((s) => s.enabled)))
     } catch {
       /* optional */
     }

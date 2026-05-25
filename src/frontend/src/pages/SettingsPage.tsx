@@ -23,6 +23,8 @@ interface AppSettings {
   enable_streaming: boolean
   rate_limit_per_min: number
   maintenance_mode: boolean
+  server_ops_skills_enabled: boolean
+  server_ops_skill_allowlist: string[]
   storage_backend: 'local' | 's3' | 'minio'
   upload_dir: string
   max_upload_size_mb: number
@@ -54,6 +56,8 @@ export function SettingsPage() {
     enable_streaming: true,
     rate_limit_per_min: 60,
     maintenance_mode: false,
+    server_ops_skills_enabled: false,
+    server_ops_skill_allowlist: [],
     storage_backend: 'local',
     upload_dir: '../../uploads',
     max_upload_size_mb: 50,
@@ -439,6 +443,38 @@ export function SettingsPage() {
                   }
                 />
               </div>
+              <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-700 pt-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    {t('settings.serverOpsSkills')}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {t('settings.serverOpsSkillsHint')}
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.server_ops_skills_enabled}
+                  onChange={(checked) =>
+                    setSettings({ ...settings, server_ops_skills_enabled: checked })
+                  }
+                />
+              </div>
+              {settings.server_ops_skills_enabled && (
+                <Input
+                  label={t('settings.serverOpsAllowlist')}
+                  value={(settings.server_ops_skill_allowlist || []).join(', ')}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setSettings({
+                      ...settings,
+                      server_ops_skill_allowlist: e.target.value
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                  placeholder={t('settings.serverOpsAllowlistPlaceholder')}
+                />
+              )}
             </div>
           </TabPanel>
 

@@ -121,12 +121,17 @@ class AgentService:
         self, user_id: str, data: CustomerConfigCreate
     ) -> CustomerConfigResponse:
         """Create a new customer config."""
+        from app.services.skill_filter import filter_tenant_skill_ids
+
+        skill_ids = await filter_tenant_skill_ids(
+            self.db, user_id, data.skill_ids
+        )
         config = CustomerConfig(
             name=data.name,
             short_code=(data.short_code.strip() if data.short_code else None),
             user_id=user_id,
             ai_config_id=data.ai_config_id,
-            skill_ids=data.skill_ids,
+            skill_ids=skill_ids,
             knowledge_base_ids=data.knowledge_base_ids,
             auto_reply_rules=[rule.model_dump() for rule in data.auto_reply_rules],
             channel_prompt=data.channel_prompt,
@@ -183,10 +188,14 @@ class AgentService:
         if config is None:
             return None
 
+        from app.services.skill_filter import filter_tenant_skill_ids
+
         update_data = data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             if key == "auto_reply_rules":
                 value = [rule.model_dump() for rule in data.auto_reply_rules]
+            if key == "skill_ids" and value is not None:
+                value = await filter_tenant_skill_ids(self.db, user_id, value)
             setattr(config, key, value)
 
         await self.db.flush()

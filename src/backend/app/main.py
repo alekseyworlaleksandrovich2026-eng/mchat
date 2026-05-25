@@ -158,6 +158,10 @@ def create_app() -> FastAPI:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
+    from app.middleware.maintenance import register_maintenance_middleware
+
+    register_maintenance_middleware(app)
+
     # Rate limiting (when enabled)
     if settings.rate_limit_enabled:
         from app.middleware.ratelimit import RateLimitMiddleware

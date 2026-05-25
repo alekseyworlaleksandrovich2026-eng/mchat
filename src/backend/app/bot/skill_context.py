@@ -12,6 +12,11 @@ import copy
 from app.models.customer import CustomerConfig
 from app.models.skill import Skill
 from app.services.field_encryption import decrypt_skill_bindings
+from app.core.config import settings
+from app.skill.ops_policy import (
+    filter_skills_by_ops_policy,
+    server_ops_enabled_for_user,
+)
 from app.skill.utils import get_prompt_body, has_executable_script
 
 
@@ -101,6 +106,17 @@ async def load_skills_for_chat(
             return [], []
         allowed_set = set(allowed_ids)
         all_skills = [s for s in all_skills if s.id in allowed_set]
+
+    # Never expose server_ops tools on widget / portal / multi-tenant channels.
+    allow_server_ops = await server_ops_enabled_for_user(db, user_id)
+    if customer_config is not None:
+        allow_server_ops = False
+    allowlist = getattr(settings, "server_ops_skill_allowlist", None)
+    all_skills = filter_skills_by_ops_policy(
+        all_skills,
+        allow_server_ops=allow_server_ops,
+        allowlist=allowlist,
+    )
 
     all_skills = _merge_channel_skill_bindings(all_skills, customer_config)
 
@@ -239,6 +255,35 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         "required": ["command"],
     },
+    "mchat-ops": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": ["health", "logs", "milvus", "k8s", "redis", "disk"],
+                "description": "health/logs/milvus/k8s/redis/disk 运维子命令",
+            },
+            "source": {
+                "type": "string",
+                "enum": ["app", "error"],
+                "description": "logs 时选择 app 或 error 日志",
+            },
+            "lines": {
+                "type": "integer",
+                "description": "logs 行数，默认 80，最大 200",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "k8s 命名空间，默认 default",
+            },
+            "resource": {
+                "type": "string",
+                "enum": ["pods", "nodes", "deployments", "services", "events"],
+                "description": "k8s 资源类型（只读 get）",
+            },
+        },
+        "required": ["command"],
+    },
 }
 
 
@@ -279,11 +324,24 @@ _PATENT_LINK_PRESERVE_HINT = (
 )
 
 
+_MCHAT_OPS_HINT = (
+    "\n\n## Tool: mchat-ops\n"
+    "- health: API 与依赖健康摘要\n"
+    "- logs: source=app|error, lines 默认 80\n"
+    "- milvus: 向量库运行时状态\n"
+    "- k8s: 只读 kubectl get（namespace, resource=pods|nodes|...）\n"
+    "- redis / disk: Redis 连通与磁盘用量\n"
+    "运维命令结果直接总结给用户，勿编造未执行过的输出。"
+)
+
+
 def append_patent_tool_hints(
     system_prompt: str, tool_skills: list[Skill]
 ) -> str:
     if any((s.name or "") == "patent-search" for s in tool_skills):
-        return system_prompt + _PATENT_LINK_PRESERVE_HINT
+        system_prompt += _PATENT_LINK_PRESERVE_HINT
+    if any((s.name or "") == "mchat-ops" for s in tool_skills):
+        system_prompt += _MCHAT_OPS_HINT
     return system_prompt
 
 

@@ -15,6 +15,8 @@ class AppSettingsResponse(BaseModel):
     enable_streaming: bool = True
     rate_limit_per_min: int = 60
     maintenance_mode: bool = False
+    server_ops_skills_enabled: bool = False
+    server_ops_skill_allowlist: list[str] = Field(default_factory=list)
     milvus_enabled: bool = False
     milvus_host: str = "localhost"
     milvus_port: int = 19530
@@ -48,6 +50,8 @@ class AppSettingsUpdate(BaseModel):
     enable_streaming: bool | None = None
     rate_limit_per_min: int | None = None
     maintenance_mode: bool | None = None
+    server_ops_skills_enabled: bool | None = None
+    server_ops_skill_allowlist: list[str] | None = None
     milvus_enabled: bool | None = None
     milvus_host: str | None = None
     milvus_port: int | None = None

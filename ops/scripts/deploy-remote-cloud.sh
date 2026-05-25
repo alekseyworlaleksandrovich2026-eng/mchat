@@ -108,6 +108,7 @@ sync_skill_dir() {
 }
 
 sync_skill_dir mchat-help
+sync_skill_dir mchat-ops
 for patent_dir in "$PROJECT_DIR"/skills/patent-*; do
   [ -d "$patent_dir" ] || continue
   sync_skill_dir "$(basename "$patent_dir")"

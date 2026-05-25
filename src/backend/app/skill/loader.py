@@ -154,6 +154,14 @@ class SkillLoader:
                                 skill_data["description"] = value
                             elif key == "type":
                                 skill_data["type"] = value
+                            elif key == "scope":
+                                skill_data["config"]["scope"] = value
+                            elif key == "requires_admin":
+                                skill_data["config"]["requires_admin"] = value.lower() in (
+                                    "true",
+                                    "1",
+                                    "yes",
+                                )
 
                     if body:
                         skill_data["config"]["prompt_body"] = body
@@ -188,14 +196,19 @@ class SkillLoader:
         for line in frontmatter.split("\n"):
             line = line.strip()
             if line.startswith("parameters:"):
-                # Simple parameters extraction
                 params_str = line.split(":", 1)[1].strip()
                 if params_str:
                     try:
                         import json
+
                         config["parameters"] = json.loads(params_str)
                     except json.JSONDecodeError:
                         pass
+            elif line.startswith("scope:"):
+                config["scope"] = line.split(":", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("requires_admin:"):
+                val = line.split(":", 1)[1].strip().lower()
+                config["requires_admin"] = val in ("true", "1", "yes")
 
         return config
 

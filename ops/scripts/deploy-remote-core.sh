@@ -84,6 +84,7 @@ sync_skill_dir() {
 }
 
 sync_skill_dir mchat-help
+sync_skill_dir mchat-ops
 for patent_skill in patent-search patent-transaction patent-disclosure; do
   sync_skill_dir "$patent_skill"
 done

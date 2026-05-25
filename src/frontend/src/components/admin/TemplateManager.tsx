@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff, Edit3, Plus, Trash2, Bot, MessageSquare, FileSearch, Stethoscope, Scale, ShoppingCart, GraduationCap, Building2, Globe, Headphones } from 'lucide-react'
 import api from '@/lib/api'
+import { tenantSelectableSkills } from '@/lib/skillUtils'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
@@ -20,7 +21,12 @@ interface Template {
 }
 
 interface AiConfigItem { id: string; name: string; provider: string; model: string }
-interface SkillItem { id: string; name: string; description?: string | null }
+interface SkillItem {
+  id: string
+  name: string
+  description?: string | null
+  config?: Record<string, unknown> | null
+}
 interface KnowledgeBaseItem { id: string; name: string; description?: string | null }
 
 const ICONS: { name: string; icon: React.ComponentType<{className?: string}>; label: string }[] = [
@@ -97,7 +103,7 @@ export function TemplateManager() {
       ])
       setTemplates(tpl)
       setAiConfigs(aic)
-      setSkills(sk)
+      setSkills(tenantSelectableSkills(sk))
       setKnowledgeBases(kb)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }

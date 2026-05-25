@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.milvus_runtime import apply_milvus_runtime
+from app.skill.ops_policy import sync_server_ops_settings_from_db
 from app.models.setting import Setting
 from app.schemas.settings import AppSettingsResponse, AppSettingsUpdate
 
@@ -79,6 +80,17 @@ class SettingsService:
         embedding_api_key = get_val(
             "embedding_api_key", DEFAULT_SETTINGS.embedding_api_key
         )
+        maintenance_mode = get_val(
+            "maintenance_mode", DEFAULT_SETTINGS.maintenance_mode
+        )
+        server_ops_skills_enabled = get_val(
+            "server_ops_skills_enabled", DEFAULT_SETTINGS.server_ops_skills_enabled
+        )
+        server_ops_skill_allowlist = get_val(
+            "server_ops_skill_allowlist", DEFAULT_SETTINGS.server_ops_skill_allowlist
+        )
+        if not isinstance(server_ops_skill_allowlist, list):
+            server_ops_skill_allowlist = []
 
         apply_milvus_runtime(
             enabled=milvus_enabled,
@@ -93,6 +105,12 @@ class SettingsService:
         settings.embedding_api_base = embedding_api_base
         settings.embedding_dimension = embedding_dimension
         settings.embedding_api_key = embedding_api_key
+        settings.maintenance_mode = maintenance_mode
+        allowlist_runtime = server_ops_skill_allowlist or None
+        sync_server_ops_settings_from_db(
+            enabled=server_ops_skills_enabled,
+            allowlist=allowlist_runtime,
+        )
 
         # Keep runtime storage settings in sync with persisted settings.
         settings.storage_backend = storage_backend
@@ -117,7 +135,9 @@ class SettingsService:
             enable_websocket=get_val("enable_websocket", DEFAULT_SETTINGS.enable_websocket),
             enable_streaming=get_val("enable_streaming", DEFAULT_SETTINGS.enable_streaming),
             rate_limit_per_min=get_val("rate_limit_per_min", DEFAULT_SETTINGS.rate_limit_per_min),
-            maintenance_mode=get_val("maintenance_mode", DEFAULT_SETTINGS.maintenance_mode),
+            maintenance_mode=maintenance_mode,
+            server_ops_skills_enabled=server_ops_skills_enabled,
+            server_ops_skill_allowlist=server_ops_skill_allowlist,
             milvus_enabled=milvus_enabled,
             milvus_host=milvus_host,
             milvus_port=milvus_port,

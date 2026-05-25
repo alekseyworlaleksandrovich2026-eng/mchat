@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.models.skill import Skill
 from app.schemas.skill import SkillCatalogItem, SkillResponse, SkillUpdate
 from app.skill.loader import SkillLoader
+from app.skill.ops_policy import SCOPE_SERVER_OPS
 from app.skill.zip_utils import extract_skill_zip, read_skill_meta_from_zip
 
 
@@ -369,12 +370,15 @@ class SkillService:
                 )
             )
             existing = result.scalar_one_or_none()
+            disk_cfg = skill_data.get("config") or {}
+            is_server_ops = (
+                str(disk_cfg.get("scope") or "").strip().lower() == SCOPE_SERVER_OPS
+            )
             if existing:
                 existing.description = skill_data.get("description")
                 existing.skill_type = skill_data.get("type", "tool")
                 existing.path = skill_data.get("path")
                 merged = dict(existing.config or {})
-                disk_cfg = skill_data.get("config") or {}
                 merged.update(
                     {
                         k: v
@@ -383,7 +387,8 @@ class SkillService:
                     }
                 )
                 existing.config = merged
-                existing.enabled = True
+                if not is_server_ops:
+                    existing.enabled = True
             else:
                 skill = Skill(
                     user_id=user_id,
@@ -392,7 +397,7 @@ class SkillService:
                     skill_type=skill_data.get("type", "tool"),
                     path=skill_data.get("path"),
                     config=skill_data.get("config"),
-                    enabled=True,
+                    enabled=False if is_server_ops else True,
                 )
                 self.db.add(skill)
             count += 1
