@@ -35,6 +35,9 @@ class CustomerConfig(Base):
     auto_reply_rules: Mapped[list | None] = mapped_column(
         JSON, nullable=True
     )  # semantic/keyword rules that auto-send files, links, or videos
+    channel_prompt: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # per-channel system instructions (skills, routing); not shown to visitors
     welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     offline_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     theme: Mapped[dict | None] = mapped_column(JSON, nullable=True)

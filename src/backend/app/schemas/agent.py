@@ -115,6 +115,10 @@ class CustomerConfigCreate(BaseModel):
     skill_ids: list[str] = Field(default_factory=list)
     knowledge_base_ids: list[str] = Field(default_factory=list)
     auto_reply_rules: list[AutoReplyRule] = Field(default_factory=list)
+    channel_prompt: str | None = Field(
+        None,
+        description="Channel-only system instructions (skills, routing); appended after AI config prompt",
+    )
     welcome_message: str | None = None
     offline_message: str | None = None
     theme: dict | None = None
@@ -161,6 +165,7 @@ class CustomerConfigResponse(BaseModel):
     skill_ids: list[str] | None = None
     knowledge_base_ids: list[str] | None = None
     auto_reply_rules: list[AutoReplyRule] | None = None
+    channel_prompt: str | None = None
     welcome_message: str | None = None
     offline_message: str | None = None
     theme: dict | None = None

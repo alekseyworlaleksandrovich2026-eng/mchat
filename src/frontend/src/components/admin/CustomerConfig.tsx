@@ -73,6 +73,7 @@ interface CustomerServiceConfig {
   skill_ids: string[]
   knowledge_base_ids: string[]
   auto_reply_rules: AutoReplyRule[]
+  channel_prompt: string | null
   welcome_message: string | null
   offline_message: string | null
   theme: {
@@ -147,6 +148,7 @@ function normalizeCustomerConfig(
     auto_reply_rules: Array.isArray(raw?.auto_reply_rules)
       ? raw.auto_reply_rules.map((rule, index) => normalizeAutoReplyRule(rule, index))
       : [],
+    channel_prompt: raw?.channel_prompt || null,
     welcome_message: raw?.welcome_message || null,
     offline_message: raw?.offline_message || null,
     theme: {
@@ -340,6 +342,7 @@ export function CustomerConfig() {
           skill_ids: config.skill_ids,
           knowledge_base_ids: config.knowledge_base_ids,
           auto_reply_rules: autoReplyRulesPayload,
+          channel_prompt: config.channel_prompt || null,
           welcome_message: config.welcome_message,
           offline_message: config.offline_message,
           theme: config.theme,
@@ -368,6 +371,7 @@ export function CustomerConfig() {
         skill_ids: config.skill_ids,
         knowledge_base_ids: config.knowledge_base_ids,
         auto_reply_rules: autoReplyRulesPayload,
+        channel_prompt: config.channel_prompt || null,
         welcome_message: config.welcome_message,
         offline_message: config.offline_message,
         theme: config.theme,
@@ -665,6 +669,18 @@ export function CustomerConfig() {
                   })
                 }
               />
+              <Textarea
+                label={t('customerAgents.channelPrompt')}
+                value={config.channel_prompt || ''}
+                onChange={(e: any) =>
+                  setConfig({ ...config, channel_prompt: e.target.value || null })
+                }
+                rows={8}
+                placeholder={t('customerAgents.channelPromptPlaceholder')}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 -mt-4">
+                {t('customerAgents.channelPromptHint')}
+              </p>
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-primary-600" />
