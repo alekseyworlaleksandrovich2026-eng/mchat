@@ -278,6 +278,8 @@ async def my_handler_function(param1: str, param2: int, **kwargs):
 3. 在管理后台启用技能
 4. 通过对话测试
 
+技能工具若需 Excel/Word 导出，可选依赖的安装与回退见 **[导出可选依赖（自动安装）](export-optional-deps.zh.md)**。
+
 ---
 
 ## 测试

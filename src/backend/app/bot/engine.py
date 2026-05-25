@@ -19,6 +19,7 @@ from app.bot.provider import create_provider
 from app.bot.patent_links import linkify_patent_ids, patent_link_settings_from_skills
 from app.bot.skill_context import (
     append_patent_tool_hints,
+    build_executable_skill_prompt_section,
     build_openai_tools,
     build_prompt_skill_section,
     knowledge_base_ids_for_chat,
@@ -87,12 +88,36 @@ def _tool_result_display_text(result: Any) -> str:
     if isinstance(result, dict):
         err = result.get("error")
         if err:
-            return f"❌ {err}\n\n"
+            hint = result.get("hint")
+            block = f"❌ {err}"
+            if hint:
+                block += f"\n{hint}"
+            return block + "\n\n"
+        parts: list[str] = []
         for key in ("message", "content", "text"):
             val = result.get(key)
             if isinstance(val, str) and val.strip():
-                return val.strip() + "\n\n"
+                parts.append(val.strip())
+        for asset in result.get("outbound_assets") or []:
+            if not isinstance(asset, dict):
+                continue
+            url = str(asset.get("url") or "").strip()
+            if not url:
+                continue
+            name = str(asset.get("name") or "下载文件").strip()
+            parts.append(f"📥 **下载**：[{name}]({url})")
+        if parts:
+            return "\n\n".join(parts) + "\n\n"
     return ""
+
+
+def _collect_tool_outbound_assets(result: Any) -> list[dict[str, Any]]:
+    if not isinstance(result, dict):
+        return []
+    raw = result.get("outbound_assets")
+    if not isinstance(raw, list):
+        return []
+    return [a for a in raw if isinstance(a, dict)]
 
 
 def _merge_tool_call(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -213,6 +238,13 @@ async def process_message(
                 return
 
         system_prompt = ai_config.system_prompt or "You are a helpful AI assistant."
+        channel_extra = (
+            (getattr(customer_config, "channel_prompt", None) or "").strip()
+            if customer_config
+            else ""
+        )
+        if channel_extra:
+            system_prompt = system_prompt.rstrip() + "\n\n" + channel_extra
 
         prompt_skills, tool_skills = await load_skills_for_chat(
             db_session,
@@ -223,6 +255,10 @@ async def process_message(
         skill_section = build_prompt_skill_section(prompt_skills)
         if skill_section:
             system_prompt += skill_section
+
+        tool_guidance = build_executable_skill_prompt_section(tool_skills)
+        if tool_guidance:
+            system_prompt += tool_guidance
 
         tools = build_openai_tools(tool_skills)
         system_prompt = append_patent_tool_hints(system_prompt, tool_skills)
@@ -332,6 +368,7 @@ async def process_message(
                     }
 
         tool_calls_list = list(tool_calls_map.values())
+        tool_turn_assets: list[dict[str, Any]] = []
 
         if not tool_calls_list and first_pass_content:
             full_response += first_pass_content
@@ -369,6 +406,7 @@ async def process_message(
                 messages_list.append(
                     build_tool_result_message(tc["id"], tool_result)
                 )
+                tool_turn_assets.extend(_collect_tool_outbound_assets(tool_result))
 
                 tool_display = _tool_result_display_text(tool_result)
                 if tool_display:
@@ -453,6 +491,7 @@ async def process_message(
         if full_response:
             full_response = _with_patent_links(full_response)
             auto_reply_assets = [match["asset"] for match in auto_reply_matches]
+            merged_assets = auto_reply_assets + tool_turn_assets
             assistant_extra_data = enrich_message_extra_data(
                 full_response,
                 {
@@ -471,7 +510,7 @@ async def process_message(
                         }
                         for match in auto_reply_matches
                     ],
-                    "outbound_assets": auto_reply_assets,
+                    "outbound_assets": merged_assets,
                 },
             )
             assistant_msg = Message(

@@ -68,6 +68,14 @@ def apply_schema_patches(conn: Connection) -> list[str]:
                     )
                 )
             applied.append("customer_configs.auto_reply_rules")
+        if "channel_prompt" not in cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE customer_configs "
+                    "ADD COLUMN channel_prompt TEXT NULL"
+                )
+            )
+            applied.append("customer_configs.channel_prompt")
         if "widget_session_ttl_hours" not in cols:
             conn.execute(
                 text(

@@ -129,6 +129,7 @@ class AgentService:
             skill_ids=data.skill_ids,
             knowledge_base_ids=data.knowledge_base_ids,
             auto_reply_rules=[rule.model_dump() for rule in data.auto_reply_rules],
+            channel_prompt=data.channel_prompt,
             welcome_message=data.welcome_message,
             offline_message=data.offline_message,
             theme=data.theme,

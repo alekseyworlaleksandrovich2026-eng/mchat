@@ -108,7 +108,8 @@ app/
 │   └── embedding_fingerprint.py # Embedding 配置指纹追踪
 ├── skill/               # 技能系统
 │   ├── loader.py        # 技能加载器
-│   └── executor.py      # 技能执行器
+│   ├── executor.py      # 技能执行器
+│   └── deps.py          # 技能导出可选依赖自动安装（见 export-optional-deps.zh.md）
 ├── customer/            # 多租户客服
 │   └── manager.py       # 客服实例管理
 ├── middleware/           # 中间件

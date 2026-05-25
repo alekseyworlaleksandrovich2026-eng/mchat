@@ -69,13 +69,24 @@ fi
 echo "==> Fix frontend dist permissions on server"
 ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist 2>/dev/null || true"
 
-if [ -d "$PROJECT_DIR/skills/mchat-help" ]; then
-  echo "==> Sync skills/mchat-help"
-  ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/skills/mchat-help"
-  rsync -avz \
-    "$PROJECT_DIR/skills/mchat-help/" \
-    "${REMOTE}:${REMOTE_DIR}/skills/mchat-help/"
-fi
+sync_skill_dir() {
+  local name="$1"
+  local src="$PROJECT_DIR/skills/$name"
+  [ -d "$src" ] || return 0
+  echo "==> Sync skills/$name (overwrite)"
+  ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/skills/$name"
+  rsync -avz --delete \
+    --exclude '__pycache__/' \
+    --exclude '.DS_Store' \
+    --exclude 'config.json' \
+    --exclude 'dist/' \
+    "$src/" "${REMOTE}:${REMOTE_DIR}/skills/$name/"
+}
+
+sync_skill_dir mchat-help
+for patent_skill in patent-search patent-transaction patent-disclosure; do
+  sync_skill_dir "$patent_skill"
+done
 
 echo "==> Remote setup (Core backend: app.main:app)"
 ssh "$REMOTE" "chmod +x ${REMOTE_DIR}/ops/deploy/remote-setup.sh && bash ${REMOTE_DIR}/ops/deploy/remote-setup.sh"

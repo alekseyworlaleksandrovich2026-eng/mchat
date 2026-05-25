@@ -83,6 +83,8 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                 "type": "string",
                 "enum": [
                     "search",
+                    "export",
+                    "export_analysis",
                     "detail",
                     "claims",
                     "description",
@@ -95,7 +97,7 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                     "trademark",
                     "help",
                 ],
-                "description": "专利技能子命令，默认 search",
+                "description": "专利技能子命令；export/export_analysis 导出 Excel",
             },
             "query": {
                 "type": "string",
@@ -122,7 +124,75 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         "required": ["command"],
     },
+    "patent-transaction": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": [
+                    "search",
+                    "export",
+                    "export_orders",
+                    "detail",
+                    "sellers",
+                    "orders",
+                    "open",
+                    "demand",
+                    "info",
+                ],
+                "description": "交易子命令；export 导出在售专利 Excel",
+            },
+            "query": {
+                "type": "string",
+                "description": "关键词（search、open、demand）",
+            },
+            "patent_id": {
+                "type": "string",
+                "description": "专利申请号（detail、sellers）",
+            },
+            "page": {"type": "integer", "description": "页码"},
+            "page_size": {"type": "integer", "description": "每页条数"},
+        },
+        "required": ["command"],
+    },
+    "patent-disclosure": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": ["export", "template", "checklist"],
+                "description": "export=导出 Word（需 content）；template=空白模板；checklist=检查清单",
+            },
+            "content": {
+                "type": "string",
+                "description": "完整交底书 Markdown 正文（export 时必填）",
+            },
+            "invention_name": {
+                "type": "string",
+                "description": "发明名称，用于 Word 文件名与文档标题",
+            },
+            "title": {
+                "type": "string",
+                "description": "同 invention_name，文档标题",
+            },
+        },
+        "required": ["command"],
+    },
 }
+
+
+def build_executable_skill_prompt_section(tool_skills: list[Skill]) -> str:
+    """可执行工具技能若含 prompt_body（如 patent-disclosure），注入系统提示。"""
+    parts: list[str] = []
+    for skill in tool_skills:
+        config = skill.config or {}
+        body = config.get("prompt_body") or ""
+        if not str(body).strip():
+            continue
+        parts.append(f"### Skill: {skill.name}\n{_truncate_prompt_body(str(body))}")
+    if not parts:
+        return ""
+    return "\n\n## Active Skills (tools with guidance)\n" + "\n\n".join(parts)
 
 
 def _truncate_prompt_body(body: str) -> str:

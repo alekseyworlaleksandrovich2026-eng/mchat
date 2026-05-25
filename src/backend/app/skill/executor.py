@@ -12,7 +12,9 @@ from typing import Any, Iterator
 
 from loguru import logger
 
+from app.core.config import settings
 from app.models.skill import Skill
+from app.skill.deps import warm_skill_export_deps
 
 
 _SKIP_CONFIG_ENV_KEYS = frozenset({"secrets", "env", "prompt_body", "parameters"})
@@ -116,6 +118,8 @@ async def _execute_python_tool(
 
     try:
         with _skill_secrets_env(skill):
+            os.environ["MCHAT_UPLOAD_DIR"] = str(settings.upload_path.resolve())
+            warm_skill_export_deps(skill.name, skill_dir)
             spec = importlib.util.spec_from_file_location(
                 f"skill_{skill.name}", script_path
             )
@@ -242,9 +246,22 @@ def _normalize_tool_result(result: Any) -> Any:
     """Ensure tool output is JSON-serializable for the LLM."""
     if result is None:
         return {"ok": True, "message": "技能执行完成（无返回内容）"}
-    if isinstance(result, (str, int, float, bool, dict, list)):
+    if isinstance(result, dict):
+        return _finalize_tool_dict(result)
+    if isinstance(result, (str, int, float, bool, list)):
         return result
     return str(result)
+
+
+def _finalize_tool_dict(result: dict[str, Any]) -> dict[str, Any]:
+    """保留 outbound_assets；去掉仅供执行器使用的内部字段。"""
+    out = dict(result)
+    for key in ("files", "_internal"):
+        out.pop(key, None)
+    assets = out.get("outbound_assets")
+    if assets is not None and not isinstance(assets, list):
+        out.pop("outbound_assets", None)
+    return out
 
 
 async def _execute_webhook(
