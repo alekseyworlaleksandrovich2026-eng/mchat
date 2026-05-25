@@ -7,9 +7,67 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import copy
+
 from app.models.customer import CustomerConfig
 from app.models.skill import Skill
+from app.services.field_encryption import decrypt_skill_bindings
+from app.core.config import settings
+from app.skill.ops_policy import (
+    filter_skills_by_ops_policy,
+    server_ops_enabled_for_user,
+)
 from app.skill.utils import get_prompt_body, has_executable_script
+
+
+def _merge_channel_skill_bindings(
+    skills: list[Skill],
+    customer_config: CustomerConfig | None,
+) -> list[Skill]:
+    """Overlay per-channel skill_bindings onto skill.config (e.g. earth2037 game_api_key)."""
+    if customer_config is None:
+        return skills
+    bindings = decrypt_skill_bindings(
+        getattr(customer_config, "skill_bindings", None) or {}
+    )
+    if not isinstance(bindings, dict) or not bindings:
+        return skills
+
+    merged: list[Skill] = []
+    for skill in skills:
+        binding = bindings.get(skill.name)
+        if not isinstance(binding, dict):
+            merged.append(skill)
+            continue
+        if not binding.get("override", False):
+            merged.append(skill)
+            continue
+        cfg = copy.deepcopy(skill.config or {})
+        channel_secrets = binding.get("secrets") or binding.get("env") or {}
+        if isinstance(channel_secrets, dict) and channel_secrets:
+            base_secrets = dict(cfg.get("secrets") or cfg.get("env") or {})
+            base_secrets.update(channel_secrets)
+            cfg["secrets"] = base_secrets
+        for key, value in binding.items():
+            if key in ("secrets", "env", "override"):
+                continue
+            if isinstance(value, (dict, list)):
+                continue
+            cfg[key] = value
+        clone = Skill(
+            id=skill.id,
+            user_id=skill.user_id,
+            name=skill.name,
+            description=skill.description,
+            skill_type=skill.skill_type,
+            path=skill.path,
+            config=cfg,
+            enabled=skill.enabled,
+            created_at=skill.created_at,
+            updated_at=skill.updated_at,
+        )
+        merged.append(clone)
+    return merged
 
 
 def _ids_from_config(value: list[str] | None) -> list[str] | None:
@@ -48,6 +106,19 @@ async def load_skills_for_chat(
             return [], []
         allowed_set = set(allowed_ids)
         all_skills = [s for s in all_skills if s.id in allowed_set]
+
+    # Never expose server_ops tools on widget / portal / multi-tenant channels.
+    allow_server_ops = await server_ops_enabled_for_user(db, user_id)
+    if customer_config is not None:
+        allow_server_ops = False
+    allowlist = getattr(settings, "server_ops_skill_allowlist", None)
+    all_skills = filter_skills_by_ops_policy(
+        all_skills,
+        allow_server_ops=allow_server_ops,
+        allowlist=allowlist,
+    )
+
+    all_skills = _merge_channel_skill_bindings(all_skills, customer_config)
 
     prompt_skills: list[Skill] = []
     tool_skills: list[Skill] = []
@@ -121,6 +192,12 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
             },
             "page": {"type": "integer", "description": "页码"},
             "page_size": {"type": "integer", "description": "每页条数"},
+            "scope": {
+                "type": "string",
+                "enum": ["cn", "us", "jp", "kr", "tw", "wo", "ep", "all"],
+                "description": "数据范围：cn、all、us、jp、kr、tw、wo、ep",
+            },
+            "details": {"type": "boolean", "description": "search 时展示 IPC、摘要等明细列"},
         },
         "required": ["command"],
     },
@@ -178,6 +255,35 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         },
         "required": ["command"],
     },
+    "mchat-ops": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "enum": ["health", "logs", "milvus", "k8s", "redis", "disk"],
+                "description": "health/logs/milvus/k8s/redis/disk 运维子命令",
+            },
+            "source": {
+                "type": "string",
+                "enum": ["app", "error"],
+                "description": "logs 时选择 app 或 error 日志",
+            },
+            "lines": {
+                "type": "integer",
+                "description": "logs 行数，默认 80，最大 200",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "k8s 命名空间，默认 default",
+            },
+            "resource": {
+                "type": "string",
+                "enum": ["pods", "nodes", "deployments", "services", "events"],
+                "description": "k8s 资源类型（只读 get）",
+            },
+        },
+        "required": ["command"],
+    },
 }
 
 
@@ -210,10 +316,22 @@ _PATENT_LINK_PRESERVE_HINT = (
     "- analysis: 必须同时传 command=analysis、query、dimension（applicant|ipc|"
     "applicationYear|legalStatus|province）\n"
     "- detail/claims/legal 等: 传 patent_id\n"
-    "- company: 传 company_name\n"
+    "- company: 传 company_name（企业工商全称）\n"
+    "- scope: cn 默认；全球/各国用 all|us|jp|kr|tw|wo|ep\n"
     "统计分析/详情/企业画像等命令会一次性返回完整结果，不要再次调用 search 重复列表。\n"
     "仅 search 成功且表格已展示后：再写「初步观察」式自然语言总结（要点列表），"
     "勿重复表格、勿向用户展示 command=/page= 等技术参数。"
+)
+
+
+_MCHAT_OPS_HINT = (
+    "\n\n## Tool: mchat-ops\n"
+    "- health: API 与依赖健康摘要\n"
+    "- logs: source=app|error, lines 默认 80\n"
+    "- milvus: 向量库运行时状态\n"
+    "- k8s: 只读 kubectl get（namespace, resource=pods|nodes|...）\n"
+    "- redis / disk: Redis 连通与磁盘用量\n"
+    "运维命令结果直接总结给用户，勿编造未执行过的输出。"
 )
 
 
@@ -221,7 +339,9 @@ def append_patent_tool_hints(
     system_prompt: str, tool_skills: list[Skill]
 ) -> str:
     if any((s.name or "") == "patent-search" for s in tool_skills):
-        return system_prompt + _PATENT_LINK_PRESERVE_HINT
+        system_prompt += _PATENT_LINK_PRESERVE_HINT
+    if any((s.name or "") == "mchat-ops" for s in tool_skills):
+        system_prompt += _MCHAT_OPS_HINT
     return system_prompt
 
 

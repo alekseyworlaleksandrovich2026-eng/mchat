@@ -23,6 +23,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatDate } from '@/lib/utils'
+import { isServerOpsSkill } from '@/lib/skillUtils'
 import { SkillFileBrowser } from '@/components/admin/SkillFileBrowser'
 
 interface Skill {
@@ -339,12 +340,19 @@ export function SkillManager() {
                       </p>
                     </div>
                   </div>
-                  <Badge
-                    variant={skill.skill_type === 'builtin' ? 'info' : 'default'}
-                    size="sm"
-                  >
-                    {typeLabel(skill.skill_type)}
-                  </Badge>
+                  <div className="flex flex-wrap gap-1 justify-end">
+                    {isServerOpsSkill(skill) && (
+                      <Badge variant="warning" size="sm">
+                        {t('skills.scopeServerOps')}
+                      </Badge>
+                    )}
+                    <Badge
+                      variant={skill.skill_type === 'builtin' ? 'info' : 'default'}
+                      size="sm"
+                    >
+                      {typeLabel(skill.skill_type)}
+                    </Badge>
+                  </div>
                 </div>
 
                 {skill.description && (

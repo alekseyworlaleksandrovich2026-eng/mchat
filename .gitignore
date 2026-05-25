@@ -60,6 +60,8 @@ skills/*
 !skills/.gitkeep
 !skills/mchat-help/
 !skills/mchat-help/**
+!skills/mchat-ops/
+!skills/mchat-ops/**
 src/backend/skills/*
 !src/backend/skills/.gitkeep
 

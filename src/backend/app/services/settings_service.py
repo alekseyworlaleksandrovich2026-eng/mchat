@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.milvus_runtime import apply_milvus_runtime
+from app.skill.ops_policy import sync_server_ops_settings_from_db
 from app.models.setting import Setting
 from app.schemas.settings import AppSettingsResponse, AppSettingsUpdate
 
@@ -66,11 +67,49 @@ class SettingsService:
         s3_force_path_style = get_val(
             "s3_force_path_style", DEFAULT_SETTINGS.s3_force_path_style
         )
+        embedding_provider = get_val(
+            "embedding_provider", DEFAULT_SETTINGS.embedding_provider
+        )
+        embedding_model = get_val("embedding_model", DEFAULT_SETTINGS.embedding_model)
+        embedding_api_base = get_val(
+            "embedding_api_base", DEFAULT_SETTINGS.embedding_api_base
+        )
+        embedding_dimension = get_val(
+            "embedding_dimension", DEFAULT_SETTINGS.embedding_dimension
+        )
+        embedding_api_key = get_val(
+            "embedding_api_key", DEFAULT_SETTINGS.embedding_api_key
+        )
+        maintenance_mode = get_val(
+            "maintenance_mode", DEFAULT_SETTINGS.maintenance_mode
+        )
+        server_ops_skills_enabled = get_val(
+            "server_ops_skills_enabled", DEFAULT_SETTINGS.server_ops_skills_enabled
+        )
+        server_ops_skill_allowlist = get_val(
+            "server_ops_skill_allowlist", DEFAULT_SETTINGS.server_ops_skill_allowlist
+        )
+        if not isinstance(server_ops_skill_allowlist, list):
+            server_ops_skill_allowlist = []
 
         apply_milvus_runtime(
             enabled=milvus_enabled,
             host=milvus_host,
             port=milvus_port,
+        )
+        settings.milvus_enabled = milvus_enabled
+        settings.milvus_host = milvus_host
+        settings.milvus_port = milvus_port
+        settings.embedding_provider = embedding_provider
+        settings.embedding_model = embedding_model
+        settings.embedding_api_base = embedding_api_base
+        settings.embedding_dimension = embedding_dimension
+        settings.embedding_api_key = embedding_api_key
+        settings.maintenance_mode = maintenance_mode
+        allowlist_runtime = server_ops_skill_allowlist or None
+        sync_server_ops_settings_from_db(
+            enabled=server_ops_skills_enabled,
+            allowlist=allowlist_runtime,
         )
 
         # Keep runtime storage settings in sync with persisted settings.
@@ -96,10 +135,17 @@ class SettingsService:
             enable_websocket=get_val("enable_websocket", DEFAULT_SETTINGS.enable_websocket),
             enable_streaming=get_val("enable_streaming", DEFAULT_SETTINGS.enable_streaming),
             rate_limit_per_min=get_val("rate_limit_per_min", DEFAULT_SETTINGS.rate_limit_per_min),
-            maintenance_mode=get_val("maintenance_mode", DEFAULT_SETTINGS.maintenance_mode),
+            maintenance_mode=maintenance_mode,
+            server_ops_skills_enabled=server_ops_skills_enabled,
+            server_ops_skill_allowlist=server_ops_skill_allowlist,
             milvus_enabled=milvus_enabled,
             milvus_host=milvus_host,
             milvus_port=milvus_port,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            embedding_api_base=embedding_api_base,
+            embedding_dimension=embedding_dimension,
+            embedding_api_key=embedding_api_key,
             storage_backend=storage_backend,
             upload_dir=upload_dir,
             max_upload_size_mb=max_upload_size_mb,
@@ -140,6 +186,10 @@ class SettingsService:
         result = await self.get_settings()
         if any(k.startswith("milvus_") for k in updates):
             await milvus_client.reconnect()
+        elif any(k.startswith("embedding_") for k in updates):
+            await milvus_client.reconnect()
+            if milvus_client._connected:
+                await milvus_client.create_collection()
         return result
 
     async def test_milvus_connection(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff, Edit3, Plus, Trash2, Bot, MessageSquare, FileSearch, Stethoscope, Scale, ShoppingCart, GraduationCap, Building2, Globe, Headphones } from 'lucide-react'
 import api from '@/lib/api'
+import { tenantSelectableSkills } from '@/lib/skillUtils'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Spinner } from '@/components/ui/Spinner'
@@ -13,12 +14,20 @@ interface Template {
   trial_days: number; is_published: boolean; sort_order: number
   default_ai_config_id: string | null; default_ai_config_spec: any
   default_skill_ids: string[] | null
+  default_knowledge_base_ids: string[] | null
   default_knowledge_base_spec: any; default_theme: any
   default_welcome_message: string | null; default_offline_message: string | null
   created_at: string; updated_at: string
 }
 
 interface AiConfigItem { id: string; name: string; provider: string; model: string }
+interface SkillItem {
+  id: string
+  name: string
+  description?: string | null
+  config?: Record<string, unknown> | null
+}
+interface KnowledgeBaseItem { id: string; name: string; description?: string | null }
 
 const ICONS: { name: string; icon: React.ComponentType<{className?: string}>; label: string }[] = [
   { name: 'MessageSquare', icon: MessageSquare, label: 'Chat/客服' },
@@ -51,7 +60,18 @@ export function TemplateManager() {
   const [creating, setCreating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [aiConfigs, setAiConfigs] = useState<AiConfigItem[]>([])
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>([])
   const [activeTab, setActiveTab] = useState('basic')
+
+  const defaultKbSpec = {
+    name: '通道知识库',
+    description: '租用模板时自动创建',
+    chunk_strategy: 'fixed',
+    chunk_size: 1000,
+    chunk_overlap: 100,
+    retrieval_mode: 'hybrid',
+  }
 
   const emptyForm = {
     name: '', description: '', category: 'customer_service', icon: 'MessageSquare',
@@ -59,6 +79,14 @@ export function TemplateManager() {
     is_published: false, sort_order: 0,
     default_welcome_message: '', default_offline_message: '',
     default_ai_config_id: '',
+    default_skill_ids: [] as string[],
+    kb_mode: 'auto' as 'none' | 'existing' | 'auto',
+    default_knowledge_base_ids: [] as string[],
+    kb_auto_name: defaultKbSpec.name,
+    kb_auto_description: defaultKbSpec.description,
+    kb_auto_chunk_size: defaultKbSpec.chunk_size,
+    kb_auto_chunk_overlap: defaultKbSpec.chunk_overlap,
+    kb_auto_retrieval_mode: defaultKbSpec.retrieval_mode,
     default_theme: JSON.stringify({ primaryColor: '#3b82f6', botName: 'Assistant', widgetTitle: 'Chat' }, null, 2),
   }
   const [form, setForm] = useState(emptyForm)
@@ -67,19 +95,41 @@ export function TemplateManager() {
   const load = async () => {
     setLoading(true)
     try {
-      const [tpl, aic] = await Promise.all([
+      const [tpl, aic, sk, kb] = await Promise.all([
         api.get<Template[]>('/admin/templates'),
         api.get<AiConfigItem[]>('/agents/ai-configs').catch(() => []),
+        api.get<SkillItem[]>('/skills').catch(() => []),
+        api.get<KnowledgeBaseItem[]>('/knowledge/bases').catch(() => []),
       ])
       setTemplates(tpl)
       setAiConfigs(aic)
+      setSkills(tenantSelectableSkills(sk))
+      setKnowledgeBases(kb)
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
+  const kbSpecToForm = (spec: any) => {
+    const s = spec || defaultKbSpec
+    return {
+      kb_auto_name: s.name || defaultKbSpec.name,
+      kb_auto_description: s.description || defaultKbSpec.description,
+      kb_auto_chunk_size: s.chunk_size ?? defaultKbSpec.chunk_size,
+      kb_auto_chunk_overlap: s.chunk_overlap ?? defaultKbSpec.chunk_overlap,
+      kb_auto_retrieval_mode: s.retrieval_mode || defaultKbSpec.retrieval_mode,
+    }
+  }
+
+  const resolveKbMode = (tmpl: Template): 'none' | 'existing' | 'auto' => {
+    if (tmpl.default_knowledge_base_ids?.length) return 'existing'
+    if (tmpl.default_knowledge_base_spec?.name) return 'auto'
+    return 'none'
+  }
+
   const openEdit = (tmpl: Template) => {
     setEditing(tmpl); setCreating(false); setActiveTab('basic')
+    const kbMode = resolveKbMode(tmpl)
     setForm({
       name: tmpl.name, description: tmpl.description || '', category: tmpl.category,
       icon: tmpl.icon || 'MessageSquare',
@@ -88,6 +138,10 @@ export function TemplateManager() {
       default_welcome_message: tmpl.default_welcome_message || '',
       default_offline_message: tmpl.default_offline_message || '',
       default_ai_config_id: tmpl.default_ai_config_id || '',
+      default_skill_ids: tmpl.default_skill_ids || [],
+      kb_mode: kbMode,
+      default_knowledge_base_ids: tmpl.default_knowledge_base_ids || [],
+      ...kbSpecToForm(tmpl.default_knowledge_base_spec),
       default_theme: JSON.stringify(tmpl.default_theme || {}, null, 2),
     })
   }
@@ -101,13 +155,38 @@ export function TemplateManager() {
     try {
       let parsedTheme: any = {}
       try { parsedTheme = JSON.parse(form.default_theme) } catch {}
+      let default_knowledge_base_ids: string[] | null = null
+      let default_knowledge_base_spec: Record<string, unknown> | null = null
+      if (form.kb_mode === 'existing') {
+        default_knowledge_base_ids = form.default_knowledge_base_ids?.length
+          ? form.default_knowledge_base_ids
+          : null
+      } else if (form.kb_mode === 'auto') {
+        default_knowledge_base_spec = {
+          name: form.kb_auto_name || defaultKbSpec.name,
+          description: form.kb_auto_description || defaultKbSpec.description,
+          chunk_strategy: 'fixed',
+          chunk_size: Number(form.kb_auto_chunk_size) || defaultKbSpec.chunk_size,
+          chunk_overlap: Number(form.kb_auto_chunk_overlap) || defaultKbSpec.chunk_overlap,
+          retrieval_mode: form.kb_auto_retrieval_mode || defaultKbSpec.retrieval_mode,
+        }
+      }
       const payload = {
-        ...form,
+        name: form.name,
+        description: form.description,
+        category: form.category,
+        icon: form.icon,
         price_monthly_cents: Number(form.price_monthly_cents),
         price_yearly_cents: Number(form.price_yearly_cents),
         trial_days: Number(form.trial_days),
         sort_order: Number(form.sort_order),
+        is_published: form.is_published,
+        default_welcome_message: form.default_welcome_message,
+        default_offline_message: form.default_offline_message,
         default_ai_config_id: form.default_ai_config_id || null,
+        default_skill_ids: form.default_skill_ids?.length ? form.default_skill_ids : null,
+        default_knowledge_base_ids,
+        default_knowledge_base_spec,
         default_theme: parsedTheme,
       }
       if (editing) await api.put(`/admin/templates/${editing.id}`, payload)
@@ -130,10 +209,32 @@ export function TemplateManager() {
 
   if (loading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>
 
+  const toggleSkill = (skillId: string) => {
+    setForm((f: any) => {
+      const ids: string[] = f.default_skill_ids || []
+      const next = ids.includes(skillId)
+        ? ids.filter((id: string) => id !== skillId)
+        : [...ids, skillId]
+      return { ...f, default_skill_ids: next }
+    })
+  }
+
+  const toggleKnowledgeBase = (kbId: string) => {
+    setForm((f: any) => {
+      const ids: string[] = f.default_knowledge_base_ids || []
+      const next = ids.includes(kbId)
+        ? ids.filter((id: string) => id !== kbId)
+        : [...ids, kbId]
+      return { ...f, default_knowledge_base_ids: next }
+    })
+  }
+
   const formTabs = [
     { id: 'basic', label: 'Basic' },
-    { id: 'ai', label: 'AI Config' },
-    { id: 'widget', label: 'Widget' },
+    { id: 'ai', label: 'AI' },
+    { id: 'skills', label: 'Skills' },
+    { id: 'knowledge', label: 'Knowledge' },
+    { id: 'widget', label: '网站挂件' },
   ]
 
   return (
@@ -232,6 +333,109 @@ export function TemplateManager() {
                       ))}
                     </select>
                   </div>
+                </div>
+              </TabPanel>
+              <TabPanel id="skills" activeTab={activeTab}>
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500">
+                    租用模板时默认绑定的 Skill（如 patent-search）。用户可在通道详情页继续管理知识库与文档。
+                  </p>
+                  <div className="max-h-56 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                    {skills.length === 0 && (
+                      <p className="text-xs text-gray-400 p-2">暂无技能，请先在「技能管理」中安装。</p>
+                    )}
+                    {skills.map((skill) => (
+                      <label
+                        key={skill.id}
+                        className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={(form.default_skill_ids || []).includes(skill.id)}
+                          onChange={() => toggleSkill(skill.id)}
+                        />
+                        <span className="text-sm">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{skill.name}</span>
+                          {skill.description && (
+                            <span className="block text-xs text-gray-500 mt-0.5 line-clamp-2">{skill.description}</span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </TabPanel>
+              <TabPanel id="knowledge" activeTab={activeTab}>
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500">
+                    租用模板时绑定到通道的知识库。可引用已有库，或按表单自动新建空库（用户再在「我的通道 → 知识库」上传文档）。
+                  </p>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    {([
+                      ['none', '不绑定知识库'],
+                      ['existing', '引用已有知识库'],
+                      ['auto', '租用时自动新建'],
+                    ] as const).map(([value, label]) => (
+                      <label key={value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="kb_mode"
+                          checked={form.kb_mode === value}
+                          onChange={() => set('kb_mode', value)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {form.kb_mode === 'existing' && (
+                    <div className="max-h-56 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                      {knowledgeBases.length === 0 && (
+                        <p className="text-xs text-gray-400 p-2">暂无知识库，请先在「知识库管理」中创建。</p>
+                      )}
+                      {knowledgeBases.map((kb) => (
+                        <label
+                          key={kb.id}
+                          className="flex items-start gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={(form.default_knowledge_base_ids || []).includes(kb.id)}
+                            onChange={() => toggleKnowledgeBase(kb.id)}
+                          />
+                          <span className="text-sm">
+                            <span className="font-medium text-gray-900 dark:text-gray-100">{kb.name}</span>
+                            {kb.description && (
+                              <span className="block text-xs text-gray-500 mt-0.5 line-clamp-2">{kb.description}</span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {form.kb_mode === 'auto' && (
+                    <div className="space-y-3 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                      <Input label="知识库名称" value={form.kb_auto_name} onChange={e => set('kb_auto_name', e.target.value)} />
+                      <Input label="描述" value={form.kb_auto_description} onChange={e => set('kb_auto_description', e.target.value)} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input label="分块大小" type="number" value={String(form.kb_auto_chunk_size)} onChange={e => set('kb_auto_chunk_size', Number(e.target.value))} />
+                        <Input label="分块重叠" type="number" value={String(form.kb_auto_chunk_overlap)} onChange={e => set('kb_auto_chunk_overlap', Number(e.target.value))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">检索模式</label>
+                        <select
+                          className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 p-2 text-sm"
+                          value={form.kb_auto_retrieval_mode}
+                          onChange={e => set('kb_auto_retrieval_mode', e.target.value)}
+                        >
+                          <option value="hybrid">hybrid</option>
+                          <option value="vector">vector</option>
+                          <option value="keyword">keyword</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </TabPanel>
               <TabPanel id="widget" activeTab={activeTab}>

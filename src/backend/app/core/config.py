@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     embedding_dimension: int = 768
     embedding_model_max_mb: int = 2048
 
+    # Server ops skills (persisted in settings DB; admin-only at runtime)
+    server_ops_skills_enabled: bool = False
+    server_ops_skill_allowlist: list[str] | None = None
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
