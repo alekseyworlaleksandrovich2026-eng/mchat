@@ -32,7 +32,7 @@ jobs:
           MILVUS_ENABLED: "false"
         run: |
           cd src/backend
-          python -m pytest ../../tests/ -v --cov=app --cov-report=term-missing
+          python -m pytest ../../tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=37
 
   frontend-test:
     runs-on: ubuntu-latest

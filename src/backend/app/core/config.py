@@ -28,8 +28,7 @@ class Settings(BaseSettings):
     milvus_port: int = 19530
     milvus_enabled: bool = False
 
-    # Embedding (global defaults; per knowledge base can override)
-    # Prefer local Ollama in dev; override with EMBEDDING_* in .env if needed
+    # Embedding global defaults (admin UI → DB overrides these at runtime; .env is fallback only)
     embedding_provider: str = "ollama"
     embedding_model: str = "nomic-embed-text"
     embedding_api_base: str = "http://localhost:11434"
@@ -44,6 +43,45 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+
+    # Cloud portal: SMS OTP (dev: fixed code when sms_dev_mode=true)
+    sms_dev_mode: bool = False
+    sms_dev_code: str = "123456"
+    otp_expire_seconds: int = 600
+    otp_send_cooldown_seconds: int = 60
+    # Aliyun SMS (same template as www.9235.net — patentapi UserService)
+    aliyun_sms_access_key_id: str = ""
+    aliyun_sms_access_key_secret: str = ""
+    aliyun_sms_sign_name: str = "笑溢网络"
+    aliyun_sms_template_code: str = "SMS_289525897"
+    aliyun_sms_region: str = "cn-hangzhou"
+
+    # Patent portal / SSO (optional; set in .env for your deployment)
+    patent9235_base_url: str = ""
+    patent_portal_url_template: str = ""
+    patent9235_jwt_secret: str = ""
+    patent9235_sso_product_id: str = "pdmchat"
+    patent9235_sso_channel_id: str = "mchat01"
+    patent9235_sso_login_url: str = ""
+
+    # Encrypt skill_bindings secrets at rest (Fernet key or any string — hashed if needed)
+    secrets_encryption_key: str = ""
+
+    # Invoice header (portal order PDF/HTML)
+    invoice_company_name: str = "MChat Cloud"
+    invoice_company_tax_id: str = ""
+    invoice_support_email: str = ""
+
+    # Public site URL (checkout callbacks, invoices)
+    mchat_public_base_url: str = ""
+    alipay_app_id: str = ""
+    alipay_private_key: str = ""
+    alipay_public_key: str = ""
+    alipay_notify_path: str = "/api/pay/alipay/notify"
+    wechat_pay_app_id: str = "wx72863a0d11e809e0"
+    wechat_pay_mch_id: str = "1679561189"
+    wechat_pay_api_key: str = ""
+    wechat_pay_notify_path: str = "/api/pay/wechat/notify"
 
     # Default admin (created on first startup if missing)
     admin_username: str = "admin"
@@ -79,6 +117,9 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = False
     s3_public_base_url: str = ""
     s3_force_path_style: bool = True
+    # Require ?exp=&sig= on GET /uploads (legacy tokenless URLs still work when false)
+    uploads_require_signed_access: bool = False
+    uploads_signed_url_ttl_seconds: int = 60 * 60 * 24 * 365
 
     # LLM provider API keys (optional env fallback when DB config key is empty)
     openai_api_key: str = ""
@@ -110,7 +151,9 @@ class Settings(BaseSettings):
 
     @property
     def upload_path(self) -> Path:
-        return Path(self.upload_dir)
+        from app.utils.upload_paths import resolve_upload_root
+
+        return resolve_upload_root(self.upload_dir)
 
     @property
     def skills_path(self) -> Path:

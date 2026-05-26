@@ -17,6 +17,14 @@ from app.bot.messages import (
 from app.utils.chat_upload import attachment_prompt_text
 from app.bot.provider import create_provider
 from app.bot.patent_links import linkify_patent_ids, patent_link_settings_from_skills
+from app.bot.patent_search_followup import (
+    find_patent_search_skill,
+    is_patent_search_success,
+    patent_search_enable_presentation,
+    patent_search_enable_summary,
+    patent_search_observation_nudge,
+    patent_search_presentation_nudge,
+)
 from app.bot.skill_context import (
     append_patent_tool_hints,
     build_executable_skill_prompt_section,
@@ -38,47 +46,7 @@ from app.bot.auto_reply_rules import (
     match_auto_reply_rules,
 )
 
-_PATENT_SEARCH_PRESENTATION_NUDGE = (
-    "（用户看不到本条消息。）\n"
-    "请根据上一条 patent-search 工具返回的结果，用中文给用户写完整回复，"
-    "严格按以下结构（不要省略任何部分）：\n\n"
-    "1. 第一行：🔍 搜索完成\n"
-    "2. 第二行：📊 找到 {总条数} 条专利（总条数取自工具结果）\n"
-    "3. 空一行\n"
-    "4. 制表符分隔表格（不要用 Markdown 管道表格），表头："
-    "序号\\t专利号\\t标题\\t申请人\\t申请日\n"
-    "   逐行展示工具结果中的专利；申请日从工具数据提取，格式 YYYY-MM-DD；"
-    "若无申请日则留空\n"
-    "5. 空一行\n"
-    "6. 一行：📄 当前仅展示前 {本页条数} 条，共 {总条数} 条匹配。\n"
-    "7. 小标题「初步观察」，接着 4–6 条要点（列表），概括申请人类型、"
-    "代表性机构、技术方向、总量\n"
-    "8. 结尾用自然语言列出可继续的操作：统计分析、翻页、查看详情/权利要求/"
-    "法律状态、企业专利画像等\n"
-    "不要输出工具原文 emoji 列表，不要写 command= / page= 等技术参数。"
-)
-_PATENT_SEARCH_OBSERVATION_NUDGE = (
-    "（专利检索结果表格已在上方展示给用户，用户看不到本条消息。）\n"
-    "请用中文写一段回复，以小标题「初步观察」开头，接着用 4–6 条要点（列表即可）概括："
-    "主要申请人类型（企业/高校/外资等）、代表性机构、技术方向、以及总申请量说明；"
-    "不要重复表格、不要罗列专利号、不要写 command= / page= 等技术参数。\n"
-    "最后用 1–2 句自然语言说明：如需某条详情、权利要求、法律状态，"
-    "或按公司、IPC、时间范围精确筛选，让用户直接告诉你即可。"
-)
-_ENABLE_PATENT_SEARCH_PRESENTATION = True
-_ENABLE_PATENT_SEARCH_SUMMARY = False
 _HISTORY_MESSAGE_LIMIT = 30
-
-
-def _is_patent_search_success(
-    tool_name: str, command: str, tool_display: str
-) -> bool:
-    return (
-        tool_name == "patent-search"
-        and command == "search"
-        and "🔍 搜索完成" in tool_display
-        and not tool_display.lstrip().startswith("❌")
-    )
 
 
 def _format_structured_tool_dict(result: dict[str, Any]) -> str:
@@ -436,6 +404,7 @@ async def process_message(
                 )
             )
 
+            patent_skill = find_patent_search_skill(tool_skills)
             patent_search_for_summary = False
             patent_search_for_presentation = False
             for tc in tool_calls_list:
@@ -466,23 +435,23 @@ async def process_message(
                 if tool_display:
                     tool_display = _with_patent_links(tool_display)
                     cmd = str(tool_args.get("command") or "search").lower()
-                    patent_search_ok = _is_patent_search_success(
+                    patent_search_ok = is_patent_search_success(
                         tool_name, cmd, tool_display
                     )
-                    if _ENABLE_PATENT_SEARCH_PRESENTATION and patent_search_ok:
+                    if patent_search_enable_presentation(patent_skill) and patent_search_ok:
                         patent_search_for_presentation = True
                     else:
                         full_response += tool_display
                         yield tool_display
-                    if (
-                        _ENABLE_PATENT_SEARCH_SUMMARY
-                        and patent_search_ok
-                    ):
+                    if patent_search_enable_summary(patent_skill) and patent_search_ok:
                         patent_search_for_summary = True
 
             if patent_search_for_presentation:
                 messages_list.append(
-                    {"role": "user", "content": _PATENT_SEARCH_PRESENTATION_NUDGE}
+                    {
+                        "role": "user",
+                        "content": patent_search_presentation_nudge(patent_skill),
+                    }
                 )
                 presentation_parts: list[str] = []
                 async for chunk in provider.stream_chat(
@@ -510,7 +479,10 @@ async def process_message(
 
             if patent_search_for_summary:
                 messages_list.append(
-                    {"role": "user", "content": _PATENT_SEARCH_OBSERVATION_NUDGE}
+                    {
+                        "role": "user",
+                        "content": patent_search_observation_nudge(patent_skill),
+                    }
                 )
                 summary_parts: list[str] = []
                 async for chunk in provider.stream_chat(

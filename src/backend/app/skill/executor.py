@@ -14,6 +14,7 @@ from typing import Any, Iterator
 from loguru import logger
 
 from app.core.config import settings
+from app.utils.upload_paths import resolve_upload_root
 from app.models.skill import Skill
 from app.skill.deps import warm_skill_export_deps
 
@@ -119,7 +120,7 @@ async def _execute_python_tool(
 
     def _run_blocking() -> Any:
         with _skill_secrets_env(skill):
-            os.environ["MCHAT_UPLOAD_DIR"] = str(settings.upload_path.resolve())
+            os.environ["MCHAT_UPLOAD_DIR"] = str(resolve_upload_root())
             warm_skill_export_deps(skill.name, skill_dir)
             spec = importlib.util.spec_from_file_location(
                 f"skill_{skill.name}", script_path
