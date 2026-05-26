@@ -15,6 +15,8 @@ from app.models.ai_config import AIConfig
 from app.models.customer import CustomerConfig
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.services.maintenance_gate import ensure_public_api_available
+from app.services.subscription_gate import ensure_channel_subscription_active
 from app.utils.request import extract_client_ip
 from app.utils.domain import is_domain_allowed
 
@@ -26,6 +28,7 @@ def widget_contact_info(customer_id: str) -> str:
 
 
 def ensure_widget_domain_allowed(customer: CustomerConfig, request: Request) -> None:
+    ensure_public_api_available()
     if not is_domain_allowed(
         customer.domains,
         request.headers.get("origin"),
@@ -107,6 +110,7 @@ async def prepare_widget_chat(
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found or disabled")
 
+    ensure_channel_subscription_active(customer)
     ensure_widget_domain_allowed(customer, request)
 
     conversation: Conversation | None = None

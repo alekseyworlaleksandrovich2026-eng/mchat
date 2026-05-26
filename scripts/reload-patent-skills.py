@@ -37,9 +37,12 @@ async def main() -> None:
             sys.exit(1)
 
         svc = SkillService(db)
-        n = await svc.reload_skills(user_id=admin.id)
+        result = await svc.reload_skills(user_id=admin.id)
         await db.commit()
+        n = result["reloaded"] if isinstance(result, dict) else result
         print(f"✅ 已重载 {n} 个技能")
+        if isinstance(result, dict) and result.get("server_ops"):
+            print(f"   服务端运维（默认禁用）: {', '.join(result['server_ops'])}")
 
         result = await db.execute(
             select(Skill).where(

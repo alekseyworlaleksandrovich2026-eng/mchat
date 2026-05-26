@@ -4,7 +4,7 @@ description: 服务端运维巡检（健康检查、日志、Milvus、只读 K8s
 type: tool
 scope: server_ops
 requires_admin: true
-parameters: {"type":"object","properties":{"command":{"type":"string","enum":["health","logs","milvus","k8s","redis","disk"]},"source":{"type":"string","enum":["app","error"]},"lines":{"type":"integer"},"namespace":{"type":"string"},"resource":{"type":"string","enum":["pods","nodes","deployments","services","events"]}},"required":["command"]}
+parameters: {"type":"object","properties":{"command":{"type":"string","enum":["health","logs","milvus","k8s","redis","disk","services","db"]},"source":{"type":"string","enum":["app","error"]},"lines":{"type":"integer"},"namespace":{"type":"string"},"resource":{"type":"string","enum":["pods","nodes","deployments","services","events"]}},"required":["command"]}
 ---
 
 # MChat 服务端运维
@@ -19,6 +19,8 @@ parameters: {"type":"object","properties":{"command":{"type":"string","enum":["h
 - `k8s` — 只读 `kubectl get`（需服务器安装 kubectl 且配置 kubeconfig）
 - `redis` — Ping Redis（`REDIS_URL`）
 - `disk` — 磁盘用量摘要
+- `services` — systemd 服务状态（先 system 再 `--user`）
+- `db` — MySQL `SELECT 1` 连通探测
 
 ## 安全
 

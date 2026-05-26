@@ -72,8 +72,7 @@ async def reload_skills(
 ):
     """Reload skills from filesystem."""
     service = SkillService(db)
-    count = await service.reload_skills(user_id=admin.id)
-    return {"reloaded": count, "message": f"Reloaded {count} skills"}
+    return await service.reload_skills(user_id=admin.id)
 
 
 @router.delete("/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)

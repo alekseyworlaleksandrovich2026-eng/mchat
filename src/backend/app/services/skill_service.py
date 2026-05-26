@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.models.skill import Skill
 from app.schemas.skill import SkillCatalogItem, SkillResponse, SkillUpdate
 from app.skill.loader import SkillLoader
-from app.skill.ops_policy import SCOPE_SERVER_OPS
+from app.skill.ops_policy import SCOPE_SERVER_OPS, is_server_ops_skill
 from app.skill.zip_utils import extract_skill_zip, read_skill_meta_from_zip
 
 
@@ -355,13 +355,14 @@ class SkillService:
             await self.db.flush()
         return removed
 
-    async def reload_skills(self, user_id: str) -> int:
+    async def reload_skills(self, user_id: str) -> dict:
         """Sync DB with skills/ on disk: update existing, add new, drop stale."""
         await self._prune_stale_filesystem_skills(user_id)
 
         loader = SkillLoader()
         skills = loader.scan_skills()
         count = 0
+        server_ops_names: list[str] = []
         for skill_data in skills:
             result = await self.db.execute(
                 select(Skill).where(
@@ -400,11 +401,19 @@ class SkillService:
                     enabled=False if is_server_ops else True,
                 )
                 self.db.add(skill)
+            if is_server_ops or (
+                existing and is_server_ops_skill(existing)
+            ):
+                server_ops_names.append(skill_data["name"])
             count += 1
 
         if count > 0:
             await self.db.flush()
-        return count
+        return {
+            "reloaded": count,
+            "server_ops": sorted(set(server_ops_names)),
+            "message": f"Reloaded {count} skills",
+        }
 
     async def _download_archive(self, url: str) -> bytes:
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
