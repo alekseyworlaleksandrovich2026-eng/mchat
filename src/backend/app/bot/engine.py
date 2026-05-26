@@ -81,6 +81,37 @@ def _is_patent_search_success(
     )
 
 
+def _format_structured_tool_dict(result: dict[str, Any]) -> str:
+    """Render ops/health-style dicts when message/content/text are absent."""
+    import json
+
+    lines: list[str] = []
+    if result.get("ok") is False and result.get("error"):
+        return ""
+    if "status" in result:
+        icon = "✅" if result.get("ok") else "⚠️"
+        lines.append(f"{icon} **status**: `{result.get('status')}`")
+    for key in (
+        "database",
+        "milvus",
+        "redis",
+        "maintenance_mode",
+        "server_ops_skills_enabled",
+    ):
+        if key in result:
+            lines.append(f"- **{key}**: `{result[key]}`")
+    if lines:
+        return "\n".join(lines)
+
+    try:
+        body = json.dumps(result, ensure_ascii=False, indent=2)
+    except (TypeError, ValueError):
+        body = str(result)
+    if len(body) > 3500:
+        body = body[:3500] + "\n…"
+    return f"```json\n{body}\n```"
+
+
 def _tool_result_display_text(result: Any) -> str:
     """Text to stream to the user from a tool result (preserves markdown links)."""
     if isinstance(result, str) and result.strip():
@@ -108,6 +139,9 @@ def _tool_result_display_text(result: Any) -> str:
             parts.append(f"📥 **下载**：[{name}]({url})")
         if parts:
             return "\n\n".join(parts) + "\n\n"
+        structured = _format_structured_tool_dict(result)
+        if structured.strip():
+            return structured.strip() + "\n\n"
     return ""
 
 

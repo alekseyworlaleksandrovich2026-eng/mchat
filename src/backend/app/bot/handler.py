@@ -195,8 +195,8 @@ async def on_message_created(
                     full_content = last_assistant.content or ""
                 else:
                     full_content = (
-                        "AI 暂时无法回复，请检查管理后台中该助手的 API Key、"
-                        "Base URL 与网络连接（日志中可能有 Connection error）。"
+                        "AI 未返回可见内容（可能仅调用了工具但结果未展示）。"
+                        "请重试；若仍失败，请检查 API Key、Base URL 与网络连接。"
                     )
                     fallback = Message(
                         conversation_id=cov_id,
