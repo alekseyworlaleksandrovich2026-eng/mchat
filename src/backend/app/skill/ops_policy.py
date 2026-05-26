@@ -85,6 +85,8 @@ def sync_server_ops_settings_from_db(
     *,
     enabled: bool,
     allowlist: list[str] | None,
+    shell_allowlist: list[dict] | None = None,
 ) -> None:
     settings.server_ops_skills_enabled = enabled
     settings.server_ops_skill_allowlist = allowlist
+    settings.server_ops_shell_allowlist = shell_allowlist or []

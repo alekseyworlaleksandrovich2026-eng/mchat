@@ -25,6 +25,7 @@ interface AppSettings {
   maintenance_mode: boolean
   server_ops_skills_enabled: boolean
   server_ops_skill_allowlist: string[]
+  server_ops_shell_allowlist: { id: string; command: string }[]
   storage_backend: 'local' | 's3' | 'minio'
   upload_dir: string
   max_upload_size_mb: number
@@ -43,6 +44,28 @@ interface AppLogResponse {
   lines: string[]
 }
 
+function shellAllowlistEntriesToText(
+  entries: { id: string; command: string }[]
+): string {
+  return (entries || [])
+    .map((e) => `${e.id} | ${e.command}`)
+    .join('\n')
+}
+
+function textToShellAllowlistEntries(text: string): { id: string; command: string }[] {
+  const out: { id: string; command: string }[] = []
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const pipe = line.indexOf('|')
+    if (pipe < 0) continue
+    const id = line.slice(0, pipe).trim()
+    const command = line.slice(pipe + 1).trim()
+    if (id && command) out.push({ id, command })
+  }
+  return out
+}
+
 export function SettingsPage() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<AppSettings>({
@@ -58,6 +81,7 @@ export function SettingsPage() {
     maintenance_mode: false,
     server_ops_skills_enabled: false,
     server_ops_skill_allowlist: [],
+    server_ops_shell_allowlist: [],
     storage_backend: 'local',
     upload_dir: '../../uploads',
     max_upload_size_mb: 50,
@@ -76,6 +100,7 @@ export function SettingsPage() {
   const [logSource, setLogSource] = useState<'app' | 'error'>('app')
   const [logLines, setLogLines] = useState<string[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
+  const [shellAllowlistText, setShellAllowlistText] = useState('')
 
   useEffect(() => {
     loadSettings()
@@ -90,7 +115,12 @@ export function SettingsPage() {
   const loadSettings = async () => {
     try {
       const data = await api.get<AppSettings>('/settings')
-      if (data) setSettings(data)
+      if (data) {
+        setSettings(data)
+        setShellAllowlistText(
+          shellAllowlistEntriesToText(data.server_ops_shell_allowlist || [])
+        )
+      }
     } catch (err) {
       console.error('Failed to load settings:', err)
     } finally {
@@ -473,6 +503,22 @@ export function SettingsPage() {
                     })
                   }
                   placeholder={t('settings.serverOpsAllowlistPlaceholder')}
+                />
+              )}
+              {settings.server_ops_skills_enabled && (
+                <Textarea
+                  label={t('settings.serverOpsShellAllowlist')}
+                  value={shellAllowlistText}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                    const text = e.target.value
+                    setShellAllowlistText(text)
+                    setSettings({
+                      ...settings,
+                      server_ops_shell_allowlist: textToShellAllowlistEntries(text),
+                    })
+                  }}
+                  rows={6}
+                  placeholder={t('settings.serverOpsShellAllowlistPlaceholder')}
                 />
               )}
             </div>

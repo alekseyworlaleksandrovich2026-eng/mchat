@@ -139,6 +139,26 @@ def _tool_result_display_text(result: Any) -> str:
             parts.append(f"📥 **下载**：[{name}]({url})")
         if parts:
             return "\n\n".join(parts) + "\n\n"
+        if isinstance(result.get("lines"), list) and result["lines"]:
+            text = "\n".join(str(x) for x in result["lines"])
+            header = f"**日志** `{result.get('path', '')}`"
+            return f"{header}\n\n```text\n{text.rstrip()}\n```\n\n"
+        stdout = result.get("stdout")
+        stderr = result.get("stderr")
+        if stdout is not None or stderr is not None:
+            from app.skill.shell_allowlist import format_command_output_message
+
+            cmd = str(result.get("command") or result.get("shell_id") or "command")
+            code = int(result.get("exit_code", 0 if result.get("ok") else 1))
+            return (
+                format_command_output_message(
+                    cmd,
+                    str(stdout or ""),
+                    str(stderr or ""),
+                    code,
+                )
+                + "\n\n"
+            )
         structured = _format_structured_tool_dict(result)
         if structured.strip():
             return structured.strip() + "\n\n"

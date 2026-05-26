@@ -269,8 +269,13 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                     "disk",
                     "services",
                     "db",
+                    "run",
                 ],
-                "description": "health/logs/milvus/k8s/redis/disk/services/db",
+                "description": "health/logs/milvus/k8s/redis/disk/services/db/run",
+            },
+            "shell_id": {
+                "type": "string",
+                "description": "command=run 时：系统设置里配置的白名单命令 id",
             },
             "source": {
                 "type": "string",
@@ -342,6 +347,7 @@ _MCHAT_OPS_HINT = (
     "- redis / disk: Redis 连通与磁盘用量\n"
     "- services: systemd 用户服务状态（mchat-cloud-backend 等）\n"
     "- db: MySQL 连通探测\n"
+    "- run: 执行白名单 shell（shell_id，在系统设置 → 安全 → 运维 Shell 白名单配置）\n"
     "运维命令结果直接总结给用户，勿编造未执行过的输出。"
 )
 

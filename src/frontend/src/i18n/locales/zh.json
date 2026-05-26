@@ -764,6 +764,8 @@
     "serverOpsSkillsHint": "仅管理员在管理后台对话中可用（非 Widget/门户）。含健康检查、日志、Milvus、只读 K8s。保存后请在技能页「重新加载」。",
     "serverOpsAllowlist": "运维技能白名单（可选）",
     "serverOpsAllowlistPlaceholder": "留空=允许全部 server_ops 技能，如 mchat-ops",
+    "serverOpsShellAllowlist": "运维 Shell 白名单",
+    "serverOpsShellAllowlistPlaceholder": "每行：命令id | 完整命令（禁止 ; | && 等）\n例：k8s-pods | kubectl get pods -n default -o wide --request-timeout=30s",
     "toastSaved": "设置已保存",
     "toastSaveFailed": "保存失败",
     "langZh": "简体中文",

@@ -765,6 +765,8 @@
     "serverOpsSkillsHint": "Admin-only in admin chat (not widget/portal). Health, logs, Milvus, read-only kubectl. Reload skills after saving.",
     "serverOpsAllowlist": "Ops skill allowlist (optional)",
     "serverOpsAllowlistPlaceholder": "Empty = all server_ops skills, e.g. mchat-ops",
+    "serverOpsShellAllowlist": "Ops shell allowlist",
+    "serverOpsShellAllowlistPlaceholder": "One per line: id | full command (no ; | &&)\ne.g. k8s-pods | kubectl get pods -n default -o wide",
     "toastSaved": "Settings saved",
     "toastSaveFailed": "Save failed",
     "langZh": "简体中文",

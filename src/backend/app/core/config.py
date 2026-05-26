@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     maintenance_mode: bool = False
     server_ops_skills_enabled: bool = False
     server_ops_skill_allowlist: list[str] | None = None
+    server_ops_shell_allowlist: list[dict] | None = None
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

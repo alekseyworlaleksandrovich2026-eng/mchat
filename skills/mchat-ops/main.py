@@ -9,7 +9,17 @@ from typing import Any
 
 _K8S_RESOURCES = frozenset({"pods", "nodes", "deployments", "services", "events"})
 _OPS_COMMANDS = frozenset(
-    {"health", "logs", "milvus", "k8s", "redis", "disk", "services", "db"}
+    {
+        "health",
+        "logs",
+        "milvus",
+        "k8s",
+        "redis",
+        "disk",
+        "services",
+        "db",
+        "run",
+    }
 )
 _SYSTEMD_UNITS = (
     "mchat-cloud-backend.service",
@@ -26,11 +36,20 @@ def _tail_log(source: str, lines: int) -> dict[str, Any]:
         return {"ok": False, "message": f"日志不存在: {path}"}
     text = path.read_text(encoding="utf-8", errors="replace")
     chunk = text.splitlines()[-safe_lines:]
+    body = "\n".join(chunk)
+    from app.skill.shell_allowlist import format_command_output_message
+
     return {
         "ok": True,
         "source": source,
         "lines": chunk,
         "path": str(path.resolve()),
+        "message": format_command_output_message(
+            f"tail {log_file} ({safe_lines} lines)",
+            body,
+            "",
+            0,
+        ),
     }
 
 
@@ -234,17 +253,33 @@ def _k8s_get(namespace: str, resource: str) -> dict[str, Any]:
             timeout=35,
             check=False,
         )
+        command_display = " ".join(cmd)
+        stdout = (proc.stdout or "")[-12000:]
+        stderr = (proc.stderr or "")[-3000:]
+        from app.skill.shell_allowlist import format_command_output_message
+
         return {
             "ok": proc.returncode == 0,
-            "command": " ".join(cmd),
-            "stdout": (proc.stdout or "")[-8000:],
-            "stderr": (proc.stderr or "")[-2000:],
+            "message": format_command_output_message(
+                command_display, stdout, stderr, proc.returncode
+            ),
+            "command": command_display,
+            "stdout": stdout,
+            "stderr": stderr,
             "exit_code": proc.returncode,
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "kubectl 超时"}
     except OSError as e:
         return {"ok": False, "error": str(e)}
+
+
+def _run_allowlisted(shell_id: str | None) -> dict[str, Any]:
+    from app.core.config import settings
+    from app.skill.shell_allowlist import run_allowlisted_command
+
+    allowlist = getattr(settings, "server_ops_shell_allowlist", None) or []
+    return run_allowlisted_command(shell_id, allowlist=allowlist)
 
 
 def run(
@@ -254,6 +289,7 @@ def run(
     lines: int = 80,
     namespace: str = "default",
     resource: str = "pods",
+    shell_id: str | None = None,
     **_: Any,
 ) -> dict[str, Any]:
     cmd = (command or "health").strip().lower()
@@ -273,4 +309,6 @@ def run(
         return _services()
     if cmd == "db":
         return _db_ping()
+    if cmd == "run":
+        return _run_allowlisted(shell_id)
     return {"ok": False, "error": f"未知 command: {cmd}，可选: {', '.join(sorted(_OPS_COMMANDS))}"}

@@ -18,6 +18,18 @@
 | disk | 磁盘用量 |
 | services | `systemctl is-active`（mchat-cloud-backend 等） |
 | db | MySQL `SELECT 1` |
+| run | 执行 **系统设置 → 安全 → 运维 Shell 白名单** 中的命令（`shell_id`） |
+
+### Shell 白名单格式
+
+每行：`命令id | 完整命令`（按空格分词执行，**不用** shell；禁止 `;`、`|`、`&&` 等）。
+
+```
+k8s-pods | kubectl get pods -n default -o wide --request-timeout=30s
+k8s-nodes | kubectl get nodes -o wide
+```
+
+对话示例：`用 mchat-ops 执行 run，shell_id 为 k8s-pods`
 
 重新加载技能时 API 会返回 `server_ops` 技能名列表（默认禁用，需手动启用）。
 
