@@ -9,6 +9,12 @@ export type ChannelFieldDef = {
   type?: string
 }
 
+const agentBindingField = (t: TFunction): ChannelFieldDef => ({
+  key: 'customer_id',
+  label: t('channels.types.wechat.fields.customer_id.label'),
+  placeholder: t('channels.types.wechat.fields.customer_id.placeholder'),
+})
+
 export type ChannelTypeDef = {
   label: string
   icon: React.FC<{ className?: string }>
@@ -68,6 +74,7 @@ export function getChannelTypes(t: TFunction): Record<string, ChannelTypeDef> {
       icon: MessageCircle,
       description: t('channels.types.dingtalk.description'),
       fields: [
+        agentBindingField(t),
         {
           key: 'app_key',
           label: t('channels.types.dingtalk.fields.app_key.label'),
@@ -91,6 +98,7 @@ export function getChannelTypes(t: TFunction): Record<string, ChannelTypeDef> {
       icon: MessageCircle,
       description: t('channels.types.whatsapp.description'),
       fields: [
+        agentBindingField(t),
         {
           key: 'phone_number_id',
           label: t('channels.types.whatsapp.fields.phone_number_id.label'),
@@ -114,6 +122,7 @@ export function getChannelTypes(t: TFunction): Record<string, ChannelTypeDef> {
       icon: MessageCircle,
       description: t('channels.types.telegram.description'),
       fields: [
+        agentBindingField(t),
         {
           key: 'bot_token',
           label: t('channels.types.telegram.fields.bot_token.label'),
@@ -127,6 +136,7 @@ export function getChannelTypes(t: TFunction): Record<string, ChannelTypeDef> {
       icon: MessageCircle,
       description: t('channels.types.slack.description'),
       fields: [
+        agentBindingField(t),
         {
           key: 'bot_token',
           label: t('channels.types.slack.fields.bot_token.label'),
@@ -146,6 +156,7 @@ export function getChannelTypes(t: TFunction): Record<string, ChannelTypeDef> {
       icon: MessageCircle,
       description: t('channels.types.line.description'),
       fields: [
+        agentBindingField(t),
         {
           key: 'channel_access_token',
           label: t('channels.types.line.fields.channel_access_token.label'),

@@ -47,6 +47,9 @@ class CustomerConfig(Base):
     position: Mapped[str] = mapped_column(
         String(20), nullable=False, default="right"
     )  # left, right
+    pre_chat_fields: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # [{key, label, required?, type?}] shown before first message
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )

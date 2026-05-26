@@ -164,6 +164,7 @@ async def get_widget_config_full(
             "showcaseSkillIds": _normalize_id_list(theme.get("showcaseSkillIds")),
         },
         "enabled": config.enabled,
+        "pre_chat_fields": config.pre_chat_fields or [],
     }
 
 

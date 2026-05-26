@@ -84,6 +84,15 @@ interface AgentStats {
   avg_response_time_seconds: number | null
 }
 
+interface RetrievalStats {
+  period_days: number
+  total_searches: number
+  zero_result_count: number
+  zero_result_rate: number
+  avg_duration_ms: number
+  top_zero_result_queries: Array<{ query: string; count: number }>
+}
+
 const PERIOD_OPTIONS = [
   { value: '7', labelKey: 'dashboard.period7d' },
   { value: '30', labelKey: 'dashboard.period30d' },
@@ -96,6 +105,7 @@ export function AdminDashboard() {
   const [overview, setOverview] = useState<OverviewStats | null>(null)
   const [trends, setTrends] = useState<TrendsResponse | null>(null)
   const [agentStats, setAgentStats] = useState<AgentStats[] | null>(null)
+  const [retrievalStats, setRetrievalStats] = useState<RetrievalStats | null>(null)
   const [activities, setActivities] = useState<RecentActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -145,6 +155,15 @@ export function AdminDashboard() {
     }
   }, [])
 
+  const loadRetrievalStats = useCallback(async (p: string) => {
+    try {
+      const data = await api.get<RetrievalStats>('/dashboard/retrieval-stats', { days: p })
+      setRetrievalStats(data)
+    } catch (err) {
+      console.error('Failed to load retrieval stats:', err)
+    }
+  }, [])
+
   const loadActivities = useCallback(async () => {
     try {
       const data = await api.get<RecentActivity[]>('/dashboard/activities')
@@ -160,6 +179,7 @@ export function AdminDashboard() {
       loadOverview(period),
       loadTrends(period),
       loadAgentStats(),
+      loadRetrievalStats(period),
       loadActivities(),
     ]).finally(() => setLoading(false))
   }, [])
@@ -168,6 +188,7 @@ export function AdminDashboard() {
     setPeriod(p)
     loadOverview(p)
     loadTrends(p)
+    loadRetrievalStats(p)
   }
 
   if (loading) {
@@ -284,6 +305,44 @@ export function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {retrievalStats && (
+        <Card>
+          <CardContent className="py-4">
+            <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
+              知识库检索（近 {retrievalStats.period_days} 天）
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-3 text-sm">
+              <div>
+                <p className="text-gray-500">检索次数</p>
+                <p className="text-xl font-semibold">{retrievalStats.total_searches}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">零结果率</p>
+                <p className="text-xl font-semibold">
+                  {(retrievalStats.zero_result_rate * 100).toFixed(1)}%
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-500">平均耗时</p>
+                <p className="text-xl font-semibold">{retrievalStats.avg_duration_ms} ms</p>
+              </div>
+            </div>
+            {retrievalStats.top_zero_result_queries.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs text-gray-500 mb-2">高频零结果查询</p>
+                <ul className="text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                  {retrievalStats.top_zero_result_queries.slice(0, 5).map((item) => (
+                    <li key={item.query} className="truncate">
+                      {item.query} ({item.count})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-5">

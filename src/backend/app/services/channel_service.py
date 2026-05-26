@@ -240,6 +240,12 @@ class ChannelService:
                 ),
             }
 
+        if channel_type == "telegram":
+            return await self._test_telegram(config, user_id)
+
+        if channel_type == "dingtalk":
+            return await self._test_dingtalk(config, user_id)
+
         return {
             "ok": True,
             "message": (
@@ -247,3 +253,61 @@ class ChannelService:
                 "第三方平台连通性测试尚未实现"
             ),
         }
+
+    async def _validate_customer_binding(
+        self, user_id: str, config: dict
+    ) -> CustomerConfig | None:
+        customer_id = str(config.get("customer_id") or "").strip()
+        if not customer_id:
+            return None
+        result = await self.db.execute(
+            select(CustomerConfig).where(
+                CustomerConfig.id == customer_id,
+                CustomerConfig.user_id == user_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _test_telegram(self, config: dict, user_id: str) -> dict:
+        token = str(config.get("bot_token") or "").strip()
+        if not token:
+            return {"ok": False, "message": "请填写 Bot Token"}
+        customer = await self._validate_customer_binding(user_id, config)
+        if customer is None:
+            return {"ok": False, "message": "请填写有效的客服配置（customer_id / Agent ID）"}
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"https://api.telegram.org/bot{token}/getMe"
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if not data.get("ok"):
+                return {"ok": False, "message": f"Telegram getMe 失败: {data}"}
+            username = (data.get("result") or {}).get("username") or "bot"
+            return {
+                "ok": True,
+                "message": f"Telegram Bot @{username} 连接成功，已绑定「{customer.name}」",
+            }
+        except Exception as e:
+            return {"ok": False, "message": f"Telegram 连接失败: {e}"}
+
+    async def _test_dingtalk(self, config: dict, user_id: str) -> dict:
+        customer = await self._validate_customer_binding(user_id, config)
+        if customer is None:
+            return {"ok": False, "message": "请填写有效的客服配置（customer_id / Agent ID）"}
+        app_secret = str(config.get("app_secret") or "").strip()
+        webhook_url = str(config.get("webhook_url") or "").strip()
+        if not app_secret and not webhook_url:
+            return {
+                "ok": False,
+                "message": "请填写 App Secret（入站签名校验）或 Webhook URL（出站兜底）",
+            }
+        parts = [f"已绑定「{customer.name}」"]
+        if app_secret:
+            parts.append("App Secret 已配置")
+        if webhook_url:
+            parts.append("Webhook URL 已配置")
+        return {"ok": True, "message": "；".join(parts) + "。请在钉钉开放平台配置出站消息 URL。"}

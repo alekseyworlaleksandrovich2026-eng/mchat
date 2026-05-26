@@ -10,6 +10,7 @@ from app.models.customer import CustomerConfig, WebhookConfig
 from app.models.setting import Setting
 from app.models.channel import Channel
 from app.models.channel_template import ChannelTemplate
+from app.models.retrieval_log import RetrievalLog
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "Setting",
     "Channel",
     "ChannelTemplate",
+    "RetrievalLog",
 ]
