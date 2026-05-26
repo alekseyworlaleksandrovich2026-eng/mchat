@@ -117,6 +117,9 @@ done
 echo "==> Remote setup (pip, db migrate, restart Cloud services)"
 ssh "$REMOTE" "chmod +x ${REMOTE_DIR}/ops/deploy/remote-setup-cloud.sh && bash ${REMOTE_DIR}/ops/deploy/remote-setup-cloud.sh"
 
+echo "==> Fix frontend dist permissions again (after Docker restart)"
+ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist ${REMOTE_DIR}/src/frontend/public 2>/dev/null || true"
+
 echo ""
 echo "Cloud deployed to https://mchat.9235.net"
 echo "  Admin:    https://mchat.9235.net/admin"
