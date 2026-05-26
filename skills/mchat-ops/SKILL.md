@@ -13,7 +13,7 @@ parameters: {"type":"object","properties":{"command":{"type":"string","enum":["h
 
 ## 子命令
 
-- `health` — 本机 `/api/health` 与数据库探测摘要
+- `health` — 进程内 DB / Milvus / Redis 状态（避免单 worker 自调 HTTP 死锁）
 - `logs` — 尾部日志（`source`: app | error，`lines`: 默认 80）
 - `milvus` — Milvus 运行时配置与连接状态
 - `k8s` — 只读 `kubectl get`（需服务器安装 kubectl 且配置 kubeconfig）

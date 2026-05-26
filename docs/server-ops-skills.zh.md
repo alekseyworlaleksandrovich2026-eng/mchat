@@ -10,7 +10,7 @@
 
 | command | 说明 |
 |---------|------|
-| health | 请求本机 `/api/health` |
+| health | 进程内 DB / Milvus / Redis 状态（不 HTTP 自调，避免单 worker 死锁） |
 | logs | 尾部 `logs/app.log` 或 `error.log` |
 | milvus | Milvus 启用状态与连接 |
 | k8s | 只读 `kubectl get pods|nodes|...`（需服务器已配置 kubectl） |

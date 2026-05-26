@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
-from urllib.request import urlopen
 
 _K8S_RESOURCES = frozenset({"pods", "nodes", "deployments", "services", "events"})
 _OPS_COMMANDS = frozenset(
@@ -39,22 +35,43 @@ def _tail_log(source: str, lines: int) -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    port = os.environ.get("SERVER_PORT") or os.environ.get("PORT") or "3001"
-    url = f"http://127.0.0.1:{port}/api/health"
-    out: dict[str, Any] = {"url": url}
-    try:
-        with urlopen(url, timeout=8) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            out["http_status"] = resp.status
-            try:
-                out["body"] = json.loads(body)
-            except json.JSONDecodeError:
-                out["body"] = body[:2000]
-        out["ok"] = True
-    except URLError as e:
-        out["ok"] = False
-        out["error"] = str(e)
-    return out
+    """In-process health summary (no HTTP self-call — avoids single-worker deadlock)."""
+    from app.core.config import settings
+
+    db_check = _db_ping()
+    milvus_check = _milvus()
+    redis_check = _redis_ping()
+
+    milvus_status = "disabled"
+    if milvus_check.get("enabled"):
+        milvus_status = (
+            "connected" if milvus_check.get("connected") else "disconnected"
+        )
+
+    status = "healthy"
+    if not db_check.get("ok"):
+        status = "degraded"
+    elif milvus_check.get("enabled") and not milvus_check.get("connected"):
+        status = "degraded"
+    if getattr(settings, "maintenance_mode", False):
+        status = "maintenance"
+
+    return {
+        "ok": status in ("healthy", "maintenance"),
+        "status": status,
+        "database": "connected" if db_check.get("ok") else "disconnected",
+        "milvus": milvus_status,
+        "redis": "connected" if redis_check.get("ok") else "disconnected",
+        "maintenance_mode": bool(getattr(settings, "maintenance_mode", False)),
+        "server_ops_skills_enabled": bool(
+            getattr(settings, "server_ops_skills_enabled", False)
+        ),
+        "details": {
+            "database": db_check,
+            "milvus": milvus_check,
+            "redis": redis_check,
+        },
+    }
 
 
 def _milvus() -> dict[str, Any]:
