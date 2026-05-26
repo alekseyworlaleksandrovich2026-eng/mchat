@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
 import os
@@ -116,7 +117,7 @@ async def _execute_python_tool(
     if not script_path.exists():
         return {"error": f"No script found in {skill_dir}"}
 
-    try:
+    def _run_blocking() -> Any:
         with _skill_secrets_env(skill):
             os.environ["MCHAT_UPLOAD_DIR"] = str(settings.upload_path.resolve())
             warm_skill_export_deps(skill.name, skill_dir)
@@ -131,19 +132,20 @@ async def _execute_python_tool(
 
             if hasattr(module, "run"):
                 filtered = _filter_kwargs_for_callable(module.run, args)
-                result = module.run(**filtered)
-                return _normalize_tool_result(result)
+                return module.run(**filtered)
 
             if hasattr(module, "main"):
                 sig = inspect.signature(module.main)
                 if len(sig.parameters) == 0:
-                    result = _dispatch_namespace_skill(skill_dir, module, args)
-                else:
-                    filtered = _filter_kwargs_for_callable(module.main, args)
-                    result = module.main(**filtered)
-                return _normalize_tool_result(result)
+                    return _dispatch_namespace_skill(skill_dir, module, args)
+                filtered = _filter_kwargs_for_callable(module.main, args)
+                return module.main(**filtered)
 
             return {"error": "No main() or run() function found in skill script"}
+
+    try:
+        result = await asyncio.to_thread(_run_blocking)
+        return _normalize_tool_result(result)
 
     except SystemExit as e:
         logger.error(f"Python tool '{skill.name}' sys.exit({e.code})")
