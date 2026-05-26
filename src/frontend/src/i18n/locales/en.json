@@ -402,6 +402,7 @@
     "toastModelDeleteFailed": "Delete failed",
     "providerCompatible": "OpenAI-compatible API",
     "providerLocal": "Uploaded local model",
+    "globalLocalEmbedHint": "Upload a model zip below first, then enter its model ID in the Model field and save; dimension must match Milvus.",
     "localModelSelect": "Local model",
     "pickLocalModel": "Select a model",
     "localModelReindexHint": "After switching models, run full re-embed and align Milvus dimension",

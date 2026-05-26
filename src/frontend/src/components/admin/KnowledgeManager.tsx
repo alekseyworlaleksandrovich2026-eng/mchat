@@ -551,6 +551,7 @@ export function KnowledgeManager() {
                 <option value="ollama">Ollama</option>
                 <option value="openai">OpenAI API</option>
                 <option value="openai-compatible">{t('knowledge.providerCompatible')}</option>
+                <option value="local">{t('knowledge.providerLocal')}</option>
               </select>
             </div>
             <div>
@@ -587,6 +588,9 @@ export function KnowledgeManager() {
               />
             </div>
           </div>
+          {globalEmbedProvider === 'local' && (
+            <p className={ragHint}>{t('knowledge.globalLocalEmbedHint')}</p>
+          )}
           {(globalEmbedProvider === 'openai' ||
             globalEmbedProvider === 'openai-compatible') && (
             <div className="max-w-md">

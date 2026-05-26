@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.utils.upload_paths import resolve_upload_root
+from app.utils.secret_mask import is_secret_mask, mask_secret
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.milvus_runtime import apply_milvus_runtime
 from app.skill.ops_policy import sync_server_ops_settings_from_db
@@ -17,6 +19,8 @@ from app.schemas.settings import AppSettingsResponse, AppSettingsUpdate
 
 
 DEFAULT_SETTINGS = AppSettingsResponse()
+
+_SECRET_SETTING_KEYS = frozenset({"s3_secret_key", "embedding_api_key"})
 
 
 class SettingsService:
@@ -52,7 +56,8 @@ class SettingsService:
         milvus_host = get_val("milvus_host", DEFAULT_SETTINGS.milvus_host)
         milvus_port = get_val("milvus_port", DEFAULT_SETTINGS.milvus_port)
         storage_backend = get_val("storage_backend", DEFAULT_SETTINGS.storage_backend)
-        upload_dir = get_val("upload_dir", DEFAULT_SETTINGS.upload_dir)
+        upload_dir_raw = get_val("upload_dir", DEFAULT_SETTINGS.upload_dir)
+        upload_dir = str(resolve_upload_root(upload_dir_raw))
         max_upload_size_mb = get_val(
             "max_upload_size_mb", DEFAULT_SETTINGS.max_upload_size_mb
         )
@@ -155,14 +160,14 @@ class SettingsService:
             embedding_model=embedding_model,
             embedding_api_base=embedding_api_base,
             embedding_dimension=embedding_dimension,
-            embedding_api_key=embedding_api_key,
+            embedding_api_key=mask_secret(embedding_api_key),
             storage_backend=storage_backend,
             upload_dir=upload_dir,
             max_upload_size_mb=max_upload_size_mb,
             s3_endpoint=s3_endpoint,
             s3_region=s3_region,
             s3_access_key=s3_access_key,
-            s3_secret_key=s3_secret_key,
+            s3_secret_key=mask_secret(s3_secret_key),
             s3_bucket=s3_bucket,
             s3_use_ssl=s3_use_ssl,
             s3_public_base_url=s3_public_base_url,
@@ -173,9 +178,18 @@ class SettingsService:
         """Update settings, creating keys that don't exist."""
         updates = data.model_dump(exclude_unset=True)
 
+        for secret_key in _SECRET_SETTING_KEYS:
+            if secret_key in updates and is_secret_mask(updates.get(secret_key)):
+                updates.pop(secret_key)
+
         # Fetch existing settings
         result = await self.db.execute(select(Setting))
         existing: dict[str, Setting] = {r.key: r for r in result.scalars().all()}
+
+        if "upload_dir" in updates and updates["upload_dir"]:
+            updates["upload_dir"] = str(
+                resolve_upload_root(str(updates["upload_dir"]))
+            )
 
         if "server_ops_shell_allowlist" in updates:
             raw_shell = updates.pop("server_ops_shell_allowlist")

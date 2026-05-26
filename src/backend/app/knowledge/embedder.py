@@ -160,7 +160,9 @@ class EmbeddingService:
                     return embedding
         except Exception as e:
             logger.warning(f"Ollama embedding failed ({self.model}): {e}")
-        return [0.0] * self.dimension
+            raise RuntimeError(
+                f"Ollama embedding failed ({self.model} @ {base}): {e}"
+            ) from e
 
     _cache: dict[str, list[float]] = {}
 

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import mimetypes
 import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import settings
+from app.utils.upload_paths import resolve_upload_root, safe_upload_file_path
+from app.utils.upload_tokens import signed_upload_url
 
 
 @dataclass
@@ -66,13 +69,13 @@ class StorageService:
         return self._save_local(data, key=key)
 
     def _save_local(self, data: bytes, *, key: str) -> StoredObject:
-        root = settings.upload_path
+        root = resolve_upload_root()
         full_path = root / key
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_bytes(data)
         return StoredObject(
             key=key,
-            url=f"/uploads/{key}",
+            url=signed_upload_url(key),
             local_path=full_path,
         )
 
@@ -115,15 +118,73 @@ class StorageService:
             ContentType=content_type or "application/octet-stream",
         )
 
+        # Browser-facing URL: same-origin /uploads proxy (see app.api.uploads).
+        # Optional s3_public_base_url for a dedicated CDN / public MinIO gateway.
         public_base = (settings.s3_public_base_url or "").strip().rstrip("/")
         if public_base:
             url = f"{public_base}/{key}"
-        elif endpoint_url:
-            url = f"{endpoint_url}/{settings.s3_bucket}/{key}"
         else:
-            url = f"s3://{settings.s3_bucket}/{key}"
+            url = signed_upload_url(key)
 
         return StoredObject(key=key, url=url)
+
+    def is_object_storage(self) -> bool:
+        backend = (settings.storage_backend or "local").strip().lower()
+        return backend in ("s3", "minio")
+
+    def fetch_bytes(self, key: str) -> tuple[bytes, str] | None:
+        """Load object by storage key from MinIO/S3, then local disk fallback."""
+        normalized = (key or "").strip().lstrip("/")
+        if not normalized or ".." in normalized.split("/"):
+            return None
+
+        if self.is_object_storage():
+            data = self._fetch_s3_bytes(normalized)
+            if data is not None:
+                mime, _ = mimetypes.guess_type(normalized)
+                return data, mime or "application/octet-stream"
+
+        path = safe_upload_file_path(normalized)
+        if path is not None and path.is_file():
+            mime, _ = mimetypes.guess_type(str(path))
+            return path.read_bytes(), mime or "application/octet-stream"
+        return None
+
+    def _fetch_s3_bytes(self, key: str) -> bytes | None:
+        endpoint_url = _build_s3_endpoint_url()
+        if not endpoint_url or not (settings.s3_bucket or "").strip():
+            return None
+        try:
+            import boto3
+            from botocore.config import Config
+        except Exception:
+            return None
+
+        client = boto3.client(
+            "s3",
+            aws_access_key_id=settings.s3_access_key or None,
+            aws_secret_access_key=settings.s3_secret_key or None,
+            region_name=settings.s3_region or None,
+            endpoint_url=endpoint_url,
+            config=Config(
+                s3={
+                    "addressing_style": "path"
+                    if settings.s3_force_path_style
+                    else "auto"
+                }
+            ),
+        )
+        try:
+            response = client.get_object(
+                Bucket=settings.s3_bucket,
+                Key=key,
+            )
+            body = response.get("Body")
+            if body is None:
+                return None
+            return body.read()
+        except Exception:
+            return None
 
 
 storage_service = StorageService()

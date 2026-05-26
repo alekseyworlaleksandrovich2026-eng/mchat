@@ -18,6 +18,7 @@ from app.skill.ops_policy import (
     server_ops_enabled_for_user,
 )
 from app.skill.utils import get_prompt_body, has_executable_script
+from app.bot.patent_search_followup import append_patent_tool_hints as _append_patent_tool_hints
 
 
 def _merge_channel_skill_bindings(
@@ -162,6 +163,7 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
                     "legal",
                     "citing",
                     "similar",
+                    "image",
                     "analysis",
                     "company",
                     "copyright",
@@ -320,43 +322,28 @@ def _truncate_prompt_body(body: str) -> str:
         return body
     return (
         body[:_MAX_PROMPT_SKILL_CHARS]
-        + "\n\n…（技能说明已截断，完整内容见技能文件）"
+        + "\n\n…(skill guidance truncated; see skill files for full text)"
     )
-
-
-_PATENT_LINK_PRESERVE_HINT = (
-    "\n\n## Tool: patent-search\n"
-    "- search（默认）: query + 可选 page, page_size, details, scope, sort\n"
-    "- analysis: 必须同时传 command=analysis、query、dimension（applicant|ipc|"
-    "applicationYear|legalStatus|province）\n"
-    "- detail/claims/legal 等: 传 patent_id\n"
-    "- company: 传 company_name（企业工商全称）\n"
-    "- scope: cn 默认；全球/各国用 all|us|jp|kr|tw|wo|ep\n"
-    "统计分析/详情/企业画像等命令会一次性返回完整结果，不要再次调用 search 重复列表。\n"
-    "仅 search 成功且表格已展示后：再写「初步观察」式自然语言总结（要点列表），"
-    "勿重复表格、勿向用户展示 command=/page= 等技术参数。"
-)
 
 
 _MCHAT_OPS_HINT = (
     "\n\n## Tool: mchat-ops\n"
-    "- health: API 与依赖健康摘要\n"
-    "- logs: source=app|error, lines 默认 80\n"
-    "- milvus: 向量库运行时状态\n"
-    "- k8s: 只读 kubectl get（namespace, resource=pods|nodes|...）\n"
-    "- redis / disk: Redis 连通与磁盘用量\n"
-    "- services: systemd 用户服务状态（mchat-cloud-backend 等）\n"
-    "- db: MySQL 连通探测\n"
-    "- run: 执行白名单 shell（shell_id，在系统设置 → 安全 → 运维 Shell 白名单配置）\n"
-    "运维命令结果直接总结给用户，勿编造未执行过的输出。"
+    "- health: DB / Milvus / Redis summary\n"
+    "- logs: source=app|error, lines default 80\n"
+    "- milvus: vector store runtime status\n"
+    "- k8s: read-only kubectl get (namespace, resource=pods|nodes|...)\n"
+    "- redis / disk: connectivity and disk usage\n"
+    "- services: systemd service status\n"
+    "- db: MySQL ping\n"
+    "- run: allowlisted shell command (shell_id from Settings → Security)\n"
+    "Summarize ops output for the user; do not invent data."
 )
 
 
 def append_patent_tool_hints(
     system_prompt: str, tool_skills: list[Skill]
 ) -> str:
-    if any((s.name or "") == "patent-search" for s in tool_skills):
-        system_prompt += _PATENT_LINK_PRESERVE_HINT
+    system_prompt = _append_patent_tool_hints(system_prompt, tool_skills)
     if any((s.name or "") == "mchat-ops" for s in tool_skills):
         system_prompt += _MCHAT_OPS_HINT
     return system_prompt

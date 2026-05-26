@@ -55,13 +55,14 @@ class Settings(BaseSettings):
     aliyun_sms_sign_name: str = "笑溢网络"
     aliyun_sms_template_code: str = "SMS_289525897"
     aliyun_sms_region: str = "cn-hangzhou"
-    patent9235_base_url: str = "https://www.9235.net"
 
-    # 9235.net SSO (same JWT as trade.9235.net product auth)
+    # Patent portal / SSO (optional; set in .env for your deployment)
+    patent9235_base_url: str = ""
+    patent_portal_url_template: str = ""
     patent9235_jwt_secret: str = ""
     patent9235_sso_product_id: str = "pdmchat"
     patent9235_sso_channel_id: str = "mchat01"
-    patent9235_sso_login_url: str = "https://www.9235.net/user/login"
+    patent9235_sso_login_url: str = ""
 
     # Encrypt skill_bindings secrets at rest (Fernet key or any string — hashed if needed)
     secrets_encryption_key: str = ""
@@ -69,10 +70,10 @@ class Settings(BaseSettings):
     # Invoice header (portal order PDF/HTML)
     invoice_company_name: str = "MChat Cloud"
     invoice_company_tax_id: str = ""
-    invoice_support_email: str = "support@9235.net"
+    invoice_support_email: str = ""
 
-    # Payment (same merchant as www.9235.net / buycdk)
-    mchat_public_base_url: str = "https://mchat.9235.net"
+    # Public site URL (checkout callbacks, invoices)
+    mchat_public_base_url: str = ""
     alipay_app_id: str = ""
     alipay_private_key: str = ""
     alipay_public_key: str = ""
@@ -116,6 +117,9 @@ class Settings(BaseSettings):
     s3_use_ssl: bool = False
     s3_public_base_url: str = ""
     s3_force_path_style: bool = True
+    # Require ?exp=&sig= on GET /uploads (legacy tokenless URLs still work when false)
+    uploads_require_signed_access: bool = False
+    uploads_signed_url_ttl_seconds: int = 60 * 60 * 24 * 365
 
     # LLM provider API keys (optional env fallback when DB config key is empty)
     openai_api_key: str = ""
@@ -147,7 +151,9 @@ class Settings(BaseSettings):
 
     @property
     def upload_path(self) -> Path:
-        return Path(self.upload_dir)
+        from app.utils.upload_paths import resolve_upload_root
+
+        return resolve_upload_root(self.upload_dir)
 
     @property
     def skills_path(self) -> Path:

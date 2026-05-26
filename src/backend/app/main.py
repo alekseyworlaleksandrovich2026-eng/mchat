@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -7,7 +8,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -17,6 +17,7 @@ from app.core.event_bus import event_bus
 from app.exceptions import MChatError
 from app.knowledge.milvus_client import milvus_client
 from app.utils.logger import setup_logger
+from app.utils.upload_paths import resolve_upload_root
 
 
 @asynccontextmanager
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with async_session_factory() as db:
         await SettingsService(db).get_settings()
         await db.commit()
+    if settings.storage_backend.strip().lower() == "local":
+        os.makedirs(resolve_upload_root(), exist_ok=True)
     await milvus_client.connect()
     if milvus_client._connected:
         await milvus_client.create_collection()
@@ -81,12 +84,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    import os
-
     # Ensure required directories exist
-    use_local_storage = settings.storage_backend.strip().lower() == "local"
-    if use_local_storage:
-        os.makedirs(settings.upload_path, exist_ok=True)
+    storage_backend = (settings.storage_backend or "local").strip().lower()
+    if storage_backend == "local":
+        os.makedirs(resolve_upload_root(), exist_ok=True)
     os.makedirs(settings.skills_path, exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
@@ -230,14 +231,10 @@ def create_app() -> FastAPI:
             content={"detail": "Internal server error"},
         )
 
-    # Static files mount
-    upload_path = settings.upload_path
-    if use_local_storage and upload_path.exists():
-        app.mount(
-            "/uploads",
-            StaticFiles(directory=str(upload_path)),
-            name="uploads",
-        )
+    # Same-origin /uploads — proxies MinIO/S3 or serves local files
+    from app.api.uploads import router as uploads_router
+
+    app.include_router(uploads_router)
 
     # Include API routers
     from app.api import api_router

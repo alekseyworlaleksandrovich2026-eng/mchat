@@ -401,6 +401,7 @@
     "toastModelDeleteFailed": "删除失败",
     "providerCompatible": "OpenAI 兼容 API",
     "providerLocal": "本地上传模型",
+    "globalLocalEmbedHint": "请先在下方「本地上传 Embedding 模型」上传 zip，再将模型 ID 填入「模型」并保存；维度须与 Milvus 一致。",
     "localModelSelect": "已上传的本地模型",
     "pickLocalModel": "请选择模型",
     "localModelReindexHint": "切换本地模型后请执行全量重嵌入，并确保 Milvus 向量维度一致",

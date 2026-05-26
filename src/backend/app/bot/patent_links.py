@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-DEFAULT_TEMPLATE = "https://www.9235.net/patent/{patent_id}.html"
+from app.core.config import settings
 
 # 中国发明专利公开号常见形态
 _PATENT_ID_RE = re.compile(r"\b(CN\d{6,}[A-Z0-9]{0,3})\b")
@@ -20,6 +20,17 @@ def _coerce_bool(value: Any) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def default_patent_portal_url_template() -> str:
+    """White-label default from env; empty means no global patent links."""
+    explicit = (getattr(settings, "patent_portal_url_template", None) or "").strip()
+    if explicit:
+        return explicit
+    base = (getattr(settings, "patent9235_base_url", None) or "").strip().rstrip("/")
+    if base:
+        return f"{base}/patent/{{patent_id}}.html"
+    return ""
 
 
 def patent_link_settings_from_skills(tool_skills: list[Any]) -> dict[str, Any]:
@@ -37,11 +48,16 @@ def patent_link_settings_from_skills(tool_skills: list[Any]) -> dict[str, Any]:
         )
         template = (
             secrets.get("patent_portal_url_template")
+            or secrets.get("patentUrl")
+            or secrets.get("patent_url")
             or config.get("patent_portal_url_template")
-            or DEFAULT_TEMPLATE
+            or config.get("patentUrl")
+            or config.get("patent_url")
+            or default_patent_portal_url_template()
         )
         return {"enabled": enabled, "template": str(template)}
-    return {"enabled": False, "template": DEFAULT_TEMPLATE}
+    fallback = default_patent_portal_url_template()
+    return {"enabled": False, "template": fallback}
 
 
 def _portal_url(patent_id: str, template: str) -> str:
