@@ -56,9 +56,16 @@ def _health() -> dict[str, Any]:
     if getattr(settings, "maintenance_mode", False):
         status = "maintenance"
 
+    summary = (
+        f"MChat 健康检查：{status}；数据库 "
+        f"{'正常' if db_check.get('ok') else '异常'}；"
+        f"Milvus {milvus_status}；Redis "
+        f"{'正常' if redis_check.get('ok') else '异常'}"
+    )
     return {
         "ok": status in ("healthy", "maintenance"),
         "status": status,
+        "message": summary,
         "database": "connected" if db_check.get("ok") else "disconnected",
         "milvus": milvus_status,
         "redis": "connected" if redis_check.get("ok") else "disconnected",
