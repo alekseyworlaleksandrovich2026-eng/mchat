@@ -12,7 +12,14 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 _K8S_RESOURCES = frozenset({"pods", "nodes", "deployments", "services", "events"})
-_OPS_COMMANDS = frozenset({"health", "logs", "milvus", "k8s", "redis", "disk"})
+_OPS_COMMANDS = frozenset(
+    {"health", "logs", "milvus", "k8s", "redis", "disk", "services", "db"}
+)
+_SYSTEMD_UNITS = (
+    "mchat-cloud-backend.service",
+    "mchat-backend.service",
+    "mchat-frontend.service",
+)
 
 
 def _tail_log(source: str, lines: int) -> dict[str, Any]:
@@ -113,6 +120,64 @@ def _disk_usage() -> dict[str, Any]:
     return {"ok": True, "volumes": out}
 
 
+def _systemctl_is_active(systemctl: str, unit: str) -> dict[str, str]:
+    for extra in ([], ["--user"]):
+        try:
+            proc = subprocess.run(
+                [systemctl, *extra, "is-active", unit],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            scope = "system" if not extra else "user"
+            return {
+                "unit": unit,
+                "scope": scope,
+                "active": (proc.stdout or "").strip(),
+                "exit_code": str(proc.returncode),
+            }
+        except (OSError, subprocess.TimeoutExpired) as e:
+            last_err = str(e)
+    return {"unit": unit, "error": last_err or "systemctl failed"}
+
+
+def _services() -> dict[str, Any]:
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        return {"ok": False, "error": "未找到 systemctl"}
+    rows = [_systemctl_is_active(systemctl, unit) for unit in _SYSTEMD_UNITS]
+    return {"ok": True, "units": rows}
+
+
+def _db_ping() -> dict[str, Any]:
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    from sqlalchemy import text
+
+    from app.core.config import settings
+    from app.core.database import async_session_factory
+
+    async def _ping() -> None:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+
+    def _run_in_thread() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_ping())
+        finally:
+            loop.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_run_in_thread).result(timeout=15)
+        db_url = (settings.database_url or "").split("@")[-1][:120]
+        return {"ok": True, "database": db_url}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def _k8s_get(namespace: str, resource: str) -> dict[str, Any]:
     kubectl = shutil.which("kubectl")
     if not kubectl:
@@ -180,4 +245,8 @@ def run(
         return _redis_ping()
     if cmd == "disk":
         return _disk_usage()
+    if cmd == "services":
+        return _services()
+    if cmd == "db":
+        return _db_ping()
     return {"ok": False, "error": f"未知 command: {cmd}，可选: {', '.join(sorted(_OPS_COMMANDS))}"}

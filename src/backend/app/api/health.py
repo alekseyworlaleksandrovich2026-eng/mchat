@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.milvus_runtime import get_milvus_runtime
@@ -32,10 +33,18 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     except Exception:
         db_ok = False
 
+    overall = "healthy" if db_ok else "degraded"
+    if getattr(settings, "maintenance_mode", False):
+        overall = "maintenance"
+
     return {
-        "status": "healthy" if db_ok else "degraded",
+        "status": overall,
         "database": "connected" if db_ok else "disconnected",
         "milvus": _milvus_health_status(),
+        "maintenance_mode": bool(getattr(settings, "maintenance_mode", False)),
+        "server_ops_skills_enabled": bool(
+            getattr(settings, "server_ops_skills_enabled", False)
+        ),
     }
 
 

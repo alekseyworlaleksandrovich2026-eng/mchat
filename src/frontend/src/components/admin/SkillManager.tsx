@@ -111,8 +111,19 @@ export function SkillManager() {
   const reloadFromDisk = async () => {
     setReloading(true)
     try {
-      const res = await api.post<{ reloaded: number; message: string }>('/skills/reload')
-      toast(res.message || t('skills.toastReloadDone', { count: res.reloaded }), { type: 'success' })
+      const res = await api.post<{
+        reloaded: number
+        message: string
+        server_ops?: string[]
+      }>('/skills/reload')
+      const extra =
+        res.server_ops?.length ?
+          ` · 服务端运维: ${res.server_ops.join(', ')}（默认禁用）`
+        : ''
+      toast(
+        (res.message || t('skills.toastReloadDone', { count: res.reloaded })) + extra,
+        { type: 'success' }
+      )
       await loadSkills()
     } catch (err: any) {
       toast(t('skills.toastSyncFailed'), { type: 'error', message: err.message })

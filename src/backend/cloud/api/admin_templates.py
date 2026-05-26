@@ -9,8 +9,19 @@ from app.core.database import get_db
 from app.middleware.auth import get_current_admin
 from app.models.user import User
 from app.models.channel_template import ChannelTemplate
+from app.services.skill_filter import filter_skill_ids_global
 
 router = APIRouter()
+
+
+async def _sanitize_template_payload(
+    db: AsyncSession, payload: dict
+) -> dict:
+    if "default_skill_ids" in payload and payload["default_skill_ids"] is not None:
+        payload["default_skill_ids"] = await filter_skill_ids_global(
+            db, payload["default_skill_ids"]
+        )
+    return payload
 
 
 class TemplateUpdate(BaseModel):
@@ -115,7 +126,9 @@ async def update_template(
     if t is None:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    update = data.model_dump(exclude_unset=True)
+    update = await _sanitize_template_payload(
+        db, data.model_dump(exclude_unset=True)
+    )
     for key, value in update.items():
         setattr(t, key, value)
     await db.flush()
@@ -129,8 +142,9 @@ async def create_template(
     _admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    payload = await _sanitize_template_payload(db, data.model_dump())
     t = ChannelTemplate(
-        name=data.name or "New Template",
+        name=payload.get("name") or data.name or "New Template",
         description=data.description,
         category=data.category or "customer_service",
         icon=data.icon,
@@ -141,7 +155,7 @@ async def create_template(
         sort_order=data.sort_order or 0,
         default_ai_config_id=data.default_ai_config_id,
         default_ai_config_spec=data.default_ai_config_spec,
-        default_skill_ids=data.default_skill_ids,
+        default_skill_ids=payload.get("default_skill_ids", data.default_skill_ids),
         default_knowledge_base_ids=data.default_knowledge_base_ids,
         default_knowledge_base_spec=data.default_knowledge_base_spec,
         default_theme=data.default_theme,

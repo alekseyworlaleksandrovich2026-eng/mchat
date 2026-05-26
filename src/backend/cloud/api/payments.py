@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.middleware.auth import get_current_user
+from app.services.maintenance_gate import ensure_public_api_available
 from app.models.user import User
 from cloud.schemas.payment import (
     CheckoutResponse,
@@ -27,6 +28,7 @@ async def create_checkout(
     db: AsyncSession = Depends(get_db),
 ) -> CheckoutResponse:
     """Create order and return payment QR content (Alipay / WeChat)."""
+    ensure_public_api_available()
     svc = PortalPaymentService(db)
     data = await svc.create_checkout(
         current_user,

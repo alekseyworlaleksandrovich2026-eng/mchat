@@ -14,6 +14,12 @@
 | logs | 尾部 `logs/app.log` 或 `error.log` |
 | milvus | Milvus 启用状态与连接 |
 | k8s | 只读 `kubectl get pods|nodes|...`（需服务器已配置 kubectl） |
+| redis | Redis Ping |
+| disk | 磁盘用量 |
+| services | `systemctl is-active`（mchat-cloud-backend 等） |
+| db | MySQL `SELECT 1` |
+
+重新加载技能时 API 会返回 `server_ops` 技能名列表（默认禁用，需手动启用）。
 
 ## 安全策略
 

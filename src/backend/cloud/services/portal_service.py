@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.ai_config import AIConfig
 from app.schemas.agent import AIConfigCreate, AIConfigUpdate
 from app.services.agent_service import AgentService
+from app.services.maintenance_gate import ensure_public_api_available
+from app.services.skill_filter import filter_skill_ids_global
 from app.services.llm_credentials import is_usable_api_key, resolve_api_key
 from app.models.channel_template import ChannelTemplate
 from app.models.skill import Skill
@@ -108,6 +110,7 @@ class PortalService:
         active_order_id: str | None = None,
         subscription_ends_at: datetime | None = None,
     ) -> MyChannelResponse:
+        ensure_public_api_available()
         result = await self.db.execute(
             select(ChannelTemplate).where(
                 ChannelTemplate.id == request.template_id,
@@ -238,7 +241,9 @@ class PortalService:
             welcome_message=template.default_welcome_message,
             offline_message=template.default_offline_message,
             theme=template.default_theme or {},
-            skill_ids=template.default_skill_ids or [],
+            skill_ids=await filter_skill_ids_global(
+                self.db, template.default_skill_ids or []
+            ),
             knowledge_base_ids=knowledge_base_ids or None,
             position="right",
             enabled=True,

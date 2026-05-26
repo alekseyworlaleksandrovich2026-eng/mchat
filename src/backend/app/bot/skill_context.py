@@ -260,8 +260,17 @@ _DEFAULT_TOOL_PARAMETERS: dict[str, dict[str, Any]] = {
         "properties": {
             "command": {
                 "type": "string",
-                "enum": ["health", "logs", "milvus", "k8s", "redis", "disk"],
-                "description": "health/logs/milvus/k8s/redis/disk 运维子命令",
+                "enum": [
+                    "health",
+                    "logs",
+                    "milvus",
+                    "k8s",
+                    "redis",
+                    "disk",
+                    "services",
+                    "db",
+                ],
+                "description": "health/logs/milvus/k8s/redis/disk/services/db",
             },
             "source": {
                 "type": "string",
@@ -331,6 +340,8 @@ _MCHAT_OPS_HINT = (
     "- milvus: 向量库运行时状态\n"
     "- k8s: 只读 kubectl get（namespace, resource=pods|nodes|...）\n"
     "- redis / disk: Redis 连通与磁盘用量\n"
+    "- services: systemd 用户服务状态（mchat-cloud-backend 等）\n"
+    "- db: MySQL 连通探测\n"
     "运维命令结果直接总结给用户，勿编造未执行过的输出。"
 )
 

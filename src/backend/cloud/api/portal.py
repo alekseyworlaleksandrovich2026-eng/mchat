@@ -24,8 +24,13 @@ from cloud.schemas.portal import (
 )
 from cloud.services.portal_payment_service import PortalPaymentService
 from cloud.services.portal_service import PortalService
+from app.services.maintenance_gate import ensure_public_api_available
 
 router = APIRouter()
+
+
+def _block_portal_during_maintenance() -> None:
+    ensure_public_api_available()
 
 
 @router.get("/orders", response_model=list[PortalOrderResponse])
@@ -179,6 +184,7 @@ async def resume_channel_conversation(
     db: AsyncSession = Depends(get_db),
 ) -> ConversationResponse:
     """Resume the user's persistent chat thread for this channel (or create once)."""
+    _block_portal_during_maintenance()
     chat_service = ChatService(db)
     channel = await PortalService(db).get_my_channel(current_user, channel_id)
     return await chat_service.get_or_resume_channel_conversation(
