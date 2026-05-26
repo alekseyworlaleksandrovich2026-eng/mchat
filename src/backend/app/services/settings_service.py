@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.milvus_runtime import apply_milvus_runtime
 from app.skill.ops_policy import sync_server_ops_settings_from_db
+from app.skill.shell_allowlist import normalize_allowlist_entries
 from app.models.setting import Setting
 from app.schemas.settings import AppSettingsResponse, AppSettingsUpdate
 
@@ -91,6 +92,13 @@ class SettingsService:
         )
         if not isinstance(server_ops_skill_allowlist, list):
             server_ops_skill_allowlist = []
+        shell_raw = get_val(
+            "server_ops_shell_allowlist", DEFAULT_SETTINGS.server_ops_shell_allowlist
+        )
+        try:
+            server_ops_shell_allowlist = normalize_allowlist_entries(shell_raw)
+        except ValueError:
+            server_ops_shell_allowlist = []
 
         apply_milvus_runtime(
             enabled=milvus_enabled,
@@ -110,6 +118,7 @@ class SettingsService:
         sync_server_ops_settings_from_db(
             enabled=server_ops_skills_enabled,
             allowlist=allowlist_runtime,
+            shell_allowlist=server_ops_shell_allowlist,
         )
 
         # Keep runtime storage settings in sync with persisted settings.
@@ -138,6 +147,7 @@ class SettingsService:
             maintenance_mode=maintenance_mode,
             server_ops_skills_enabled=server_ops_skills_enabled,
             server_ops_skill_allowlist=server_ops_skill_allowlist,
+            server_ops_shell_allowlist=server_ops_shell_allowlist,
             milvus_enabled=milvus_enabled,
             milvus_host=milvus_host,
             milvus_port=milvus_port,
@@ -166,6 +176,19 @@ class SettingsService:
         # Fetch existing settings
         result = await self.db.execute(select(Setting))
         existing: dict[str, Setting] = {r.key: r for r in result.scalars().all()}
+
+        if "server_ops_shell_allowlist" in updates:
+            raw_shell = updates.pop("server_ops_shell_allowlist")
+            try:
+                normalized = normalize_allowlist_entries(raw_shell)
+            except ValueError as e:
+                from fastapi import HTTPException, status
+
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e),
+                ) from e
+            updates["server_ops_shell_allowlist"] = normalized
 
         for db_key, new_val in updates.items():
             val_str: str
