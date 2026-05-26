@@ -6,15 +6,43 @@ from pathlib import Path
 import pytest
 from fastapi import UploadFile
 
+from app.knowledge.chunking import ChunkConfig, chunk_text
 from app.knowledge.importer import DocumentImporter
 from app.models.knowledge import Document, KnowledgeBase
 from app.schemas.knowledge import DocumentCreate
 from app.services.knowledge_service import KnowledgeService
 
 
+class _FakeEmbedder:
+    def is_configured(self) -> bool:
+        return True
+
+    async def embed_documents(self, chunks: list[str]) -> list[list[float]]:
+        return [[0.1] * 768 for _ in chunks]
+
+
+def _noop_validate_dimension(self, dim: int) -> None:
+    return None
+
+
+def _patch_importer_embedder(monkeypatch) -> None:
+    monkeypatch.setattr("app.knowledge.importer.milvus_client._connected", True)
+    monkeypatch.setattr(
+        DocumentImporter,
+        "_validate_embedding_dimension",
+        _noop_validate_dimension,
+    )
+    monkeypatch.setattr(
+        "app.knowledge.importer.embedder_for_config",
+        lambda _cfg: _FakeEmbedder(),
+    )
+
+
 @pytest.mark.asyncio
 async def test_index_document_passes_user_id_to_milvus(monkeypatch):
+    _patch_importer_embedder(monkeypatch)
     importer = DocumentImporter()
+    importer._embedder = _FakeEmbedder()
     doc = Document(
         id="doc-1",
         knowledge_base_id="kb-1",
@@ -24,17 +52,15 @@ async def test_index_document_passes_user_id_to_milvus(monkeypatch):
     )
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("app.knowledge.importer.milvus_client._connected", True)
-
-    async def fake_embed_documents(chunks: list[str]) -> list[list[float]]:
-        return [[0.1, 0.2] for _ in chunks]
+    _patch_importer_embedder(monkeypatch)
 
     async def fake_insert_vectors(**kwargs):
         captured.update(kwargs)
         return len(kwargs["chunks"])
 
-    monkeypatch.setattr("app.knowledge.importer.embedder.embed_documents", fake_embed_documents)
-    monkeypatch.setattr("app.knowledge.importer.milvus_client.insert_vectors", fake_insert_vectors)
+    monkeypatch.setattr(
+        "app.knowledge.importer.milvus_client.insert_vectors", fake_insert_vectors
+    )
 
     chunk_count = await importer.index_document(doc, user_id="user-123")
 
@@ -46,23 +72,23 @@ async def test_index_document_passes_user_id_to_milvus(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_import_file_assigns_document_id_before_indexing(monkeypatch, tmp_path: Path):
+    _patch_importer_embedder(monkeypatch)
     importer = DocumentImporter()
+    importer._embedder = _FakeEmbedder()
     file_path = tmp_path / "notes.txt"
     file_path.write_text("Hello knowledge base", encoding="utf-8")
 
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("app.knowledge.importer.milvus_client._connected", True)
-
-    async def fake_embed_documents(chunks: list[str]) -> list[list[float]]:
-        return [[0.1, 0.2] for _ in chunks]
+    _patch_importer_embedder(monkeypatch)
 
     async def fake_insert_vectors(**kwargs):
         captured.update(kwargs)
         return len(kwargs["chunks"])
 
-    monkeypatch.setattr("app.knowledge.importer.embedder.embed_documents", fake_embed_documents)
-    monkeypatch.setattr("app.knowledge.importer.milvus_client.insert_vectors", fake_insert_vectors)
+    monkeypatch.setattr(
+        "app.knowledge.importer.milvus_client.insert_vectors", fake_insert_vectors
+    )
 
     doc = await importer.import_file(
         kb_id="kb-42",
@@ -80,11 +106,9 @@ async def test_import_file_assigns_document_id_before_indexing(monkeypatch, tmp_
 
 
 def test_chunk_text_short_document_returns_single_chunk():
-    importer = DocumentImporter()
-
-    chunks = importer._chunk_text("short note")
-
-    assert chunks == ["short note"]
+    chunks = chunk_text("short note", ChunkConfig(strategy="fixed", size=500, overlap=0))
+    assert len(chunks) == 1
+    assert chunks[0] == "short note"
 
 
 @pytest.mark.asyncio
@@ -130,6 +154,7 @@ async def test_import_file_and_url_pass_kb_user_id(db_session, monkeypatch, tmp_
         user_id: str,
         file_path: Path,
         original_filename: str,
+        kb: KnowledgeBase | None = None,
     ) -> Document:
         file_call.update(
             {
@@ -153,6 +178,7 @@ async def test_import_file_and_url_pass_kb_user_id(db_session, monkeypatch, tmp_
         kb_id: str,
         user_id: str,
         url: str,
+        kb: KnowledgeBase | None = None,
     ) -> Document:
         url_call.update({"kb_id": kb_id, "user_id": user_id, "url": url})
         return Document(

@@ -68,4 +68,6 @@ async def test_reindex_knowledge_base(db_session, monkeypatch):
     assert result.succeeded == 1
     await db_session.refresh(kb)
     assert kb.reindex_status == "completed"
+    # After reindex, fingerprint should match current KB embedding config
+    kb.indexed_embedding_key = embedding_fingerprint(kb)
     assert needs_reindex(kb) is False

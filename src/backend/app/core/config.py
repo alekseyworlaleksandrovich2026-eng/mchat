@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     # Server
     server_host: str = "0.0.0.0"
     server_port: int = 3001
+    # development | production — production enforces secure defaults at startup
+    environment: str = "development"
 
     # Rate limiting
     rate_limit_enabled: bool = True

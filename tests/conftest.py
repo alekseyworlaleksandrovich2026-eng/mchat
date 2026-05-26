@@ -86,28 +86,22 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest_asyncio.fixture
-async def admin_token(client: AsyncClient) -> str:
-    """Get an admin JWT token for authenticated requests."""
-    response = await client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "admin123"},
+async def admin_token(db_session: AsyncSession) -> str:
+    """JWT for the default admin user (role=admin, full permissions)."""
+    from sqlalchemy import select
+
+    from app.core.security import create_access_token
+    from app.models.user import User
+    from app.services.auth_service import AuthService
+
+    auth = AuthService(db_session)
+    await auth.create_default_admin("admin", "admin123")
+    await db_session.flush()
+    result = await db_session.execute(select(User).where(User.username == "admin"))
+    user = result.scalar_one()
+    return create_access_token(
+        data={"sub": user.id, "username": user.username, "role": user.role}
     )
-    if response.status_code == 200:
-        return response.json()["access_token"]
-    # Register first
-    await client.post(
-        "/api/auth/register",
-        json={
-            "username": "admin",
-            "password": "admin123",
-            "role": "admin",
-        },
-    )
-    response = await client.post(
-        "/api/auth/login",
-        json={"username": "admin", "password": "admin123"},
-    )
-    return response.json()["access_token"]
 
 
 @pytest_asyncio.fixture

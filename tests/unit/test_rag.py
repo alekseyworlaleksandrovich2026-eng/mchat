@@ -26,8 +26,12 @@ async def test_vector_search_uses_document_title_from_database(db_session, monke
     db_session.add(document)
     await db_session.commit()
 
-    async def fake_embed_query(_query: str):
-        return [0.12, 0.34, 0.56]
+    class FakeEmbedder:
+        def is_configured(self) -> bool:
+            return True
+
+        async def embed_query(self, _query: str):
+            return [0.12, 0.34, 0.56]
 
     async def fake_search(**_kwargs):
         return [
@@ -41,7 +45,10 @@ async def test_vector_search_uses_document_title_from_database(db_session, monke
         ]
 
     monkeypatch.setattr('app.core.database.async_session_factory', TestSessionFactory)
-    monkeypatch.setattr('app.knowledge.rag.embedder.embed_query', fake_embed_query)
+    monkeypatch.setattr(
+        'app.knowledge.rag.embedder_for_config',
+        lambda _cfg: FakeEmbedder(),
+    )
     monkeypatch.setattr('app.knowledge.rag.milvus_client.search', fake_search)
     monkeypatch.setattr('app.knowledge.rag.milvus_client._connected', True)
 

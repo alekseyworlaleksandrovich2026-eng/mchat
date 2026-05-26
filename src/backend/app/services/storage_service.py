@@ -8,6 +8,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from loguru import logger
+
 from app.core.config import settings
 from app.utils.upload_paths import resolve_upload_root, safe_upload_file_path
 from app.utils.upload_tokens import signed_upload_url
@@ -183,7 +185,8 @@ class StorageService:
             if body is None:
                 return None
             return body.read()
-        except Exception:
+        except Exception as exc:
+            logger.warning("S3 fetch failed for key {}: {}", key, exc)
             return None
 
 

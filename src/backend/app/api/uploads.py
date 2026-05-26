@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from loguru import logger
 
 from app.core.config import settings
+from app.exceptions import NotFoundError, PermissionDeniedError
 from app.services.storage_service import storage_service
 from app.utils.upload_paths import safe_upload_file_path
 from app.utils.upload_tokens import verify_upload_token
@@ -24,19 +25,19 @@ async def get_upload(
 ) -> Response:
     key = (file_path or "").strip().lstrip("/")
     if not key or safe_upload_file_path(key) is None:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise NotFoundError("Not found")
 
     if exp is not None and sig:
         if not verify_upload_token(key, exp, sig):
-            raise HTTPException(status_code=403, detail="Invalid or expired upload token")
+            raise PermissionDeniedError("Invalid or expired upload token")
     elif settings.uploads_require_signed_access:
-        raise HTTPException(status_code=403, detail="Upload token required")
+        raise PermissionDeniedError("Upload token required")
     elif not exp and not sig:
         logger.debug("Serving legacy tokenless upload: {}", key)
 
     result = await asyncio.to_thread(storage_service.fetch_bytes, key)
     if result is None:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise NotFoundError("Not found")
 
     data, media_type = result
     return Response(
