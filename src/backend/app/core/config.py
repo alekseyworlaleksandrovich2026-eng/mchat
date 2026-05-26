@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     embedding_dimension: int = 768
     embedding_model_max_mb: int = 2048
 
-    # Server ops skills (persisted in settings DB; admin-only at runtime)
+    # Maintenance & server ops (persisted in settings DB; synced at startup)
+    maintenance_mode: bool = False
     server_ops_skills_enabled: bool = False
     server_ops_skill_allowlist: list[str] | None = None
 
