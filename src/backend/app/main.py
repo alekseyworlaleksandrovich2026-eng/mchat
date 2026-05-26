@@ -20,11 +20,30 @@ from app.utils.logger import setup_logger
 from app.utils.upload_paths import resolve_upload_root
 
 
+def _validate_production_security() -> None:
+    """Refuse to start in production with known-insecure defaults."""
+    if (settings.environment or "development").strip().lower() != "production":
+        return
+    problems: list[str] = []
+    if settings.jwt_secret == "change-this-to-a-random-secret-key":
+        problems.append("JWT_SECRET must be set to a random value")
+    if settings.admin_password == "admin123":
+        problems.append("ADMIN_PASSWORD must not be the default admin123")
+    if settings.show_bootstrap_credentials:
+        problems.append("SHOW_BOOTSTRAP_CREDENTIALS must be false in production")
+    if problems:
+        raise RuntimeError(
+            "Insecure production configuration: " + "; ".join(problems)
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan: startup and shutdown events."""
     # Startup
     logger.info("Starting mchat backend server...")
+
+    _validate_production_security()
 
     if settings.jwt_secret == "change-this-to-a-random-secret-key":
         logger.warning(

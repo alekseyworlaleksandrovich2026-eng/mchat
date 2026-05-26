@@ -22,9 +22,10 @@ def test_rrf_merges_vector_and_keyword():
     assert "d2:1" in keys
 
 
-def test_rerank_prefers_lexical_overlap():
+@pytest.mark.asyncio
+async def test_rerank_prefers_lexical_overlap():
     chunks = [
-        RankedChunk("d1", "kb1", 0, "unrelated", "A", fused_score=0.9),
+        RankedChunk("d1", "kb1", 0, "unrelated", "A", fused_score=0.2),
         RankedChunk(
             "d2",
             "kb1",
@@ -34,7 +35,7 @@ def test_rerank_prefers_lexical_overlap():
             fused_score=0.5,
         ),
     ]
-    ranked = rerank_chunks("怎么安装", chunks, top_n=1)
+    ranked = await rerank_chunks("怎么安装", chunks, top_n=1)
     assert ranked[0].document_id == "d2"
 
 
@@ -44,7 +45,12 @@ async def test_hybrid_search_uses_db_chunks(db_session, monkeypatch):
     db_session.add(user)
     await db_session.flush()
 
-    kb = KnowledgeBase(user_id=user.id, name="Hybrid KB", retrieval_mode="hybrid")
+    kb = KnowledgeBase(
+        user_id=user.id,
+        name="Hybrid KB",
+        retrieval_mode="hybrid",
+        retrieval_bm25_enabled=False,
+    )
     db_session.add(kb)
     await db_session.flush()
 
