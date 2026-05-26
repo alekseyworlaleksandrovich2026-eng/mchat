@@ -163,6 +163,8 @@ async def _append_rag_context(
     user_id: str,
     customer_config: CustomerConfig | None,
     chat_fn=None,
+    *,
+    conversation_id: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     kb_ids = knowledge_base_ids_for_chat(customer_config)
     if not kb_ids:
@@ -181,6 +183,8 @@ async def _append_rag_context(
                 knowledge_base_id=kb_id,
                 top_k=3,
                 chat_fn=chat_fn,
+                conversation_id=conversation_id,
+                log_source="chat",
             )
 
         batches = await asyncio.gather(
@@ -299,6 +303,7 @@ async def process_message(
             ai_config.user_id,
             customer_config,
             chat_fn=None,
+            conversation_id=conversation.id,
         )
 
         auto_reply_matches = await match_auto_reply_rules(

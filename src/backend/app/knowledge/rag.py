@@ -82,11 +82,19 @@ class RagService:
         knowledge_base_id: str | None = None,
         top_k: int | None = None,
         chat_fn=None,
+        *,
+        conversation_id: str | None = None,
+        log_source: str = "admin",
     ) -> SearchResponse:
+        from app.services.retrieval_log_service import RetrievalTimer
+
         settings = await self._resolve_settings(knowledge_base_id)
         retrieval = settings.retrieval_config()
         final_k = top_k or retrieval.top_k
         candidate_k = max(retrieval.candidate_k, final_k)
+        timer = RetrievalTimer()
+        logged_hits: list[RankedChunk] = []
+        query_variants = 1
 
         try:
             # Generate query variants if rewriting enabled
@@ -95,6 +103,7 @@ class RagService:
                 from app.knowledge.query_rewriter import QueryRewriter
                 rewriter = QueryRewriter(chat_fn=chat_fn)
                 queries = await rewriter.rewrite(query, retrieval.query_rewrite_count)
+            query_variants = len(queries)
 
             # Multi-recall: search for each query variant
             all_results: list[list[RankedChunk]] = []
@@ -107,6 +116,17 @@ class RagService:
                     all_results.append(q_results)
 
             if not all_results:
+                await self._maybe_log_retrieval(
+                    query=query,
+                    knowledge_base_id=knowledge_base_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    source=log_source,
+                    retrieval_mode=settings.retrieval_mode,
+                    hits=[],
+                    query_variant_count=query_variants,
+                    duration_ms=timer.elapsed_ms,
+                )
                 return SearchResponse(results=[], total=0)
 
             # Merge multi-query results via RRF
@@ -132,10 +152,68 @@ class RagService:
                     api_key=api_key,
                 )
 
-            return self._to_response(results[:final_k], settings)
+            logged_hits = results[:final_k]
+            response = self._to_response(logged_hits, settings)
+            await self._maybe_log_retrieval(
+                query=query,
+                knowledge_base_id=knowledge_base_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                source=log_source,
+                retrieval_mode=settings.retrieval_mode,
+                hits=logged_hits,
+                query_variant_count=query_variants,
+                duration_ms=timer.elapsed_ms,
+            )
+            return response
         except Exception as e:
             logger.error(f"RAG search failed: {e}")
+            await self._maybe_log_retrieval(
+                query=query,
+                knowledge_base_id=knowledge_base_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                source=log_source,
+                retrieval_mode=settings.retrieval_mode,
+                hits=logged_hits,
+                query_variant_count=query_variants,
+                duration_ms=timer.elapsed_ms,
+            )
             return SearchResponse(results=[], total=0)
+
+    async def _maybe_log_retrieval(
+        self,
+        *,
+        query: str,
+        knowledge_base_id: str | None,
+        user_id: str | None,
+        conversation_id: str | None,
+        source: str,
+        retrieval_mode: str,
+        hits: list[RankedChunk],
+        query_variant_count: int,
+        duration_ms: int,
+    ) -> None:
+        try:
+            from app.core.database import async_session_factory
+            from app.services.retrieval_log_service import RetrievalLogService
+
+            async with async_session_factory() as db:
+                await RetrievalLogService(db).record(
+                    query=query,
+                    knowledge_base_id=knowledge_base_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    source=source,
+                    retrieval_mode=retrieval_mode,
+                    hit_count=len(hits),
+                    duration_ms=duration_ms,
+                    hits=hits,
+                    query_variant_count=query_variant_count,
+                )
+                await db.commit()
+        except Exception as exc:
+            logger.debug("Retrieval log skipped: {}", exc)
 
     async def _search_single(
         self,

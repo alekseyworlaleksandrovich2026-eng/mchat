@@ -49,7 +49,7 @@
     return
   }
 
-  var state = { isOpen: false, isExpanded: false, width: null, height: null }
+  var state = { isOpen: false, isExpanded: false, width: null, height: null, unread: 0 }
   var elements = {}
 
   var posSide = config.position === 'left' ? 'left' : 'right'
@@ -181,6 +181,26 @@
     )
   }
 
+  function applyUnreadBadge() {
+    if (!elements.button) return
+    var badge = elements.button.querySelector('.mchat-unread-badge')
+    if (!state.unread || state.isOpen) {
+      if (badge) badge.remove()
+      return
+    }
+    if (!badge) {
+      badge = document.createElement('span')
+      badge.className = 'mchat-unread-badge'
+      badge.style.cssText =
+        'position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;' +
+        'border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:700;' +
+        'line-height:18px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.2);'
+      elements.button.style.position = 'fixed'
+      elements.button.appendChild(badge)
+    }
+    badge.textContent = state.unread > 99 ? '99+' : String(state.unread)
+  }
+
   function applyLauncherButton(open) {
     if (!elements.button) return
 
@@ -200,6 +220,7 @@
 
     if (open) {
       elements.button.innerHTML = closeSvg()
+      applyUnreadBadge()
       return
     }
 
@@ -209,10 +230,12 @@
         '<span style="font-size:14px;font-weight:600;line-height:1;white-space:nowrap;">' +
         escapeHtml(label) +
         '</span>'
+      applyUnreadBadge()
       return
     }
 
     elements.button.innerHTML = launcherSvg(config.launcherIcon, 26)
+    applyUnreadBadge()
   }
 
   function startResize(event) {
@@ -321,6 +344,7 @@
   function setOpen(open) {
     state.isOpen = open
     if (!open) state.isExpanded = false
+    if (open) state.unread = 0
     applyPanelLayout()
     applyLauncherButton(open)
   }
@@ -366,6 +390,13 @@
     }
     if (event.data.type === 'mchat:resize') {
       setExpanded(!!event.data.expanded)
+      return
+    }
+    if (event.data.type === 'mchat:unread') {
+      if (!state.isOpen) {
+        state.unread = Math.max(1, Number(event.data.count) || 1)
+        applyLauncherButton(false)
+      }
     }
   })
 

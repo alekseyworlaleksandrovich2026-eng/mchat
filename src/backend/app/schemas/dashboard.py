@@ -67,3 +67,12 @@ class DashboardActivity(BaseModel):
     type: str
     description: str
     timestamp: datetime
+
+
+class RetrievalStatsResponse(BaseModel):
+    period_days: int = 7
+    total_searches: int = 0
+    zero_result_count: int = 0
+    zero_result_rate: float = 0.0
+    avg_duration_ms: float = 0.0
+    top_zero_result_queries: list[dict] = Field(default_factory=list)

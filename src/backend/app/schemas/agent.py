@@ -124,6 +124,10 @@ class CustomerConfigCreate(BaseModel):
     theme: dict | None = None
     domains: str | None = None
     position: str = Field("right", pattern=r"^(left|right)$")
+    pre_chat_fields: list[dict] | None = Field(
+        None,
+        description="Optional pre-chat form fields: [{key, label, required?, type?}]",
+    )
     enabled: bool = True
     widget_session_ttl_hours: int = Field(
         24, ge=0, le=24 * 365, description="0 = never expire by time"
@@ -171,6 +175,7 @@ class CustomerConfigResponse(BaseModel):
     theme: dict | None = None
     domains: str | None = None
     position: str
+    pre_chat_fields: list[dict] | None = None
     enabled: bool
     widget_session_ttl_hours: int = 24
     created_at: datetime

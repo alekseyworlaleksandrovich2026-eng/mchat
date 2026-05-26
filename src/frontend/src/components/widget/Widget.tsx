@@ -6,7 +6,10 @@ import { useWidgetConfig } from '@/hooks/useWidgetConfig'
 import { useWidgetChat } from '@/hooks/useWidgetChat'
 import { ChatWindow } from '@/components/chat/ChatWindow'
 import { WidgetButton } from './WidgetButton'
+import { PreChatForm } from './PreChatForm'
 import { GithubLink } from '@/components/common/GithubLink'
+
+const PRECHAT_KEY_PREFIX = 'mchat_prechat_done_'
 
 interface WidgetProps {
   agentId: string
@@ -102,6 +105,18 @@ export function Widget({
 
   const chat = useWidgetChat(agentId, apiUrl, resolved.welcomeMessage, skillId)
 
+  const preChatFields = remoteConfig?.pre_chat_fields?.filter((f) => f?.key && f?.label) || []
+  const preChatStorageKey = `${PRECHAT_KEY_PREFIX}${agentId}${skillId ? `:${skillId}` : ''}`
+  const [preChatDone, setPreChatDone] = useState(true)
+
+  React.useEffect(() => {
+    if (!preChatFields.length) {
+      setPreChatDone(true)
+      return
+    }
+    setPreChatDone(localStorage.getItem(preChatStorageKey) === '1')
+  }, [preChatFields.length, preChatStorageKey])
+
   const [isOpen, setIsOpen] = useState(isPage || isIframe || defaultOpen)
 
   const [isMinimized, setIsMinimized] = useState(false)
@@ -156,6 +171,23 @@ export function Widget({
     }
   }
 
+  React.useEffect(() => {
+    if (!isIframe) return
+    const assistantCount = chat.messages.filter((m) => m.role === 'assistant' && m.id !== 'welcome').length
+    if (assistantCount <= 0) return
+    try {
+      window.parent.postMessage({ type: 'mchat:unread', count: assistantCount }, '*')
+    } catch {
+      /* cross-origin */
+    }
+  }, [chat.messages, isIframe])
+
+  const handlePreChatSubmit = (values: Record<string, string>) => {
+    localStorage.setItem(preChatStorageKey, '1')
+    localStorage.setItem(`${preChatStorageKey}_data`, JSON.stringify(values))
+    setPreChatDone(true)
+  }
+
   if (!agentId) {
     return (
       <div
@@ -179,7 +211,13 @@ export function Widget({
     )
   }
 
-  const chatBody = (
+  const chatBody = preChatFields.length > 0 && !preChatDone ? (
+    <PreChatForm
+      fields={preChatFields}
+      accentColor={resolved.primaryColor}
+      onSubmit={handlePreChatSubmit}
+    />
+  ) : (
     <ChatWindow
       messages={chat.messages}
       isStreaming={chat.isStreaming}

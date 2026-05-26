@@ -10,10 +10,12 @@ from app.schemas.dashboard import (
     AgentStatsResponse,
     DashboardActivity,
     DashboardStatsResponse,
+    RetrievalStatsResponse,
     StatsOverviewResponse,
     TrendsResponse,
 )
 from app.services.dashboard_service import DashboardService
+from app.services.retrieval_log_service import RetrievalLogService
 
 router = APIRouter()
 
@@ -62,6 +64,18 @@ async def get_agent_stats(
     service = DashboardService(db)
     user_scope = None if await has_global_scope(current_user, db) else current_user.id
     return await service.get_agent_stats(user_id=user_scope)
+
+
+@router.get("/retrieval-stats", response_model=RetrievalStatsResponse)
+async def get_retrieval_stats(
+    days: int = Query(7, ge=1, le=90),
+    current_user: User = Depends(require_permission(Permission.DASHBOARD_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    """RAG retrieval observability: zero-result rate and slow queries."""
+    user_scope = None if await has_global_scope(current_user, db) else current_user.id
+    stats = await RetrievalLogService(db).get_stats(user_id=user_scope, days=days)
+    return RetrievalStatsResponse(**stats)
 
 
 @router.get("/activities", response_model=list[DashboardActivity])

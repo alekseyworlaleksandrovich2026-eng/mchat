@@ -16,6 +16,12 @@ export interface WidgetRemoteConfig {
   }
   enabled: boolean
   subscription_active?: boolean
+  pre_chat_fields?: Array<{
+    key: string
+    label: string
+    required?: boolean
+    type?: string
+  }>
 }
 
 export function useWidgetConfig(agentId: string, apiUrl: string) {

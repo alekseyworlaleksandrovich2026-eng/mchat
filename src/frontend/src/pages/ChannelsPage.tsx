@@ -116,7 +116,16 @@ export function ChannelsPage() {
     setEditEnabled(ch.enabled)
     setWebhookInfo(null)
     setEditOpen(true)
-    if (ch.channel_type === 'wechat') {
+    const webhookTypes = new Set([
+      'wechat',
+      'telegram',
+      'dingtalk',
+      'whatsapp',
+      'slack',
+      'line',
+      'custom',
+    ])
+    if (webhookTypes.has(ch.channel_type)) {
       try {
         const info = await api.get<{ webhook_url: string; hint: string }>(
           `/channels/${ch.id}/webhook-info`,
@@ -450,7 +459,7 @@ export function ChannelsPage() {
                 {t('channels.wechatActivePushHint')}
               </p>
             )}
-            {editingChannel.channel_type === 'wechat' && webhookInfo && (
+            {webhookInfo && (
               <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-3 space-y-2 text-xs">
                 <p className="font-medium text-gray-700 dark:text-gray-300">{t('channels.webhookUrlLabel')}</p>
                 <code className="block break-all text-primary-700 dark:text-primary-400">
