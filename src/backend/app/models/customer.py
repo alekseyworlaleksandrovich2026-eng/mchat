@@ -64,6 +64,12 @@ class CustomerConfig(Base):
     trial_ends_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    subscription_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    skill_bindings: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )  # per-channel secrets for skills, e.g. {"earth2037": {"secrets": {"game_api_key": "..."}}}
     template_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("channel_templates.id"), nullable=True, index=True
     )
