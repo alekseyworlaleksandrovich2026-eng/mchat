@@ -52,6 +52,12 @@ export function CoreRoutes() {
       <Routes>
         <Route path="/" element={<PageSuspense><LandingPage /></PageSuspense>} />
         <Route path="/admin/login" element={<PageSuspense><AdminLogin /></PageSuspense>} />
+        {!isCloudEdition && (
+          <>
+            <Route path="/register" element={<Navigate to="/admin/login" replace />} />
+            <Route path="/portal/*" element={<Navigate to="/admin/login" replace />} />
+          </>
+        )}
         <Route path="/admin" element={<AdminLayout><PageSuspense><AdminDashboard /></PageSuspense></AdminLayout>} />
         <Route path="/admin/conversations" element={<AdminLayout><PageSuspense><ConversationsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/knowledge" element={<AdminLayout><PageSuspense><KnowledgePage /></PageSuspense></AdminLayout>} />

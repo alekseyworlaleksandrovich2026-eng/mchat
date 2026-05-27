@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
+import { isCloudEdition } from '@/lib/edition'
 
 export function LoginForm() {
   const { t } = useTranslation()
@@ -43,7 +44,7 @@ export function LoginForm() {
       await login(username, password)
       // After login, check user role from store to redirect correctly
       const user = useAuthStore.getState().user
-      if (user?.role === 'user') {
+      if (isCloudEdition && user?.role === 'user') {
         navigate('/portal/dashboard', { replace: true })
       } else {
         navigate(from, { replace: true })
@@ -147,15 +148,17 @@ export function LoginForm() {
             </p>
           )}
 
-          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            {t('auth.noAccount')}{' '}
-            <Link
-              to="/register"
-              className="text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
-            >
-              {t('auth.register')}
-            </Link>
-          </p>
+          {isCloudEdition && (
+            <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              {t('auth.noAccount')}{' '}
+              <Link
+                to="/register"
+                className="text-primary-600 hover:text-primary-700 dark:text-primary-400 font-medium"
+              >
+                {t('auth.register')}
+              </Link>
+            </p>
+          )}
         </div>
       </div>
     </div>
