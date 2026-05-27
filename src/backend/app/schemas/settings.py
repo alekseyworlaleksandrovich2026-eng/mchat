@@ -21,6 +21,11 @@ class AppSettingsResponse(BaseModel):
     milvus_enabled: bool = False
     milvus_host: str = "localhost"
     milvus_port: int = 19530
+    embedding_provider: str = "ollama"
+    embedding_model: str = "nomic-embed-text"
+    embedding_api_base: str = "http://localhost:11434"
+    embedding_dimension: int = 768
+    embedding_api_key: str = ""
     storage_backend: str = "local"
     upload_dir: str = "../../uploads"
     max_upload_size_mb: int = 50
@@ -52,6 +57,11 @@ class AppSettingsUpdate(BaseModel):
     milvus_enabled: bool | None = None
     milvus_host: str | None = None
     milvus_port: int | None = None
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    embedding_api_base: str | None = None
+    embedding_dimension: int | None = Field(None, ge=128, le=4096)
+    embedding_api_key: str | None = None
     storage_backend: str | None = None
     upload_dir: str | None = None
     max_upload_size_mb: int | None = None
