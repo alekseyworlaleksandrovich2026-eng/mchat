@@ -201,6 +201,12 @@ def apply_schema_patches(conn: Connection) -> list[str]:
         cc_patches = [
             ("plan", "VARCHAR(20) NOT NULL DEFAULT 'free'"),
             ("trial_ends_at", "DATETIME NULL"),
+            ("pre_chat_fields", "JSON NULL" if dialect == "mysql" else "TEXT NULL"),
+            ("subscription_ends_at", "DATETIME NULL"),
+            (
+                "skill_bindings",
+                "JSON NULL" if dialect == "mysql" else "TEXT NULL",
+            ),
             ("template_id", "VARCHAR(36) NULL"),
             ("channel_category", "VARCHAR(50) NOT NULL DEFAULT 'customer_service'"),
             ("usage_messages_month", "INTEGER NOT NULL DEFAULT 0"),
