@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-stop cloud cloud-stop dev-backend deploy-core deploy-cloud dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
+.PHONY: help install install-git-hooks dev dev-stop cloud cloud-stop dev-backend deploy-core deploy-cloud dev-frontend build start docker-up docker-down docker-build clean test lint coverage db-init db-seed fmt
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -6,6 +6,9 @@ help: ## Show this help
 install: ## Install all dependencies
 	cd src/backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install pytest pytest-asyncio pytest-cov httpx aiosqlite
 	cd src/frontend && npm install
+
+install-git-hooks: ## GitHub(origin) only allows local dev -> dev/main
+	@bash ops/scripts/install-git-hooks.sh
 
 dev: ## Start Core dev servers (app.main — no portal/templates API)
 	@bash ops/scripts/dev-start.sh
