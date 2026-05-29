@@ -14,6 +14,8 @@ import {
   Code2,
 } from 'lucide-react'
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher'
+import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { useAuthStore } from '@/stores/auth'
 
 const GITHUB_URL = 'https://github.com/windinwing/mchat'
 
@@ -29,6 +31,11 @@ const featureKeys = [
 
 export function LandingPage() {
   const { t } = useTranslation()
+  const { isAuthenticated, user } = useAuthStore()
+  const adminTarget =
+    isAuthenticated
+      ? (user?.role === 'user' ? '/portal/dashboard' : '/admin')
+      : '/admin/login'
 
   return (
     <div className="min-h-screen bg-[#fafbfc] dark:bg-gray-950 text-gray-900 dark:text-gray-100">
@@ -66,6 +73,7 @@ export function LandingPage() {
           </nav>
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
+            <ThemeToggle />
             <Link
               to="/showcase"
               className="hidden sm:inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
@@ -81,7 +89,7 @@ export function LandingPage() {
               </Link>
             )}
             <Link
-              to="/admin/login"
+              to={adminTarget}
               className="inline-flex text-sm font-medium text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors"
             >
               {t('landing.ctaAdmin')}
@@ -247,7 +255,7 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
             <a href={GITHUB_URL} className="hover:text-primary-600" target="_blank" rel="noreferrer">
               {t('common.github')}
             </a>
-            <Link to="/admin/login" className="hover:text-primary-600">
+            <Link to={adminTarget} className="hover:text-primary-600">
               {t('common.admin')}
             </Link>
             <Link to="/showcase" className="hover:text-primary-600">

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  ArrowDown,
+  ArrowUp,
   Globe,
   Plus,
   CheckCircle,
@@ -39,11 +41,79 @@ interface CustomerConfigOption {
   name: string
 }
 
+interface WorkflowOption {
+  id: string
+  name: string
+  enabled: boolean
+}
+
+interface ChannelWorkflowBinding {
+  id?: string
+  workflow_id: string
+  workflow_name: string
+  enabled: boolean
+  priority: number
+  match_type: 'all' | 'contains' | 'regex'
+  match_expr?: string | null
+}
+
+interface ChannelWorkflowPreviewResponse {
+  event_type: string
+  dispatch_mode: 'all' | 'first_match'
+  matched_workflow_ids: string[]
+  evaluations: Array<{
+    workflow_id: string
+    workflow_name: string
+    priority: number
+    match_type: 'all' | 'contains' | 'regex'
+    match_expr?: string | null
+    matched: boolean
+    selected: boolean
+    reason_code: string
+    reason_detail?: string | null
+    error?: string | null
+    matched_text?: string | null
+    match_start?: number | null
+    match_end?: number | null
+  }>
+}
+
+interface ChannelWorkflowTemplate {
+  id: string
+  name: string
+  description?: string | null
+  dispatch_mode: 'all' | 'first_match'
+  bindings: Array<{
+    workflow_id: string
+    enabled: boolean
+    priority: number
+    match_type: 'all' | 'contains' | 'regex'
+    match_expr?: string | null
+  }>
+  usage_count: number
+  created_at: string
+  updated_at: string
+}
+
+interface ChannelWorkflowStatsResponse {
+  channel_id: string
+  days: number
+  items: Array<{
+    workflow_id: string
+    workflow_name: string
+    total_runs: number
+    success_runs: number
+    failed_runs: number
+    last_run_at?: string | null
+  }>
+}
+
 export function ChannelsPage() {
   const { t, i18n } = useTranslation()
   const CHANNEL_TYPES = useMemo(() => getChannelTypes(t), [t, i18n.language])
   const [channels, setChannels] = useState<Channel[]>([])
   const [customerConfigs, setCustomerConfigs] = useState<CustomerConfigOption[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowOption[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -62,11 +132,38 @@ export function ChannelsPage() {
     webhook_url: string
     hint: string
   } | null>(null)
+  const [editWorkflowIds, setEditWorkflowIds] = useState<string[]>([])
+  const [editWorkflowBindings, setEditWorkflowBindings] = useState<ChannelWorkflowBinding[]>([])
+  const [workflowDispatchMode, setWorkflowDispatchMode] = useState<'all' | 'first_match'>('all')
+  const [previewMessage, setPreviewMessage] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewMatchedIds, setPreviewMatchedIds] = useState<string[]>([])
+  const [previewEvaluations, setPreviewEvaluations] = useState<
+    ChannelWorkflowPreviewResponse['evaluations']
+  >([])
+  const [draggingWorkflowId, setDraggingWorkflowId] = useState<string | null>(null)
+  const [workflowTemplates, setWorkflowTemplates] = useState<ChannelWorkflowTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateNameInput, setTemplateNameInput] = useState('')
+  const [templateDescInput, setTemplateDescInput] = useState('')
+  const [statsDays, setStatsDays] = useState(7)
+  const [statsData, setStatsData] = useState<ChannelWorkflowStatsResponse['items']>([])
 
   useEffect(() => {
     loadChannels()
     loadCustomerConfigs()
+    loadWorkflows()
+    loadWorkflowTemplates()
   }, [])
+
+  const loadWorkflowTemplates = async () => {
+    try {
+      const data = await api.get<ChannelWorkflowTemplate[]>('/channels/templates/workflow')
+      setWorkflowTemplates(data)
+    } catch {
+      setWorkflowTemplates([])
+    }
+  }
 
   const loadCustomerConfigs = async () => {
     try {
@@ -85,6 +182,15 @@ export function ChannelsPage() {
       console.error('Failed to load channels:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadWorkflows = async () => {
+    try {
+      const data = await api.get<WorkflowOption[]>('/workflows')
+      setWorkflows(data)
+    } catch {
+      /* optional */
     }
   }
 
@@ -114,6 +220,13 @@ export function ChannelsPage() {
     setEditConfig(ch.config || {})
     setEditName(ch.name)
     setEditEnabled(ch.enabled)
+    setEditWorkflowIds([])
+    setEditWorkflowBindings([])
+    const modeRaw = String((ch.config || {}).workflow_dispatch_mode || 'all')
+    setWorkflowDispatchMode(modeRaw === 'first_match' ? 'first_match' : 'all')
+    setPreviewMessage('')
+    setPreviewMatchedIds([])
+    setPreviewEvaluations([])
     setWebhookInfo(null)
     setEditOpen(true)
     const webhookTypes = new Set([
@@ -135,6 +248,15 @@ export function ChannelsPage() {
         /* optional */
       }
     }
+    try {
+      const bindings = await api.get<ChannelWorkflowBinding[]>(`/channels/${ch.id}/workflows`)
+      setEditWorkflowBindings(bindings)
+      setEditWorkflowIds(bindings.filter((b) => b.enabled).map((b) => b.workflow_id))
+    } catch {
+      setEditWorkflowIds([])
+      setEditWorkflowBindings([])
+    }
+    await loadWorkflowStats(ch.id, statsDays)
   }
 
   const handleUpdate = async () => {
@@ -143,8 +265,33 @@ export function ChannelsPage() {
     try {
       await api.put(`/channels/${editingChannel.id}`, {
         name: editName,
-        config: editConfig,
+        config: {
+          ...editConfig,
+          workflow_dispatch_mode: workflowDispatchMode,
+        },
         enabled: editEnabled,
+      })
+      await api.put(`/channels/${editingChannel.id}/workflows`, {
+        bindings: editWorkflowIds
+          .map((workflowId, idx) => {
+            const binding = editWorkflowBindings.find((item) => item.workflow_id === workflowId)
+            if (!binding) return null
+            return {
+              workflow_id: workflowId,
+              enabled: true,
+              priority: idx + 1,
+              match_type: binding.match_type,
+              match_expr: binding.match_expr || null,
+            }
+          })
+          .filter(Boolean)
+          .map((item) => ({
+            workflow_id: item!.workflow_id,
+            enabled: true,
+            priority: item!.priority,
+            match_type: item!.match_type,
+            match_expr: item!.match_expr,
+          })),
       })
       setChannels((prev) =>
         prev.map((c) =>
@@ -159,6 +306,152 @@ export function ChannelsPage() {
       toast(t('channels.toastUpdateFailed'), { type: 'error', message: err.message })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const moveWorkflowPriority = (workflowId: string, direction: 'up' | 'down') => {
+    setEditWorkflowIds((prev) => {
+      const idx = prev.indexOf(workflowId)
+      if (idx < 0) return prev
+      const target = direction === 'up' ? idx - 1 : idx + 1
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      ;[next[idx], next[target]] = [next[target], next[idx]]
+      return next
+    })
+  }
+
+  const reorderWorkflowByDrag = (targetWorkflowId: string) => {
+    if (!draggingWorkflowId || draggingWorkflowId === targetWorkflowId) return
+    setEditWorkflowIds((prev) => {
+      const from = prev.indexOf(draggingWorkflowId)
+      const to = prev.indexOf(targetWorkflowId)
+      if (from < 0 || to < 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+    setDraggingWorkflowId(null)
+  }
+
+  const runWorkflowPreview = async () => {
+    if (!editingChannel) return
+    setPreviewLoading(true)
+    try {
+      const bindings = editWorkflowIds
+        .map((workflowId, idx) => {
+          const binding = editWorkflowBindings.find((item) => item.workflow_id === workflowId)
+          if (!binding) return null
+          return {
+            workflow_id: workflowId,
+            enabled: true,
+            priority: idx + 1,
+            match_type: binding.match_type,
+            match_expr: binding.match_expr || null,
+          }
+        })
+        .filter(Boolean)
+      const resp = await api.post<ChannelWorkflowPreviewResponse>(
+        `/channels/${editingChannel.id}/workflows/preview`,
+        {
+          event_type: 'message',
+          content: previewMessage,
+          dispatch_mode: workflowDispatchMode,
+          bindings,
+        },
+      )
+      setPreviewMatchedIds(resp.matched_workflow_ids || [])
+      setPreviewEvaluations(resp.evaluations || [])
+      toast(
+        t('channels.previewMatchedCount', {
+          count: (resp.matched_workflow_ids || []).length,
+        }),
+        { type: 'success' },
+      )
+    } catch (err: any) {
+      toast(t('channels.previewFailed'), { type: 'error', message: err.message })
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const exportWorkflowBundle = async () => {
+    if (!editingChannel) return
+    try {
+      const data = await api.get<{ dispatch_mode: string; bindings: any[] }>(
+        `/channels/${editingChannel.id}/workflows/export`,
+      )
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2))
+      toast(t('channels.exportCopied'), { type: 'success' })
+    } catch (err: any) {
+      toast(t('channels.exportFailed'), { type: 'error', message: err.message })
+    }
+  }
+
+  const importWorkflowBundle = async () => {
+    if (!editingChannel) return
+    const raw = window.prompt(t('channels.importPrompt'))
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw)
+      await api.post(`/channels/${editingChannel.id}/workflows/import`, parsed)
+      toast(t('channels.importSuccess'), { type: 'success' })
+      await openEdit(editingChannel)
+    } catch (err: any) {
+      toast(t('channels.importFailed'), { type: 'error', message: err.message })
+    }
+  }
+
+  const saveAsTemplate = async () => {
+    if (!templateNameInput.trim()) return
+    try {
+      await api.post('/channels/templates/workflow', {
+        name: templateNameInput.trim(),
+        description: templateDescInput.trim() || null,
+        dispatch_mode: workflowDispatchMode,
+        bindings: editWorkflowIds
+          .map((workflowId, idx) => {
+            const binding = editWorkflowBindings.find((b) => b.workflow_id === workflowId)
+            if (!binding) return null
+            return {
+              workflow_id: workflowId,
+              enabled: true,
+              priority: idx + 1,
+              match_type: binding.match_type,
+              match_expr: binding.match_expr || null,
+            }
+          })
+          .filter(Boolean),
+      })
+      toast(t('channels.templateSaved'), { type: 'success' })
+      setTemplateNameInput('')
+      setTemplateDescInput('')
+      await loadWorkflowTemplates()
+    } catch (err: any) {
+      toast(t('channels.templateSaveFailed'), { type: 'error', message: err.message })
+    }
+  }
+
+  const applyTemplate = async () => {
+    if (!editingChannel || !selectedTemplateId) return
+    try {
+      await api.post(`/channels/${editingChannel.id}/workflows/apply-template/${selectedTemplateId}`, {})
+      toast(t('channels.templateApplied'), { type: 'success' })
+      await openEdit(editingChannel)
+    } catch (err: any) {
+      toast(t('channels.templateApplyFailed'), { type: 'error', message: err.message })
+    }
+  }
+
+  const loadWorkflowStats = async (channelId: string, days: number) => {
+    try {
+      const data = await api.get<ChannelWorkflowStatsResponse>(`/channels/${channelId}/workflows/stats`, {
+        days: String(days),
+      })
+      setStatsData(data.items || [])
+    } catch {
+      setStatsData([])
     }
   }
 
@@ -263,6 +556,32 @@ export function ChannelsPage() {
 
   const selectedType = newChannel.channel_type
   const typeFields = CHANNEL_TYPES[selectedType]?.fields || []
+  const selectedWorkflowSet = new Set(editWorkflowIds)
+
+  const renderMatchSnippet = (
+    text: string,
+    start: number | null | undefined,
+    end: number | null | undefined,
+  ) => {
+    if (start == null || end == null || start < 0 || end <= start || end > text.length) {
+      return null
+    }
+    const left = Math.max(0, start - 24)
+    const right = Math.min(text.length, end + 24)
+    const prefix = left > 0 ? '…' : ''
+    const suffix = right < text.length ? '…' : ''
+    return (
+      <span>
+        {prefix}
+        {text.slice(left, start)}
+        <mark className="bg-yellow-200 text-gray-900 px-0.5 rounded">
+          {text.slice(start, end)}
+        </mark>
+        {text.slice(end, right)}
+        {suffix}
+      </span>
+    )
+  }
 
   if (loading) {
     return (
@@ -468,6 +787,325 @@ export function ChannelsPage() {
                 <p className="text-gray-500">{webhookInfo.hint}</p>
               </div>
             )}
+            <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {t('channels.bindWorkflows')}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('channels.bindWorkflowsHint')}
+              </p>
+              {workflows.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('channels.bindWorkflowsEmpty')}
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-auto pr-1">
+                  {workflows.map((wf) => {
+                    const checked = editWorkflowIds.includes(wf.id)
+                    const currentBinding =
+                      editWorkflowBindings.find((b) => b.workflow_id === wf.id) || null
+                    return (
+                      <div key={wf.id} className="rounded border border-gray-200 dark:border-gray-700 p-2 space-y-2">
+                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...editWorkflowIds, wf.id]
+                                : editWorkflowIds.filter((id) => id !== wf.id)
+                              setEditWorkflowIds(next)
+                              if (e.target.checked && !currentBinding) {
+                                setEditWorkflowBindings((prev) => [
+                                  ...prev,
+                                  {
+                                    workflow_id: wf.id,
+                                    workflow_name: wf.name,
+                                    enabled: true,
+                                    priority: 100,
+                                    match_type: 'all',
+                                    match_expr: '',
+                                  },
+                                ])
+                              } else if (!e.target.checked) {
+                                setEditWorkflowBindings((prev) =>
+                                  prev.filter((item) => item.workflow_id !== wf.id),
+                                )
+                              }
+                            }}
+                          />
+                          <span>{wf.name}</span>
+                          {!wf.enabled && <span className="text-xs text-amber-600">({t('common.disabled')})</span>}
+                        </label>
+                        {checked && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <select
+                              className="block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                              value={currentBinding?.match_type || 'all'}
+                              onChange={(e) => {
+                                const value = e.target.value as 'all' | 'contains' | 'regex'
+                                setEditWorkflowBindings((prev) =>
+                                  prev.map((item) =>
+                                    item.workflow_id === wf.id ? { ...item, match_type: value } : item,
+                                  ),
+                                )
+                              }}
+                            >
+                              <option value="all">{t('channels.matchTypeAll')}</option>
+                              <option value="contains">{t('channels.matchTypeContains')}</option>
+                              <option value="regex">{t('channels.matchTypeRegex')}</option>
+                            </select>
+                            <Input
+                              value={currentBinding?.match_expr || ''}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                setEditWorkflowBindings((prev) =>
+                                  prev.map((item) =>
+                                    item.workflow_id === wf.id ? { ...item, match_expr: value } : item,
+                                  ),
+                                )
+                              }}
+                              placeholder={t('channels.matchExprPlaceholder')}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            {editWorkflowIds.length > 1 && (
+              <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {t('channels.workflowPriorityTitle')}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('channels.workflowPriorityHint')}
+                </p>
+                <div className="space-y-1">
+                  {editWorkflowIds.map((workflowId, idx) => {
+                    const wf = workflows.find((w) => w.id === workflowId)
+                    if (!wf) return null
+                    return (
+                      <div
+                        key={workflowId}
+                        className="flex items-center justify-between rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-sm"
+                        draggable
+                        onDragStart={() => setDraggingWorkflowId(workflowId)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => reorderWorkflowByDrag(workflowId)}
+                        onDragEnd={() => setDraggingWorkflowId(null)}
+                      >
+                        <span className="truncate">
+                          {idx + 1}. {wf.name}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => moveWorkflowPriority(workflowId, 'up')}
+                            disabled={idx === 0}
+                            title={t('channels.moveUp')}
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => moveWorkflowPriority(workflowId, 'down')}
+                            disabled={idx === editWorkflowIds.length - 1}
+                            title={t('channels.moveDown')}
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {selectedWorkflowSet.size > 1 && (
+              <div className="space-y-1 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {t('channels.workflowDispatchMode')}
+                </p>
+                <select
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                  value={workflowDispatchMode}
+                  onChange={(e) => setWorkflowDispatchMode(e.target.value as 'all' | 'first_match')}
+                >
+                  <option value="all">{t('channels.workflowDispatchModeAll')}</option>
+                  <option value="first_match">{t('channels.workflowDispatchModeFirstMatch')}</option>
+                </select>
+              </div>
+            )}
+            {editWorkflowIds.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {t('channels.previewTitle')}
+                </p>
+                <Input
+                  value={previewMessage}
+                  onChange={(e) => setPreviewMessage(e.target.value)}
+                  placeholder={t('channels.previewInputPlaceholder')}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={runWorkflowPreview}
+                    isLoading={previewLoading}
+                  >
+                    {t('channels.previewRun')}
+                  </Button>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {t('channels.previewMatched')} {previewMatchedIds.length}
+                  </span>
+                </div>
+                {previewMatchedIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {previewMatchedIds.map((workflowId) => {
+                      const wf = workflows.find((item) => item.id === workflowId)
+                      return (
+                        <Badge key={workflowId} variant="success" size="sm">
+                          {wf?.name || workflowId}
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                )}
+                {previewEvaluations.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {t('channels.previewDetailTitle')}
+                    </p>
+                    <div className="space-y-1 max-h-48 overflow-auto pr-1">
+                      {previewEvaluations.map((item) => (
+                        <div
+                          key={item.workflow_id}
+                          className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-gray-800 dark:text-gray-200">
+                              {item.workflow_name || item.workflow_id}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Badge variant={item.matched ? 'success' : 'default'} size="sm">
+                                {item.matched ? t('channels.previewMatchedTag') : t('channels.previewMissedTag')}
+                              </Badge>
+                              <Badge variant={item.selected ? 'info' : 'default'} size="sm">
+                                {item.selected ? t('channels.previewSelected') : t('channels.previewNotSelected')}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="text-gray-600 dark:text-gray-400 mt-1">
+                            {t(`channels.previewReason.${item.reason_code}`)}
+                            {item.reason_detail ? `：${item.reason_detail}` : ''}
+                          </p>
+                          {previewMessage && item.matched && item.match_start != null && item.match_end != null ? (
+                            <p className="text-gray-600 dark:text-gray-400 mt-1">
+                              <span className="font-medium">{t('channels.previewMatchedSnippet')}：</span>
+                              {renderMatchSnippet(previewMessage, item.match_start, item.match_end)}
+                            </p>
+                          ) : null}
+                          {item.error ? (
+                            <p className="text-red-600 dark:text-red-400 mt-1">
+                              {t('channels.previewErrorLabel')}: {item.error}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {t('channels.templateLibrary')}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={exportWorkflowBundle}>
+                  {t('channels.exportBundle')}
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={importWorkflowBundle}>
+                  {t('channels.importBundle')}
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <Input
+                  value={templateNameInput}
+                  onChange={(e) => setTemplateNameInput(e.target.value)}
+                  placeholder={t('channels.templateNamePlaceholder')}
+                />
+                <Input
+                  value={templateDescInput}
+                  onChange={(e) => setTemplateDescInput(e.target.value)}
+                  placeholder={t('channels.templateDescPlaceholder')}
+                />
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={saveAsTemplate}>
+                {t('channels.saveAsTemplate')}
+              </Button>
+              <div className="flex items-center gap-2">
+                <select
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+                  value={selectedTemplateId}
+                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+                >
+                  <option value="">{t('channels.selectTemplate')}</option>
+                  {workflowTemplates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name} ({tpl.bindings.length})
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" size="sm" variant="secondary" onClick={applyTemplate} disabled={!selectedTemplateId}>
+                  {t('channels.applyTemplate')}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                {t('channels.matchStats')}
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={String(statsDays)}
+                  onChange={(e) => setStatsDays(Math.max(1, Math.min(90, Number(e.target.value) || 7)))}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => editingChannel && loadWorkflowStats(editingChannel.id, statsDays)}
+                >
+                  {t('channels.refreshStats')}
+                </Button>
+              </div>
+              {statsData.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">{t('channels.statsEmpty')}</p>
+              ) : (
+                <div className="space-y-1 max-h-36 overflow-auto pr-1">
+                  {statsData.map((item) => (
+                    <div
+                      key={item.workflow_id}
+                      className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300"
+                    >
+                      <p className="font-medium">{item.workflow_name || item.workflow_id}</p>
+                      <p>
+                        {t('channels.statsTotal')}: {item.total_runs} · {t('channels.statsSuccess')}:{' '}
+                        {item.success_runs} · {t('channels.statsFailed')}: {item.failed_runs}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="flex items-center justify-between pt-2">
               <span className="text-sm text-gray-700 dark:text-gray-300">{t('channels.enable')}</span>
               <Switch checked={editEnabled} onChange={setEditEnabled} />

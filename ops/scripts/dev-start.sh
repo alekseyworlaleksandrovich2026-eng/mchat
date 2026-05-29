@@ -7,6 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND_PORT="${MCHAT_BACKEND_PORT:-3001}"
 FRONTEND_PORT="${MCHAT_FRONTEND_PORT:-5173}"
+WITH_WORKER="${MCHAT_DEV_WITH_WORKER:-0}"
 
 kill_port() {
   local port=$1
@@ -23,6 +24,18 @@ kill_port() {
 kill_port "$BACKEND_PORT"
 # Vite binds 5173; kill so `make dev` can restart frontend too
 kill_port "$FRONTEND_PORT"
+
+cleanup() {
+  if [[ -n "${WORKER_PID:-}" ]] && kill -0 "$WORKER_PID" 2>/dev/null; then
+    echo "→ Stopping worker (PID $WORKER_PID)"
+    kill "$WORKER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+    echo "→ Stopping backend (PID $BACKEND_PID)"
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
 
 cd "$ROOT/src/backend"
 if [ ! -d venv ]; then
@@ -52,10 +65,17 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 0.5
 done
 
+if [[ "$WITH_WORKER" == "1" ]]; then
+  echo "→ Starting worker (enabled for this dev session)"
+  WORKER_ENABLED=true python -m app.worker.main &
+  WORKER_PID=$!
+  echo "→ Worker started (PID $WORKER_PID)"
+fi
+
 cd "$ROOT/src/frontend"
 echo "→ Starting frontend (Core edition) http://127.0.0.1:${FRONTEND_PORT}"
 echo "  Admin:  http://127.0.0.1:${FRONTEND_PORT}/admin"
 echo "  Login:  admin / admin123"
 echo "  Cloud:  run make cloud for portal + template marketplace"
 export VITE_MCHAT_EDITION=core
-exec npm run dev
+npm run dev
