@@ -12,6 +12,7 @@ from app.schemas.workflow import (
     WorkflowApprovalDecisionRequest,
     WorkflowApprovalResponse,
     WorkflowCreate,
+    WorkflowCreateFromTemplateRequest,
     WorkflowResponse,
     WorkflowRunDetailResponse,
     WorkflowRunResumeRequest,
@@ -19,6 +20,7 @@ from app.schemas.workflow import (
     WorkflowRunResponse,
     WorkflowStepResponse,
     WorkflowStepsPutRequest,
+    WorkflowTemplateSummary,
     WorkflowUpdate,
 )
 from app.services.workflow_service import WorkflowService
@@ -41,6 +43,30 @@ async def create_workflow(
     db: AsyncSession = Depends(get_db),
 ):
     return await WorkflowService(db).create_workflow(user_id=admin.id, data=request)
+
+
+@router.get("/templates", response_model=list[WorkflowTemplateSummary])
+async def list_workflow_templates(
+    locale: str | None = None,
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
+):
+    return WorkflowService.list_templates(locale=locale)
+
+
+@router.post("/from-template/{template_id}", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
+async def create_workflow_from_template(
+    template_id: str,
+    request: WorkflowCreateFromTemplateRequest,
+    admin: User = Depends(require_permission(Permission.SKILLS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await WorkflowService(db).create_from_template(
+        user_id=admin.id,
+        template_id=template_id,
+        name=request.name,
+        description=request.description,
+        enabled=request.enabled,
+    )
 
 
 @router.patch("/{workflow_id}", response_model=WorkflowResponse)

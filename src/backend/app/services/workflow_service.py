@@ -38,6 +38,7 @@ from app.schemas.workflow import (
     WorkflowStepRunResponse,
     WorkflowUpdate,
 )
+from app.data.workflow_templates import get_workflow_template, list_workflow_templates
 from app.skill.executor import execute_skill
 
 _TEMPLATE_RE = re.compile(r"\$\{([^}]+)\}")
@@ -150,6 +151,30 @@ class WorkflowService:
             )
         return skill
 
+    async def _get_skill_by_name(self, *, skill_name: str, user_id: str) -> Skill | None:
+        result = await self.db.execute(
+            select(Skill).where(Skill.name == skill_name, Skill.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _resolve_graph_skill_ids(self, graph_json: dict, *, user_id: str) -> dict:
+        graph = dict(graph_json or {})
+        nodes = list(graph.get("nodes") or [])
+        resolved: list[dict[str, Any]] = []
+        for node in nodes:
+            item = dict(node)
+            cfg = dict(item.get("config") or {})
+            if item.get("type") == "skill" and not str(cfg.get("skill_id") or "").strip():
+                skill_name = str(cfg.get("skill_name") or "").strip()
+                if skill_name:
+                    skill = await self._get_skill_by_name(skill_name=skill_name, user_id=user_id)
+                    if skill is not None:
+                        cfg["skill_id"] = skill.id
+            item["config"] = cfg
+            resolved.append(item)
+        graph["nodes"] = resolved
+        return graph
+
     async def _get_run(self, *, run_id: str, user_id: str) -> SkillWorkflowRun:
         result = await self.db.execute(
             select(SkillWorkflowRun)
@@ -256,6 +281,48 @@ class WorkflowService:
             updated_at=workflow.updated_at,
         )
 
+    @staticmethod
+    def list_templates(*, locale: str | None = None) -> list[dict[str, Any]]:
+        return list_workflow_templates(locale=locale)
+
+    async def create_from_template(
+        self,
+        *,
+        user_id: str,
+        template_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        enabled: bool = True,
+    ) -> WorkflowResponse:
+        tpl = get_workflow_template(template_id)
+        if tpl is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workflow template not found",
+            )
+        graph_json = await self._resolve_graph_skill_ids(
+            tpl["graph_json"], user_id=user_id
+        )
+        graph_json = _ensure_graph_valid(graph_json)
+        workflow = SkillWorkflow(
+            user_id=user_id,
+            name=(name or tpl["name"]).strip(),
+            description=(description if description is not None else tpl.get("description")),
+            enabled=enabled,
+            graph_json=graph_json,
+        )
+        self.db.add(workflow)
+        await self.db.flush()
+        return WorkflowResponse(
+            id=workflow.id,
+            name=workflow.name,
+            description=workflow.description,
+            enabled=workflow.enabled,
+            graph_json=workflow.graph_json,
+            created_at=workflow.created_at,
+            updated_at=workflow.updated_at,
+        )
+
     async def update_workflow(
         self, *, workflow_id: str, user_id: str, data: WorkflowUpdate
     ) -> WorkflowResponse:
@@ -268,7 +335,10 @@ class WorkflowService:
         if "enabled" in payload and payload["enabled"] is not None:
             workflow.enabled = bool(payload["enabled"])
         if "graph_json" in payload:
-            workflow.graph_json = _ensure_graph_valid(payload["graph_json"])
+            graph = payload["graph_json"]
+            if graph:
+                graph = await self._resolve_graph_skill_ids(graph, user_id=user_id)
+            workflow.graph_json = _ensure_graph_valid(graph)
         await self.db.flush()
         return WorkflowResponse(
             id=workflow.id,
@@ -474,12 +544,34 @@ class WorkflowService:
                     record["result"] = {"output": outputs.get("nodes")}
                     record["status"] = "success"
                     return node_id, record
+                if node.type == "merge":
+                    sections: dict[str, Any] = {}
+                    for src_id in incoming.get(node_id, []):
+                        src_node = nodes.get(src_id)
+                        label = (src_node.name if src_node and src_node.name else None) or src_id
+                        sections[str(label)] = {
+                            "node_id": src_id,
+                            "result": outputs.get("nodes", {}).get(src_id),
+                        }
+                    record["result"] = {"sections": sections, "merged": True}
+                    record["status"] = "success"
+                    return node_id, record
 
                 # skill node
                 skill_id = str((cfg.get("skill_id") or "")).strip()
-                if not skill_id:
-                    raise RuntimeError("skill node requires config.skill_id")
-                skill = await self._get_skill(skill_id=skill_id, user_id=workflow.user_id)
+                skill: Skill | None = None
+                if skill_id:
+                    skill = await self._get_skill(skill_id=skill_id, user_id=workflow.user_id)
+                else:
+                    skill_name = str((cfg.get("skill_name") or "")).strip()
+                    if skill_name:
+                        skill = await self._get_skill_by_name(
+                            skill_name=skill_name, user_id=workflow.user_id
+                        )
+                if skill is None:
+                    raise RuntimeError(
+                        "skill node requires config.skill_id or resolvable config.skill_name"
+                    )
                 payload_template = cfg.get("payload_template") or {}
                 payload = _render_template(payload_template, outputs)
                 if not isinstance(payload, dict):

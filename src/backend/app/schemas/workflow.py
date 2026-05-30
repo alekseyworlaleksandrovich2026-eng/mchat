@@ -22,7 +22,7 @@ class WorkflowUpdate(BaseModel):
 
 class WorkflowGraphNode(BaseModel):
     id: str = Field(..., min_length=1, max_length=80)
-    type: str = Field(..., min_length=1, max_length=40)  # start, skill, condition, end, approval
+    type: str = Field(..., min_length=1, max_length=40)  # start, skill, condition, end, approval, merge
     name: str | None = None
     position: dict | None = None
     config: dict | None = None
@@ -163,3 +163,18 @@ class WorkflowApprovalDecisionRequest(BaseModel):
     comment: str | None = None
     decision_payload: dict | None = None
     auto_resume: bool = True
+
+
+class WorkflowTemplateSummary(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str = "general"
+    locale: str | None = None
+    node_count: int = 0
+
+
+class WorkflowCreateFromTemplateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = None
+    enabled: bool = True

@@ -404,6 +404,8 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/workflows/templates` | 内置工作流模板列表 |
+| POST | `/workflows/from-template/{template_id}` | 从模板创建工作流（自动解析 skill_name） |
 | GET | `/workflows` | 工作流列表 |
 | POST | `/workflows` | 创建工作流 |
 | PATCH | `/workflows/{workflow_id}` | 更新（含 `graph_json`） |

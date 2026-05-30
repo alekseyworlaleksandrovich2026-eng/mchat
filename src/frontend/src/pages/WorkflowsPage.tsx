@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Eye, Network, Play, Plus, RefreshCw, Settings2, Trash2, Workflow } from 'lucide-react'
+import { Eye, Network, Play, Plus, RefreshCw, Trash2, Workflow } from 'lucide-react'
 
 import api from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -13,10 +13,22 @@ import { Dialog } from '@/components/ui/Dialog'
 import { toast } from '@/components/ui/Toast'
 import { Spinner } from '@/components/ui/Spinner'
 import { WorkflowGraphEditor, type WorkflowGraphValue } from '@/components/workflow/WorkflowGraphEditor'
+import { extractStartInputFields } from '@/lib/workflowSkillMeta'
 
 interface Skill {
   id: string
   name: string
+  description?: string | null
+  config?: Record<string, unknown> | null
+}
+
+interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  category: string
+  locale?: string | null
+  node_count: number
 }
 
 interface WorkflowItem {
@@ -29,16 +41,18 @@ interface WorkflowItem {
   graph_json?: WorkflowGraphValue | null
 }
 
-interface WorkflowStep {
+interface WorkflowRun {
   id: string
-  step_key: string
-  name: string
-  order_index: number
-  skill_id: string
-  skill_name: string
-  payload_template?: Record<string, unknown> | null
-  on_error: 'stop' | 'continue'
-  enabled: boolean
+  workflow_id: string
+  workflow_name: string
+  trigger_type: string
+  status: string
+  input_payload?: Record<string, unknown> | null
+  output_payload?: Record<string, unknown> | null
+  error?: string | null
+  started_at: string
+  finished_at?: string | null
+  duration_ms?: number | null
 }
 
 interface WorkflowStepRun {
@@ -51,20 +65,6 @@ interface WorkflowStepRun {
   status: string
   payload?: Record<string, unknown> | null
   result?: Record<string, unknown> | null
-  error?: string | null
-  started_at: string
-  finished_at?: string | null
-  duration_ms?: number | null
-}
-
-interface WorkflowRun {
-  id: string
-  workflow_id: string
-  workflow_name: string
-  trigger_type: string
-  status: string
-  input_payload?: Record<string, unknown> | null
-  output_payload?: Record<string, unknown> | null
   error?: string | null
   started_at: string
   finished_at?: string | null
@@ -108,7 +108,8 @@ interface WorkflowApprovalTask {
 }
 
 export function WorkflowsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const uiLocale = i18n.language?.startsWith('zh') ? 'zh' : 'en'
   const [loading, setLoading] = useState(true)
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
@@ -118,9 +119,13 @@ export function WorkflowsPage() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [stepsOpen, setStepsOpen] = useState(false)
   const [runDetailOpen, setRunDetailOpen] = useState(false)
   const [graphOpen, setGraphOpen] = useState(false)
+  const [runInputOpen, setRunInputOpen] = useState(false)
+  const [runInputValues, setRunInputValues] = useState<Record<string, string>>({})
+  const [runTarget, setRunTarget] = useState<WorkflowItem | null>(null)
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([])
+  const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null)
 
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowItem | null>(null)
   const [selectedRunDetail, setSelectedRunDetail] = useState<WorkflowRunDetail | null>(null)
@@ -131,20 +136,18 @@ export function WorkflowsPage() {
   const [enabledInput, setEnabledInput] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const [stepsJson, setStepsJson] = useState('[]')
-  const [savingSteps, setSavingSteps] = useState(false)
-
   useEffect(() => {
     loadAll()
-  }, [])
+  }, [uiLocale])
 
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [workflowData, runData, skillData] = await Promise.all([
+      const [workflowData, runData, skillData, templateData] = await Promise.all([
         api.get<WorkflowItem[]>('/workflows'),
         api.get<WorkflowRun[]>('/workflows/runs/list', { limit: '40' }),
         api.get<Skill[]>('/skills'),
+        api.get<WorkflowTemplate[]>(`/workflows/templates?locale=${uiLocale}`),
       ])
       const approvals = await api.get<WorkflowApprovalTask[]>('/workflows/approvals/pending', {
         limit: '50',
@@ -152,6 +155,7 @@ export function WorkflowsPage() {
       setWorkflows(workflowData)
       setRuns(runData)
       setSkills(skillData)
+      setTemplates(templateData)
       setPendingApprovals(approvals)
     } catch (err: any) {
       toast(t('workflows.toastLoadFailed'), { type: 'error', message: err.message })
@@ -233,35 +237,52 @@ export function WorkflowsPage() {
     }
   }
 
-  const runOnce = async (row: WorkflowItem) => {
+  const runOnce = async (row: WorkflowItem, payload: Record<string, unknown> = {}) => {
     setRunningMap((prev) => ({ ...prev, [row.id]: true }))
     try {
-      await api.post(`/workflows/${row.id}/run-once`, { payload: {} })
+      await api.post(`/workflows/${row.id}/run-once`, { payload })
       toast(t('workflows.toastRunTriggered'), { type: 'success' })
       await loadAll()
     } catch (err: any) {
       toast(t('workflows.toastRunFailed'), { type: 'error', message: err.message })
     } finally {
       setRunningMap((prev) => ({ ...prev, [row.id]: false }))
+      setRunInputOpen(false)
+      setRunTarget(null)
     }
   }
 
-  const openStepsEditor = async (row: WorkflowItem) => {
-    setSelectedWorkflow(row)
+  const openRunDialog = (row: WorkflowItem) => {
+    const fields = extractStartInputFields(row.graph_json?.nodes || [])
+    const defaults: Record<string, string> = {}
+    for (const f of fields) defaults[f.key] = ''
+    setRunTarget(row)
+    setRunInputValues(defaults)
+    setRunInputOpen(true)
+  }
+
+  const confirmRun = async () => {
+    if (!runTarget) return
+    const fields = extractStartInputFields(runTarget.graph_json?.nodes || [])
+    for (const f of fields) {
+      if (f.required && !runInputValues[f.key]?.trim()) {
+        toast(t('workflows.runInputRequired', { field: f.label }), { type: 'error' })
+        return
+      }
+    }
+    await runOnce(runTarget, runInputValues)
+  }
+
+  const createFromTemplate = async (templateId: string) => {
+    setCreatingTemplateId(templateId)
     try {
-      const steps = await api.get<WorkflowStep[]>(`/workflows/${row.id}/steps`)
-      setStepsJson(JSON.stringify(steps.map((s) => ({
-        step_key: s.step_key,
-        name: s.name,
-        order_index: s.order_index,
-        skill_id: s.skill_id,
-        payload_template: s.payload_template || {},
-        on_error: s.on_error,
-        enabled: s.enabled,
-      })), null, 2))
-      setStepsOpen(true)
+      await api.post(`/workflows/from-template/${templateId}`, {})
+      toast(t('workflows.toastTemplateCreated'), { type: 'success' })
+      await loadAll()
     } catch (err: any) {
-      toast(t('workflows.toastLoadStepsFailed'), { type: 'error', message: err.message })
+      toast(t('workflows.toastTemplateCreateFailed'), { type: 'error', message: err.message })
+    } finally {
+      setCreatingTemplateId(null)
     }
   }
 
@@ -280,31 +301,6 @@ export function WorkflowsPage() {
       await loadAll()
     } catch (err: any) {
       toast(t('workflows.toastGraphSaveFailed'), { type: 'error', message: err.message })
-    }
-  }
-
-  const saveSteps = async () => {
-    if (!selectedWorkflow) return
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(stepsJson)
-    } catch {
-      toast(t('workflows.toastInvalidStepsJson'), { type: 'error' })
-      return
-    }
-    if (!Array.isArray(parsed)) {
-      toast(t('workflows.toastInvalidStepsJson'), { type: 'error' })
-      return
-    }
-    setSavingSteps(true)
-    try {
-      await api.put(`/workflows/${selectedWorkflow.id}/steps`, { steps: parsed })
-      setStepsOpen(false)
-      toast(t('workflows.toastStepsSaved'), { type: 'success' })
-    } catch (err: any) {
-      toast(t('workflows.toastSaveStepsFailed'), { type: 'error', message: err.message })
-    } finally {
-      setSavingSteps(false)
     }
   }
 
@@ -387,6 +383,36 @@ export function WorkflowsPage() {
         </div>
       </div>
 
+      {templates.length > 0 && (
+        <Card>
+          <CardHeader>{t('workflows.templatesTitle')}</CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            {templates.map((tpl) => (
+              <div key={tpl.id} className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{tpl.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{tpl.description}</p>
+                  </div>
+                  <Badge variant="info" size="sm">{tpl.node_count} nodes</Badge>
+                </div>
+                {tpl.id.endsWith('_en') ? (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400">{t('workflows.templateDemoHint')}</p>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  isLoading={creatingTemplateId === tpl.id}
+                  onClick={() => createFromTemplate(tpl.id)}
+                >
+                  {t('workflows.useTemplate')}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>{t('workflows.listTitle')}</CardHeader>
         <CardContent className="p-0">
@@ -420,12 +446,9 @@ export function WorkflowsPage() {
                       variant="secondary"
                       leftIcon={<Play className="w-4 h-4" />}
                       isLoading={!!runningMap[row.id]}
-                      onClick={() => runOnce(row)}
+                      onClick={() => openRunDialog(row)}
                     >
                       {t('workflows.runOnce')}
-                    </Button>
-                    <Button size="sm" variant="outline" leftIcon={<Settings2 className="w-4 h-4" />} onClick={() => openStepsEditor(row)}>
-                      {t('workflows.editSteps')}
                     </Button>
                     <Button size="sm" variant="outline" leftIcon={<Network className="w-4 h-4" />} onClick={() => openGraphEditor(row)}>
                       {t('workflows.editGraph')}
@@ -560,26 +583,6 @@ export function WorkflowsPage() {
         </div>
       </Dialog>
 
-      <Dialog open={stepsOpen} onClose={() => setStepsOpen(false)} title={t('workflows.stepsDialogTitle')} size="xl">
-        <div className="space-y-3">
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {t('workflows.stepsHint')}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {t('workflows.availableSkills')}: {skills.map((s) => s.name).join(', ') || '-'}
-          </p>
-          <textarea
-            className="w-full h-96 text-xs font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-3"
-            value={stepsJson}
-            onChange={(e) => setStepsJson(e.target.value)}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setStepsOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={saveSteps} isLoading={savingSteps}>{t('common.save')}</Button>
-          </div>
-        </div>
-      </Dialog>
-
       <Dialog open={runDetailOpen} onClose={() => setRunDetailOpen(false)} title={t('workflows.runDetailTitle')} size="xl">
         {selectedRunDetail && (
           <div className="space-y-4">
@@ -685,6 +688,31 @@ export function WorkflowsPage() {
             ) : null}
           </div>
         )}
+      </Dialog>
+      <Dialog open={runInputOpen} onClose={() => setRunInputOpen(false)} title={t('workflows.runInputTitle')}>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('workflows.runInputHint')}</p>
+          {runTarget &&
+            extractStartInputFields(runTarget.graph_json?.nodes || []).map((field) => (
+              <Input
+                key={field.key}
+                label={field.label}
+                value={runInputValues[field.key] || ''}
+                placeholder={field.placeholder}
+                onChange={(e) =>
+                  setRunInputValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                }
+              />
+            ))}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setRunInputOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={confirmRun} isLoading={runTarget ? runningMap[runTarget.id] : false}>
+              {t('workflows.runOnce')}
+            </Button>
+          </div>
+        </div>
       </Dialog>
       <Dialog
         open={graphOpen}

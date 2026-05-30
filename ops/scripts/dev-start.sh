@@ -73,6 +73,24 @@ if [[ "$WITH_WORKER" == "1" ]]; then
 fi
 
 cd "$ROOT/src/frontend"
+if grep -q 'main-portal.tsx' index.html 2>/dev/null; then
+  echo "→ Restoring Core index.html (was Cloud entry from deploy/make cloud)"
+  cat > index.html <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MChat</title>
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+HTMLEOF
+fi
 echo "→ Starting frontend (Core edition) http://127.0.0.1:${FRONTEND_PORT}"
 echo "  Admin:  http://127.0.0.1:${FRONTEND_PORT}/admin"
 echo "  Login:  admin / admin123"
