@@ -74,6 +74,9 @@ class User(Base):
         "SkillScheduleRun", back_populates="user", lazy="selectin"
     )
     workflows = relationship("SkillWorkflow", back_populates="user", lazy="selectin")
+    workflow_templates = relationship(
+        "SkillWorkflowTemplate", back_populates="user", lazy="selectin"
+    )
     workflow_runs = relationship(
         "SkillWorkflowRun", back_populates="user", lazy="selectin"
     )

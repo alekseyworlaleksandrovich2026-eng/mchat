@@ -12,6 +12,7 @@ from app.models.channel import Channel
 from app.models.channel_template import ChannelTemplate
 from app.models.retrieval_log import RetrievalLog
 from app.models.skill_schedule import SkillSchedule, SkillScheduleRun
+from app.models.sms_send_log import SmsSendLog
 from app.models.workflow import (
     ChannelWorkflowBinding,
     SkillWorkflowApproval,
@@ -19,6 +20,7 @@ from app.models.workflow import (
     SkillWorkflowRun,
     SkillWorkflowStep,
     SkillWorkflowStepRun,
+    SkillWorkflowTemplate,
 )
 
 __all__ = [
@@ -39,10 +41,12 @@ __all__ = [
     "RetrievalLog",
     "SkillSchedule",
     "SkillScheduleRun",
+    "SmsSendLog",
     "SkillWorkflow",
     "SkillWorkflowStep",
     "SkillWorkflowRun",
     "SkillWorkflowStepRun",
+    "SkillWorkflowTemplate",
     "ChannelWorkflowBinding",
     "SkillWorkflowApproval",
 ]
