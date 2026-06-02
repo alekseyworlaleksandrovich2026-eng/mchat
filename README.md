@@ -27,7 +27,7 @@ Built-in **AI customer service** works out of the box. Extend the same stack int
 - [Chinese main site](https://mchat.9235.net)
 - [Full screenshot tour](docs/product-tour.en.md)
 - [Product roadmap](docs/roadmap.en.md)
-- [Workflow orchestrator (Beta)](docs/workflow-orchestrator.zh.md)
+- [Workflow orchestrator (Beta)](docs/workflow-orchestrator.en.md)
 
 ## UI preview
 
@@ -79,20 +79,71 @@ Click any screenshot to open the full image.
 - **Multi-channel** — Web Widget, REST, WebSocket, WeChat (DingTalk/WhatsApp/Telegram [planned](docs/roadmap.en.md#3-channels))
 - **Speech input** — OpenAI Whisper (optional local models)
 - **Security** — JWT, API keys, RBAC
-- **Docker** — `docker compose up -d` full stack
+- **Docker** — `make docker-up-lite` full stack
+
+## Workflow orchestration (Beta)
+
+MChat **Workflow** chains multiple Skills into reusable pipelines — not just one-shot chat, but multi-step automation with parallel branches, conditional routing, human approval, and structured outputs (reports, exports, alerts).
+
+```mermaid
+flowchart LR
+  T[Manual / Schedule / Channel] --> W[Workflow DAG]
+  W --> S1[Skill nodes]
+  W --> S2[Skill nodes]
+  S1 --> M[Merge]
+  S2 --> M
+  M --> E[End / Export / Notify]
+```
+
+| Concept | Role |
+|---------|------|
+| **Skill** | Smallest unit — a tool, function, or webhook (`patent-search`, custom packs, etc.) |
+| **Workflow** | Ordered steps or a **graph** (`graph_json`) that wires Skills together |
+| **Trigger** | **Manual** (admin run-once), **Schedule** (cron via Skill Schedules + worker), or **Channel** (message rules on WeChat / Telegram / Web) |
+
+**Visual graph editor** (Admin → **Workflows**, `/admin/workflows`):
+
+- ComfyUI-style canvas: pointer vs pan (`V` / `H`), drag nodes from the skill library
+- Node types: `start` · `skill` · `condition` · `approval` · `merge` · `end`
+- **Payload mapper** — `${input.keyword}`, `${nodes.<id>.result.xxx}` templates per node
+- **Merge** — wait for parallel branches, then feed downstream chart/export steps
+- **Approval** — pause a run until an operator approves or rejects in the admin UI
+
+**Templates**: built-in flows such as **Patent Multi-Dimension Report** (search → parallel analysis → merge → chart/Excel/Word/PPT). Save any workflow as **My template** and instantiate it again with one click. Skills bind by `skill_name`, so the same graph works across tenants after skills are installed.
+
+**Example**: one `patent-search` skill can appear in many nodes with different payloads — `command: search` for retrieval, `command: analysis` + `dimension: applicant|ipc|…` for parallel analytics, then `patent-report` for export.
+
+**Getting started**
+
+1. `make setup && make dev` (or `make docker-up-lite`)
+2. Install skills (e.g. `patent-search`, `patent-report`) under **Admin → Skills**
+3. Open **Admin → Workflows** — use a template or build a graph, then **Run once**
+4. For **scheduled** runs: start the worker — `make dev-worker` or set `WORKER_ENABLED=true` in `.env`
+
+> **Beta** — core paths are production-ready for validation; graph DSL and UI may evolve.  
+> Details: [Workflow orchestrator](docs/workflow-orchestrator.en.md) · [Product tour — Workflow](docs/product-tour.en.md#workflow-orchestration-beta) · API: [docs/api.en.md#workflows-beta](docs/api.en.md#workflows-beta)
 
 ## Quick start
 
 ### Docker (recommended)
+
 ```bash
 git clone https://github.com/windinwing/mchat.git
 cd mchat
 
-docker compose -f ops/docker/docker-compose.lite.yml up -d
+make docker-up-lite
+# If Docker requires sudo on your machine, the script will use it automatically.
 
-# Admin UI:  http://localhost:5173
+# Admin UI:  http://localhost:5173/admin
 # API docs:  http://localhost:3001/docs
 # Landing:   http://localhost:5173/
+```
+
+Equivalent manual command (creates `ops/docker/.env` first):
+
+```bash
+cp ops/docker/.env.example ops/docker/.env
+docker compose -f ops/docker/docker-compose.lite.yml --env-file ops/docker/.env up -d --build
 ```
 
 **Default admin credentials** (created on first startup): `admin` / `admin123`  
@@ -117,17 +168,18 @@ Change the password under **Admin → Users** after sign-in. Override via `ADMIN
 
 | Tool | Version | Ubuntu/Debian |
 |------|---------|---------------|
-| Python | 3.12+ | `sudo apt install python3 python3-venv python3-pip` |
-| Node.js | 20+ | [nodejs.org](https://nodejs.org/) or `nvm install 20` |
-| Docker | recent | for local MySQL (`make db-mysql-dev`) |
+| Python | 3.10+ (3.12 recommended) | `sudo apt install python3 python3-venv python3-pip` |
+| Node.js | **20+** (required for `make dev`) | [nodejs.org](https://nodejs.org/) or `nvm install 20` |
+| Docker | recent | for lite MySQL via `make setup` / `make docker-up-lite` |
 | make | — | `sudo apt install make` |
 
-> `make` uses bash + `source venv`. For short `mchat`: `make install`, then `source scripts/env.sh`, or `./bin/mchat`.
+> `make` uses bash + `source venv`. Do **not** run `make setup`, `make install`, or `make dev` with sudo.  
+> For short CLI: `make install`, then `source scripts/env.sh`, or `./bin/mchat`.
 
 **After git pull (pick one path)**:
 
 ```bash
-# Path A — local hot reload
+# Path A — local hot reload (needs Node 20+)
 git pull
 make setup && make dev
 
@@ -136,38 +188,38 @@ git pull
 make docker-up-lite
 ```
 
-**Docker commands**:
-
-| Command | Description |
-|---------|-------------|
-| `make docker-up-lite` | Init .env, fix MySQL, build & start |
-| `make docker-down-lite` | Stop stack (keep volumes) |
-| `make docker-logs-lite` | Tail logs |
-| `make db-docker-reset-lite` | Wipe MySQL volume (password mismatch) |
-
-**First-time setup (recommended)**:
+**First clone**:
 
 ```bash
 git clone https://github.com/windinwing/mchat.git
 cd mchat
-make setup         # lite MySQL + .env + deps + db init
-make dev           # local hot reload
-# or full stack: make docker-up-lite
+make setup && make dev          # or: make docker-up-lite
 ```
+
+**Docker / MySQL commands**:
+
+| Command | Description |
+|---------|-------------|
+| `make docker-up-lite` | Create `.env`, fix MySQL password, build & start |
+| `make docker-down-lite` | Stop stack (keep volumes) |
+| `make docker-logs-lite` | Tail logs |
+| `make db-mysql-dev` | MySQL only (for `make dev`, default host port **3307**) |
+| `make db-docker-reset-lite` | Wipe MySQL volume (password mismatch) |
+| `MCHAT_RESET_FORCE=1 make reset-fresh` | Full wipe for clean re-test |
 
 **MySQL (single lite config)**:
 
-- `make setup` starts MySQL from `docker-compose.lite.yml` and syncs `DATABASE_URL` in both `ops/docker/.env` and `src/backend/.env`.
-- Host port **3307** by default; credentials: `mchat` / `mchat123` / database `mchat`.
-- `make dev` and `make docker-up-lite` share the same MySQL container.
-- Existing MySQL: `MCHAT_SETUP_MYSQL=0 make setup`.
-- `Access denied for user 'mchat'`: run `make db-docker-reset-lite && make setup` (wipes DB).
+- Credentials: `mchat` / `mchat123`, database `mchat`, host port **3307** (see `ops/docker/.env`).
+- `make setup` syncs `DATABASE_URL` in `src/backend/.env` automatically.
+- Existing MySQL: `MCHAT_SETUP_MYSQL=0 make setup` and set `DATABASE_URL` yourself.
+- `Access denied for user 'mchat'`: `make db-docker-reset-lite && make setup`.
+- `make dev` stops Docker frontend/backend if they occupy port 5173 (MySQL is kept).
 
-**Or step by step**:
+**Step by step** (without full `make setup`):
 
 ```bash
 make install
-make db-mysql-dev   # lite MySQL only, port 3307
+make db-mysql-dev
 make dev
 ```
 
@@ -180,7 +232,7 @@ source scripts/env.sh && mchat run
 
 # Backend:  http://localhost:3001  (/docs)
 # Frontend: http://localhost:5173
-# Admin:    admin / admin123
+# Admin UI: http://localhost:5173/admin  (default login: admin / admin123)
 
 ## Project structure
 
