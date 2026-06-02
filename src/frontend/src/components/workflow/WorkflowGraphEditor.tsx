@@ -109,6 +109,35 @@ function toSafeInt(value: string, fallback: number) {
   return Math.max(0, Math.floor(n))
 }
 
+function resolveSkillFromConfig(
+  config: Record<string, unknown>,
+  skills: WorkflowSkillOption[],
+): WorkflowSkillOption | undefined {
+  const skillId = String(config.skill_id || '')
+  const skillName = String(config.skill_name || '')
+  if (skillId) {
+    const byId = skills.find((s) => s.id === skillId)
+    if (byId) return byId
+  }
+  if (skillName) {
+    return skills.find((s) => s.name === skillName)
+  }
+  return undefined
+}
+
+function enrichSkillConfig(
+  config: Record<string, unknown>,
+  skills: WorkflowSkillOption[],
+): Record<string, unknown> {
+  const resolved = resolveSkillFromConfig(config, skills)
+  if (!resolved) return config
+  return {
+    ...config,
+    skill_id: resolved.id,
+    skill_name: resolved.name,
+  }
+}
+
 function skillLabelForNode(
   config: Record<string, unknown>,
   skills: WorkflowSkillOption[],
@@ -142,7 +171,9 @@ function toFlowNodes(
   t: (key: string) => string,
 ): Node[] {
   return graphNodes.map((node) => {
-    const config = node.config || {}
+    const rawConfig = node.config || {}
+    const config =
+      node.type === 'skill' ? enrichSkillConfig(rawConfig, skills) : rawConfig
     const skillLabel = node.type === 'skill' ? skillLabelForNode(config, skills, locale) : ''
     const category =
       node.type === 'skill'
@@ -410,9 +441,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
   }
 
   const buildPresetNode = (preset: PatentWorkflowPreset, position: { x: number; y: number }): Node => {
-    const skill =
-      skills.find((s) => s.name === preset.skillName) ||
-      skills.find((s) => s.name === 'patent-search' && preset.skillName === 'patent-search')
+    const skill = resolveSkillFromConfig({ skill_name: preset.skillName }, skills)
     const id = `${preset.id}_${Date.now()}`
     const label = getPatentPresetTitle(preset, uiLocale)
     const skillLabel = skill ? getSkillDisplayName(skill, uiLocale) : preset.skillName
@@ -543,7 +572,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       setContextMenu(null)
       const raw = event.dataTransfer.getData(DRAG_MIME)
       if (!raw || !reactFlowWrapper.current) return
-      let payload: { kind: string; skillId?: string }
+      let payload: { kind: string; skillId?: string; presetId?: string }
       try {
         payload = JSON.parse(raw)
       } catch {
@@ -595,7 +624,8 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
         if (n.id !== nodeId) return n
         const nextData = updater(n.data as any)
         if (nextData.nodeType === 'skill') {
-          const cfg = nextData.config || {}
+          const cfg = enrichSkillConfig(nextData.config || {}, skills)
+          nextData.config = cfg
           nextData.skillLabel = skillLabelForNode(cfg, skills, uiLocale)
           const cat = String(cfg.workflow_role || inferSkillCategory({ id: '', name: nextData.skillLabel, config: cfg }))
           nextData.categoryLabel = t(`workflows.skillCategory.${cat}`)
@@ -624,13 +654,18 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
   const saveGraph = () => {
     onSave({
       version: 1,
-      nodes: nodes.map((n) => ({
-        id: n.id,
-        type: ((n.data as any)?.nodeType || 'skill') as GraphNodeType,
-        name: String((n.data as any)?.label || ''),
-        position: n.position,
-        config: ((n.data as any)?.config || {}) as Record<string, unknown>,
-      })),
+      nodes: nodes.map((n) => {
+        const nodeType = ((n.data as any)?.nodeType || 'skill') as GraphNodeType
+        const rawConfig = ((n.data as any)?.config || {}) as Record<string, unknown>
+        const config = nodeType === 'skill' ? enrichSkillConfig(rawConfig, skills) : rawConfig
+        return {
+          id: n.id,
+          type: nodeType,
+          name: String((n.data as any)?.label || ''),
+          position: n.position,
+          config,
+        }
+      }),
       edges: edges.map((e) => ({
         id: e.id,
         source: e.source,
@@ -993,7 +1028,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
                             <label className="block text-xs text-gray-600 dark:text-gray-300">{t('workflows.graphSkillSelect')}</label>
                             <select
                               className="block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                              value={String(selectedNodeConfig.skill_id || '')}
+                              value={resolveSkillFromConfig(selectedNodeConfig, skills)?.id || String(selectedNodeConfig.skill_id || '')}
                               onChange={(e) => {
                                 const skill = skills.find((s) => s.id === e.target.value)
                                 updateNodeData(selectedNode.id, (data) => ({

@@ -92,7 +92,8 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
 
 # 管理后台: http://localhost:5173
 # API 文档:  http://localhost:3001/docs
-# 项目主页:  http://localhost:5173/
+# 默认管理员: admin / admin123
+# 更新代码后需重建: docker compose -f ops/docker/docker-compose.lite.yml build --no-cache backend frontend
 ```
 
 **默认管理员账号**（首次启动自动创建）：`admin` / `admin123`  
@@ -113,15 +114,53 @@ docker compose -f ops/docker/docker-compose.lite.yml up -d
 
 ### 本地开发
 
-```bash
-make install   # 安装依赖
-make db-mysql-dev   # 可选：本地 MySQL
-ollama pull nomic-embed-text   # 推荐：本地 Embedding（知识库向量）
-make dev         # Core 本地开发（app.main，管理后台无「模板」菜单）
-make cloud       # Cloud 本地开发（cloud.main + 方案市场 / 门户）
+**系统依赖**（新机器请先安装）：
 
-# 后端: http://localhost:3001  (/docs 为 Swagger)
-# 前端: http://localhost:5173
+| 依赖 | 版本 | Ubuntu/Debian 示例 |
+|------|------|---------------------|
+| Python | 3.10+（推荐 3.12） | `sudo apt install python3.12 python3.12-venv` 或 pyenv：`pyenv install 3.12.0 && pyenv local 3.12.0` |
+| Node.js | 20+ | [nodejs.org](https://nodejs.org/) 或 `nvm install 20`（**make dev 必须**，Docker 构建亦用 20） |
+| Docker | 最新 | 用于本地 MySQL（`make db-mysql-dev`） |
+| make | — | `sudo apt install make` |
+
+> **说明**：`make` 使用 bash 并 `source venv`（Linux 兼容）。短命令 `mchat`：先 `make install`，再 `source scripts/env.sh`，或直接用 `./bin/mchat`。
+
+**git pull 之后（二选一）**：
+
+```bash
+# 路径 A — 本地热重载
+git pull
+make setup && make dev
+
+# 路径 B — Docker 全栈
+git pull
+make docker-up-lite
+```
+
+**Docker 常用命令**：
+
+| 命令 | 说明 |
+|------|------|
+| `make docker-up-lite` | 初始化并启动（MySQL + 后端 + 前端） |
+| `make docker-down-lite` | 停止 lite 栈（保留数据） |
+| `make docker-logs-lite` | 查看日志 |
+| `make db-docker-reset-lite` | 删 MySQL volume（密码不对时） |
+| `make db-mysql-dev` | 仅启动 MySQL（配合 make dev） |
+
+**全新重测**：`MCHAT_RESET_FORCE=1 make reset-fresh`
+
+**首次 clone**：`git clone ... && cd mchat && make setup && make dev`
+
+**注意**：`make setup` / `make dev` 不要 sudo（Docker 会自动 sudo）；MySQL 默认端口 **3307**，账号 `mchat` / `mchat123`；`make dev` 会自动停 Docker 前端释放 5173。
+
+```bash
+make cloud       # Cloud 本地开发（cloud.main + 方案市场 / 门户）
+make test        # 运行测试
+make lint        # 代码检查
+
+# 短命令 CLI（install 之后，任选其一）:
+source scripts/env.sh && mchat run
+./bin/mchat run
 ```
 
 | 命令 | 后端 | 管理后台「模板」 | 门户 / 方案市场 |
@@ -130,11 +169,10 @@ make cloud       # Cloud 本地开发（cloud.main + 方案市场 / 门户）
 | `make cloud` | `cloud.main:app` | 有 | 有 |
 | `make deploy-core` | Core | 无 | 无 |
 | `make deploy-cloud` | Cloud | 有 | 有 |
-```bash
-make test      # 运行测试
-make lint      # 代码检查
-mchat run      # CLI 启动服务
-```
+
+# 后端: http://localhost:3001  (/docs 为 Swagger)
+# 前端: http://localhost:5173
+# 默认管理员: admin / admin123
 
 ## 项目结构
 
@@ -198,16 +236,18 @@ mchat/
 
 ## CLI 工具
 
+`make install` 会安装 CLI。推荐在当前 shell 加载环境后使用短命令：
+
 ```bash
-mchat init
+source scripts/env.sh   # PATH + venv activate（bash/zsh）
 mchat run
-mchat config show
 mchat skill list
-mchat skill create <name>
-mchat skill install <url-or-name>
 mchat db init
-mchat db seed
 ```
+
+不 source 时可用：`./bin/mchat run`
+
+日常开发直接 `make dev` 即可。
 ## Skill 兼容说明
 
 - 支持标准 frontmatter `SKILL.md` 技能包
@@ -221,10 +261,9 @@ mchat db seed
 
 | 文件 | 服务 | 场景 |
 |------|------|------|
-| `docker-compose.lite.yml` | MySQL + 后端 + 前端 | 开发 / 轻量 |
+| `docker-compose.lite.yml` | MySQL + 后端 + 前端 | **默认**（`make setup` / `make docker-up-lite`） |
 | `docker-compose.yml` | + Milvus、etcd、MinIO、Redis | 完整 RAG |
 | `docker-compose.prod.yml` | + Nginx HTTPS | 生产 |
-| `docker-compose.dev.yml` | 热重载 | 本地开发 |
 
 ## 技术栈
 

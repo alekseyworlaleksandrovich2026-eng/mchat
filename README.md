@@ -113,18 +113,74 @@ Change the password under **Admin → Users** after sign-in. Override via `ADMIN
 
 ### Local development
 
-```bash
-make install   # install dependencies
-make dev       # start backend + frontend
+**Prerequisites** (new machine):
 
-# Backend:  http://localhost:3001  (/docs for Swagger)
-# Frontend: http://localhost:5173
-```
+| Tool | Version | Ubuntu/Debian |
+|------|---------|---------------|
+| Python | 3.12+ | `sudo apt install python3 python3-venv python3-pip` |
+| Node.js | 20+ | [nodejs.org](https://nodejs.org/) or `nvm install 20` |
+| Docker | recent | for local MySQL (`make db-mysql-dev`) |
+| make | — | `sudo apt install make` |
+
+> `make` uses bash + `source venv`. For short `mchat`: `make install`, then `source scripts/env.sh`, or `./bin/mchat`.
+
+**After git pull (pick one path)**:
+
 ```bash
-make test      # run tests
-make lint      # lint
-mchat run      # start via CLI
+# Path A — local hot reload
+git pull
+make setup && make dev
+
+# Path B — Docker full stack
+git pull
+make docker-up-lite
 ```
+
+**Docker commands**:
+
+| Command | Description |
+|---------|-------------|
+| `make docker-up-lite` | Init .env, fix MySQL, build & start |
+| `make docker-down-lite` | Stop stack (keep volumes) |
+| `make docker-logs-lite` | Tail logs |
+| `make db-docker-reset-lite` | Wipe MySQL volume (password mismatch) |
+
+**First-time setup (recommended)**:
+
+```bash
+git clone https://github.com/windinwing/mchat.git
+cd mchat
+make setup         # lite MySQL + .env + deps + db init
+make dev           # local hot reload
+# or full stack: make docker-up-lite
+```
+
+**MySQL (single lite config)**:
+
+- `make setup` starts MySQL from `docker-compose.lite.yml` and syncs `DATABASE_URL` in both `ops/docker/.env` and `src/backend/.env`.
+- Host port **3307** by default; credentials: `mchat` / `mchat123` / database `mchat`.
+- `make dev` and `make docker-up-lite` share the same MySQL container.
+- Existing MySQL: `MCHAT_SETUP_MYSQL=0 make setup`.
+- `Access denied for user 'mchat'`: run `make db-docker-reset-lite && make setup` (wipes DB).
+
+**Or step by step**:
+
+```bash
+make install
+make db-mysql-dev   # lite MySQL only, port 3307
+make dev
+```
+
+```bash
+make test
+make lint
+source scripts/env.sh && mchat run
+# or: ./bin/mchat run
+```
+
+# Backend:  http://localhost:3001  (/docs)
+# Frontend: http://localhost:5173
+# Admin:    admin / admin123
 
 ## Project structure
 
@@ -188,16 +244,15 @@ The admin console and landing page support **English** and **简体中文**. Lan
 
 ## CLI
 
+After `make install`:
+
 ```bash
-mchat init
+source scripts/env.sh
 mchat run
-mchat config show
 mchat skill list
-mchat skill create <name>
-mchat skill install <url-or-name>
-mchat db init
-mchat db seed
 ```
+
+Or: `./bin/mchat run`. Prefer `make dev` for daily work.
 ## Skill compatibility
 
 - Supports standard frontmatter `SKILL.md` skill packages
@@ -211,10 +266,9 @@ mchat db seed
 
 | File | Services | Use case |
 |------|----------|----------|
-| `docker-compose.lite.yml` | MySQL + Backend + Frontend | Dev / lightweight |
+| `docker-compose.lite.yml` | MySQL + Backend + Frontend | **Default** (`make setup` / `make docker-up-lite`) |
 | `docker-compose.yml` | + Milvus, etcd, MinIO, Redis | Full RAG |
 | `docker-compose.prod.yml` | + Nginx HTTPS | Production |
-| `docker-compose.dev.yml` | Hot reload | Local dev |
 
 ## Tech stack
 
