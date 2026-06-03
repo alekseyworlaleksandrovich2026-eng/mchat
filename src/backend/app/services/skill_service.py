@@ -78,12 +78,25 @@ class SkillService:
         root.mkdir(parents=True, exist_ok=True)
         return root
 
-    @staticmethod
-    def _enforce_quota(user_id: str, *, additional_bytes: int = 0) -> None:
+    _PLAN_RANK = {"free": 0, "free_trial": 1, "pro": 2, "enterprise": 3}
+
+    async def _best_plan_for_user(self, user_id: str) -> str:
+        from app.models.customer import CustomerConfig
+
+        result = await self.db.execute(
+            select(CustomerConfig.plan).where(CustomerConfig.user_id == user_id)
+        )
+        plans = [row[0] for row in result.all() if row[0]]
+        if not plans:
+            return "free"
+        return max(plans, key=lambda p: self._PLAN_RANK.get((p or "free").lower(), 0))
+
+    async def _enforce_quota(self, user_id: str, *, additional_bytes: int = 0) -> None:
         from app.workspace.disk_usage import check_soft_quota
         from app.workspace.resolver import build_workspace_context
 
-        ctx = build_workspace_context(user_id)
+        plan = await self._best_plan_for_user(user_id)
+        ctx = build_workspace_context(user_id, plan_override=plan)
         message = check_soft_quota(ctx, additional_bytes=additional_bytes)
         if message:
             raise HTTPException(
@@ -277,7 +290,7 @@ class SkillService:
             shutil.rmtree(extract_path)
         extract_path.mkdir(parents=True, exist_ok=True)
 
-        self._enforce_quota(user_id, additional_bytes=len(content))
+        await self._enforce_quota(user_id, additional_bytes=len(content))
 
         try:
             extract_skill_zip(content, extract_path)
@@ -795,7 +808,7 @@ class SkillService:
 
         target.parent.mkdir(parents=True, exist_ok=True)
         content = await file.read()
-        self._enforce_quota(user_id, additional_bytes=len(content))
+        await self._enforce_quota(user_id, additional_bytes=len(content))
         target.write_bytes(content)
         await self._refresh_storage_usage(user_id)
         return {"path": str(target.relative_to(directory)), "name": target.name, "written": True}
@@ -823,7 +836,7 @@ class SkillService:
 
         target.parent.mkdir(parents=True, exist_ok=True)
         encoded = content.encode("utf-8")
-        self._enforce_quota(user_id, additional_bytes=len(encoded))
+        await self._enforce_quota(user_id, additional_bytes=len(encoded))
         target.write_text(content, encoding="utf-8")
         await self._refresh_storage_usage(user_id)
         return {"path": str(target.relative_to(directory)), "name": target.name, "written": True}

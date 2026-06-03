@@ -22,8 +22,10 @@ interface ChannelWorkspaceRow {
   user_id: string
   plan: string
   workspace_mode: string | null
+  user_container_allowed?: boolean | null
   requested_mode: string
   effective_mode: string
+  fallback_reason?: string | null
   container_name: string | null
   sidecar: SidecarStatus
   disk_usage_bytes: { total?: number; skills?: number; uploads?: number; data?: number }
@@ -56,6 +58,12 @@ function formatBytes(n: number | undefined): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(2)} MB`
+}
+
+function userPolicyLabel(allowed: boolean | null | undefined, t: (k: string) => string) {
+  if (allowed === true) return t('workspace.userPolicyAllow')
+  if (allowed === false) return t('workspace.userPolicyDeny')
+  return t('workspace.userPolicyAuto')
 }
 
 function modeBadge(mode: string, running?: boolean) {
@@ -200,6 +208,7 @@ export function WorkspacePage() {
                 <th className="py-2 pr-4">{t('workspace.colAgent')}</th>
                 <th className="py-2 pr-4">{t('workspace.colPlan')}</th>
                 <th className="py-2 pr-4">{t('workspace.colAssign')}</th>
+                <th className="py-2 pr-4">{t('workspace.colUserPolicy')}</th>
                 <th className="py-2 pr-4">{t('workspace.colEffective')}</th>
                 <th className="py-2 pr-4">{t('workspace.colSidecar')}</th>
                 <th className="py-2 pr-4">{t('workspace.colDisk')}</th>
@@ -224,8 +233,19 @@ export function WorkspacePage() {
                       ]}
                     />
                   </td>
+                  <td className="py-3 pr-4 text-gray-600 dark:text-gray-400">
+                    {userPolicyLabel(row.user_container_allowed, t)}
+                  </td>
                   <td className="py-3 pr-4">
                     {modeBadge(row.effective_mode, row.sidecar?.running)}
+                    {row.fallback_reason && (
+                      <span
+                        className="ml-2 text-xs text-amber-600 dark:text-amber-400"
+                        title={t(`workspace.fallback.${row.fallback_reason}`)}
+                      >
+                        ({t(`workspace.fallback.${row.fallback_reason}`)})
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 pr-4">
                     {row.container_name ? (

@@ -46,6 +46,10 @@ class ChannelWorkspaceSummary(BaseModel):
     workspace_mode: str | None = Field(
         None, description="Override: local | container; null = follow plan/default"
     )
+    user_container_allowed: bool | None = Field(
+        None,
+        description="Owner user policy: null=auto, true=allow, false=deny container",
+    )
     requested_mode: str
     effective_mode: str
     fallback_reason: str | None = None

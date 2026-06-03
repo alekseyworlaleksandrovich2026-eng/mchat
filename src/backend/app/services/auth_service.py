@@ -213,6 +213,8 @@ class AuthService:
         role: str | None = None,
         display_name: str | None = None,
         password: str | None = None,
+        workspace_container_allowed: bool | None | object = None,
+        set_workspace_container_allowed: bool = False,
     ) -> User:
         """Update user fields (admin)."""
         result = await self.db.execute(select(User).where(User.id == user_id))
@@ -233,6 +235,8 @@ class AuthService:
             user.display_name = display_name
         if password is not None:
             user.password_hash = get_password_hash(password)
+        if set_workspace_container_allowed:
+            user.workspace_container_allowed = workspace_container_allowed  # type: ignore[assignment]
         await self.db.flush()
         await self.db.refresh(user)
         return user

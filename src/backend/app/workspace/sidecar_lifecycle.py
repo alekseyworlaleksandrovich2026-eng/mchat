@@ -70,7 +70,19 @@ def idle_minutes_since(user_id: str, *, started_at: str | None = None) -> int | 
 
 
 def normalize_image_ref(image: str | None) -> str:
-    return (image or "").strip().split("@")[0].split(":")[0]
+    """Normalize image reference for comparison (keep tag, strip digest noise)."""
+    raw = (image or "").strip()
+    if not raw:
+        return ""
+    ref = raw.split("@", 1)[0].strip()
+    ref = ref.lower()
+    if ref.startswith("docker.io/library/"):
+        ref = ref[len("docker.io/library/") :]
+    elif ref.startswith("docker.io/"):
+        ref = ref[len("docker.io/") :]
+    if ":" not in ref:
+        ref = f"{ref}:latest"
+    return ref
 
 
 def image_matches_running(configured: str, running: str | None) -> bool:
@@ -78,7 +90,12 @@ def image_matches_running(configured: str, running: str | None) -> bool:
         return False
     cfg = normalize_image_ref(configured)
     run = normalize_image_ref(running)
-    return cfg == run or configured.strip() in running or running in configured
+    if cfg and run and cfg == run:
+        return True
+    # docker ps may show truncated IDs; avoid loose substring match on tags.
+    if running.startswith("sha256:"):
+        return False
+    return False
 
 
 def inspect_container(container_name: str) -> dict[str, Any]:

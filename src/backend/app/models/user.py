@@ -29,6 +29,11 @@ class User(Base):
     account_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active"
     )  # active, suspended
+    workspace_container_allowed: Mapped[bool | None] = mapped_column(
+        default=None,
+        nullable=True,
+        comment="NULL=follow plan; True=allow container; False=deny container",
+    )
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     display_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True

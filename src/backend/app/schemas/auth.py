@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     account_status: str = "active"
     avatar_url: str | None = None
     display_name: str | None = None
+    workspace_container_allowed: bool | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -79,3 +80,7 @@ class UpdateUserRequest(BaseModel):
     role: Literal["admin", "agent", "user"] | None = None
     display_name: str | None = Field(None, max_length=100)
     password: str | None = Field(None, min_length=6, max_length=255)
+    workspace_container_allowed: bool | None = Field(
+        None,
+        description="Container sidecar policy: null=auto by plan, true=allow, false=deny",
+    )
