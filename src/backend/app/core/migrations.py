@@ -216,6 +216,7 @@ def apply_schema_patches(conn: Connection) -> list[str]:
             ("usage_messages_limit", "INTEGER NOT NULL DEFAULT 1000"),
             ("usage_tokens_limit", "INTEGER NOT NULL DEFAULT 100000"),
             ("last_usage_reset_at", "DATETIME NULL"),
+            ("workspace_mode", "VARCHAR(20) NULL"),
         ]
         for col_name, col_def in cc_patches:
             if col_name not in cols:
