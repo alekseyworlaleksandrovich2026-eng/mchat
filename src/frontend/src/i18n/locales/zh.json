@@ -104,7 +104,16 @@
     "fallback.container_disabled_globally": "全局未启用容器",
     "fallback.user_container_denied": "用户未授权容器",
     "fallback.container_not_allowed_for_plan": "套餐/授权不足",
-    "fallback.plan_not_eligible": "套餐不支持容器"
+    "fallback.plan_not_eligible": "套餐不支持容器",
+    "usersTitle": "容器用户",
+    "colSkillAuthor": "自建 Skill",
+    "colMemory": "内存限额",
+    "colCpus": "CPU 限额",
+    "defaultMemory": "默认内存",
+    "defaultCpus": "默认 CPU",
+    "unlimited": "不限",
+    "stopped": "已停止",
+    "userUpdated": "用户容器设置已保存"
   },
   "roles": {
     "pageTitle": "角色权限管理"
@@ -487,6 +496,7 @@
     "toastUploaded": "技能已上传并覆盖安装",
     "toastUploadFailed": "上传失败",
     "searchPlaceholder": "搜索技能…",
+    "localModeHint": "当前为本地执行模式：仅可使用平台/已有 Skill。自建 Skill 需管理员开通 Docker 容器工作区。",
     "syncFromDisk": "从磁盘同步",
     "installFromUrl": "URL 安装",
     "uploadOverwrite": "上传 / 覆盖",

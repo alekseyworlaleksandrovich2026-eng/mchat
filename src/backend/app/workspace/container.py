@@ -203,13 +203,21 @@ class ContainerWorkspaceProvider(LocalWorkspaceProvider):
             )
 
         tenant = str(self.ctx.tenant_root)
+        from app.workspace.sidecar_limits import effective_sidecar_limits
+
+        limits = effective_sidecar_limits(self.ctx.user_id)
         cmd = [
             *self._docker_cmd(),
             "run",
             "-d",
             "--name",
             name,
-            *sidecar_run_args(user_id=self.ctx.user_id, container_name=name),
+            *sidecar_run_args(
+                user_id=self.ctx.user_id,
+                container_name=name,
+                memory=limits.get("memory"),
+                cpus=limits.get("cpus"),
+            ),
             *execution_volume_mounts(tenant),
             "-w",
             "/workspace",

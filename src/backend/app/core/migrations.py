@@ -188,6 +188,8 @@ def apply_schema_patches(conn: Connection) -> list[str]:
             ("email", "VARCHAR(255) NULL"),
             ("account_status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
             ("workspace_container_allowed", "BOOLEAN NULL"),
+            ("workspace_sidecar_memory", "VARCHAR(32) NULL"),
+            ("workspace_sidecar_cpus", "VARCHAR(16) NULL"),
         ]
         for col_name, col_def in user_patches:
             if col_name not in cols:

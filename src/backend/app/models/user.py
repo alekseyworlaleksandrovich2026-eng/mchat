@@ -34,6 +34,12 @@ class User(Base):
         nullable=True,
         comment="NULL=follow plan; True=allow container; False=deny container",
     )
+    workspace_sidecar_memory: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="Override sidecar memory e.g. 512m, 2g"
+    )
+    workspace_sidecar_cpus: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, comment="Override sidecar CPU quota e.g. 1.0"
+    )
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     display_name: Mapped[str | None] = mapped_column(
         String(100), nullable=True

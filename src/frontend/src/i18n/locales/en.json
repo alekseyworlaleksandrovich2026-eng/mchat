@@ -104,7 +104,16 @@
     "fallback.container_disabled_globally": "Container mode disabled globally",
     "fallback.user_container_denied": "User not allowed container",
     "fallback.container_not_allowed_for_plan": "Plan or allowlist required",
-    "fallback.plan_not_eligible": "Plan not eligible"
+    "fallback.plan_not_eligible": "Plan not eligible",
+    "usersTitle": "Container users",
+    "colSkillAuthor": "Custom skills",
+    "colMemory": "Memory limit",
+    "colCpus": "CPU limit",
+    "defaultMemory": "Default memory",
+    "defaultCpus": "Default CPUs",
+    "unlimited": "Unlimited",
+    "stopped": "Stopped",
+    "userUpdated": "User container settings saved"
   },
   "roles": {
     "pageTitle": "Roles & Permissions"
@@ -488,6 +497,7 @@
     "toastUploaded": "Skill uploaded and installed (overwrite)",
     "toastUploadFailed": "Upload failed",
     "searchPlaceholder": "Search skills…",
+    "localModeHint": "Local execution mode: platform/preinstalled skills only. Custom skills require a Docker container workspace from your admin.",
     "syncFromDisk": "Sync from disk",
     "installFromUrl": "Install via URL",
     "uploadOverwrite": "Upload / overwrite",

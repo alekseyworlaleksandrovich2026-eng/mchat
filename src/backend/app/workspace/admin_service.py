@@ -1,5 +1,3 @@
-"""Workspace summaries for admin UI (no sidecar auto-start)."""
-
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -8,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.customer import CustomerConfig
 from app.models.user import User
-from app.schemas.workspace import ChannelWorkspaceSummary, SidecarListItem, SidecarStatusResponse
+from app.schemas.workspace import ChannelWorkspaceSummary, SidecarListItem, SidecarStatusResponse, UserWorkspaceSummary
 from app.services.subscription_gate import channel_subscription_active
 from app.workspace.disk_usage import tenant_execution_usage_bytes
 from app.workspace.policy import container_block_reason
@@ -20,6 +18,12 @@ from app.workspace.sidecar_lifecycle import (
     read_sidecar_meta,
     remove_sidecar,
 )
+from app.workspace.sidecar_limits import (
+    effective_sidecar_limits,
+    sidecar_limits_path,
+    write_user_sidecar_limits,
+)
+from app.workspace.skill_policy import user_container_entitled
 from app.workspace.types import WorkspaceMode
 
 
@@ -192,3 +196,95 @@ def recycle_user_sidecar(user_id: str) -> bool:
     if not ctx.container_name:
         return False
     return remove_sidecar(ctx.container_name)
+
+
+async def list_user_workspace_summaries(
+    db: AsyncSession,
+) -> list[UserWorkspaceSummary]:
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = list(result.scalars().all())
+    sidecars_by_user = {
+        item.get("user_id"): item for item in list_sidecars() if item.get("user_id")
+    }
+
+    summaries: list[UserWorkspaceSummary] = []
+    for user in users:
+        entitled = await user_container_entitled(db, user.id)
+        sidecar = sidecars_by_user.get(user.id, {})
+        ctx = build_workspace_context(
+            user.id,
+            user_container_allowed=user.workspace_container_allowed,
+        )
+        disk = tenant_execution_usage_bytes(ctx.tenant_root)
+        limits = effective_sidecar_limits(user.id)
+        if (
+            user.workspace_sidecar_memory or user.workspace_sidecar_cpus
+        ) and not sidecar_limits_path(user.id).is_file():
+            write_user_sidecar_limits(
+                user.id,
+                memory=user.workspace_sidecar_memory,
+                cpus=user.workspace_sidecar_cpus,
+            )
+        summaries.append(
+            UserWorkspaceSummary(
+                user_id=user.id,
+                username=user.username,
+                display_name=user.display_name,
+                workspace_container_allowed=user.workspace_container_allowed,
+                container_entitled=entitled,
+                tenant_skill_authoring=entitled,
+                workspace_sidecar_memory=user.workspace_sidecar_memory,
+                workspace_sidecar_cpus=user.workspace_sidecar_cpus,
+                effective_memory=limits.get("memory"),
+                effective_cpus=limits.get("cpus"),
+                container_name=ctx.container_name,
+                sidecar=SidecarStatusResponse(
+                    exists=bool(sidecar.get("container_name")),
+                    running=bool(sidecar.get("running")),
+                    status=sidecar.get("status"),
+                    image=sidecar.get("image"),
+                ),
+                memory_limit_bytes=sidecar.get("memory_limit_bytes"),
+                running_cpus=sidecar.get("cpus"),
+                disk_usage_bytes=disk,
+                idle_minutes=sidecar.get("idle_minutes"),
+                last_active_at=sidecar.get("last_active_at"),
+                image_matches=sidecar.get("image_matches", True),
+            )
+        )
+    return summaries
+
+
+async def update_user_workspace_settings(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    workspace_container_allowed: bool | None = None,
+    set_container_allowed: bool = False,
+    workspace_sidecar_memory: str | None = None,
+    workspace_sidecar_cpus: str | None = None,
+    set_sidecar_memory: bool = False,
+    set_sidecar_cpus: bool = False,
+) -> User | None:
+    user = await db.get(User, user_id)
+    if user is None:
+        return None
+    if set_container_allowed:
+        user.workspace_container_allowed = workspace_container_allowed
+    if set_sidecar_memory:
+        user.workspace_sidecar_memory = (
+            workspace_sidecar_memory.strip() if workspace_sidecar_memory else None
+        )
+    if set_sidecar_cpus:
+        user.workspace_sidecar_cpus = (
+            workspace_sidecar_cpus.strip() if workspace_sidecar_cpus else None
+        )
+    write_user_sidecar_limits(
+        user.id,
+        memory=user.workspace_sidecar_memory,
+        cpus=user.workspace_sidecar_cpus,
+        clear=not user.workspace_sidecar_memory and not user.workspace_sidecar_cpus,
+    )
+    await db.flush()
+    await db.refresh(user)
+    return user

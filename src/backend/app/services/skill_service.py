@@ -104,6 +104,18 @@ class SkillService:
                 detail=message,
             )
 
+    async def _require_tenant_skill_authoring(self, user_id: str) -> None:
+        from app.workspace.skill_policy import (
+            TENANT_SKILL_AUTHORING_REQUIRES_CONTAINER,
+            user_container_entitled,
+        )
+
+        if not await user_container_entitled(self.db, user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=TENANT_SKILL_AUTHORING_REQUIRES_CONTAINER,
+            )
+
     async def _refresh_storage_usage(self, user_id: str) -> None:
         from app.workspace.usage_service import refresh_customer_storage_usage
 
@@ -240,6 +252,7 @@ class SkillService:
         source_name: str,
         name_hint: str | None = None,
     ) -> SkillResponse:
+        await self._require_tenant_skill_authoring(user_id)
         skills_dir = self._skills_root(user_id)
 
         try:
@@ -437,17 +450,48 @@ class SkillService:
                         if k not in ("secrets", "env")
                     }
                 )
+                from app.workspace.skill_policy import (
+                    SKILL_ORIGIN_PLATFORM,
+                    SKILL_ORIGIN_TENANT,
+                    skill_origin_for_disk_path,
+                )
+
+                path = skill_data.get("path") or ""
+                origin = skill_origin_for_disk_path(
+                    path,
+                    user_id=user_id,
+                    skill_name=str(skill_data.get("name") or ""),
+                )
+                merged["origin"] = (
+                    SKILL_ORIGIN_TENANT if origin == SKILL_ORIGIN_TENANT else SKILL_ORIGIN_PLATFORM
+                )
                 existing.config = merged
                 if not restricted:
                     existing.enabled = True
             else:
+                from app.workspace.skill_policy import (
+                    SKILL_ORIGIN_PLATFORM,
+                    SKILL_ORIGIN_TENANT,
+                    skill_origin_for_disk_path,
+                )
+
+                path = skill_data.get("path") or ""
+                origin = skill_origin_for_disk_path(
+                    path,
+                    user_id=user_id,
+                    skill_name=str(skill_data.get("name") or ""),
+                )
+                cfg = dict(skill_data.get("config") or {})
+                cfg["origin"] = (
+                    SKILL_ORIGIN_TENANT if origin == SKILL_ORIGIN_TENANT else SKILL_ORIGIN_PLATFORM
+                )
                 skill = Skill(
                     user_id=user_id,
                     name=skill_data["name"],
                     description=skill_data.get("description"),
                     skill_type=skill_data.get("type", "tool"),
                     path=skill_data.get("path"),
-                    config=skill_data.get("config"),
+                    config=cfg,
                     enabled=False if restricted else True,
                 )
                 self.db.add(skill)
@@ -794,6 +838,11 @@ class SkillService:
             raise HTTPException(status_code=404, detail="Skill not found")
         if skill.skill_type == "builtin":
             raise HTTPException(status_code=403, detail="Cannot modify built-in skills")
+        from app.workspace.skill_policy import is_tenant_authored_skill
+
+        if not is_tenant_authored_skill(skill, user_id):
+            raise HTTPException(status_code=403, detail="platform_skill_readonly")
+        await self._require_tenant_skill_authoring(user_id)
 
         directory = self._skill_directory(skill)
         if directory is None or not directory.exists():
@@ -823,6 +872,11 @@ class SkillService:
             raise HTTPException(status_code=404, detail="Skill not found")
         if skill.skill_type == "builtin":
             raise HTTPException(status_code=403, detail="Cannot edit built-in skills")
+        from app.workspace.skill_policy import is_tenant_authored_skill
+
+        if not is_tenant_authored_skill(skill, user_id):
+            raise HTTPException(status_code=403, detail="platform_skill_readonly")
+        await self._require_tenant_skill_authoring(user_id)
 
         directory = self._skill_directory(skill)
         if directory is None or not directory.exists():
@@ -845,6 +899,7 @@ class SkillService:
         self, *, user_id: str, name: str, description: str | None = None, skill_type: str = "tool"
     ) -> SkillResponse:
         """Create a new skill directory with a minimal SKILL.md."""
+        await self._require_tenant_skill_authoring(user_id)
         skills_dir = self._skills_root(user_id)
 
         folder_name = self._safe_folder_name(name)
