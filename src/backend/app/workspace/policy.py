@@ -1,4 +1,4 @@
-"""Workspace container eligibility (global, plan, per-user, per-channel)."""
+"""Workspace container eligibility (global, plan, per-channel). Core dev: no per-user admin flags."""
 
 from __future__ import annotations
 
@@ -18,23 +18,16 @@ def container_block_reason(
     plan: str | None = None,
     subscription_active: bool = True,
     workspace_mode_override: str | None = None,
-    user_container_allowed: bool | None = None,
     requested_mode: WorkspaceMode | None = None,
-    ignore_user_denial: bool = False,
 ) -> str | None:
     """Why container mode cannot be used; None when allowed."""
     if requested_mode is not None and requested_mode != WorkspaceMode.CONTAINER:
         return None
     if not settings.workspace_container_enabled:
         return "container_disabled_globally"
-    if not ignore_user_denial and user_container_allowed is False:
-        return "user_container_denied"
 
     override = (workspace_mode_override or "").strip().lower()
     if override == "container":
-        if not plan_allows_container_auto(plan, subscription_active=subscription_active):
-            if user_container_allowed is not True:
-                return "container_not_allowed_for_plan"
         return None
 
     if not plan_allows_container_auto(plan, subscription_active=subscription_active):

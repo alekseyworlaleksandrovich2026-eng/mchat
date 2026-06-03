@@ -178,9 +178,8 @@ def list_sidecars() -> list[dict[str, Any]]:
         host_cfg = inspect.get("HostConfig") or {}
         memory_bytes = int(host_cfg.get("Memory") or 0)
         nano_cpus = int(host_cfg.get("NanoCpus") or 0)
-        from app.workspace.sidecar_limits import effective_sidecar_limits
-
-        configured_limits = effective_sidecar_limits(user_id) if user_id else {}
+        configured_memory = (settings.workspace_container_memory or "").strip() or None
+        configured_cpus = (settings.workspace_container_cpus or "").strip() or None
         items.append(
             {
                 "container_name": name,
@@ -198,8 +197,8 @@ def list_sidecars() -> list[dict[str, Any]]:
                 "idle_minutes": idle,
                 "memory_limit_bytes": memory_bytes or None,
                 "cpus": round(nano_cpus / 1_000_000_000, 2) if nano_cpus else None,
-                "configured_memory": configured_limits.get("memory"),
-                "configured_cpus": configured_limits.get("cpus"),
+                "configured_memory": configured_memory,
+                "configured_cpus": configured_cpus,
             }
         )
     return items

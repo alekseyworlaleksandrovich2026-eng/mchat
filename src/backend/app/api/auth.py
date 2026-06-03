@@ -141,19 +141,12 @@ async def update_user(
 ) -> User:
     """Update user role or reset password (admin only)."""
     auth_service = AuthService(db)
-    fields = request.model_dump(exclude_unset=True)
-    set_policy = "workspace_container_allowed" in fields
-    if set_policy:
-        fields.pop("workspace_container_allowed")
-    user = await auth_service.update_user(
+    return await auth_service.update_user(
         user_id,
-        role=fields.get("role"),
-        display_name=fields.get("display_name"),
-        password=fields.get("password"),
-        workspace_container_allowed=request.workspace_container_allowed,
-        set_workspace_container_allowed=set_policy,
+        role=request.role,
+        display_name=request.display_name,
+        password=request.password,
     )
-    return user
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

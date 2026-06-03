@@ -27,7 +27,6 @@ def resolve_workspace_mode(
     plan: str | None = None,
     workspace_mode_override: str | None = None,
     subscription_active: bool = True,
-    user_container_allowed: bool | None = None,
 ) -> WorkspaceMode:
     """Choose local (A) or container (B) backend."""
     override = _normalize_mode(workspace_mode_override)
@@ -46,7 +45,6 @@ def resolve_workspace_mode(
             plan=plan,
             subscription_active=subscription_active,
             workspace_mode_override=workspace_mode_override,
-            user_container_allowed=user_container_allowed,
             requested_mode=WorkspaceMode.CONTAINER,
         ):
             return WorkspaceMode.LOCAL
@@ -59,7 +57,6 @@ def build_workspace_context(
     customer_config: CustomerConfig | None = None,
     channel_id: str | None = None,
     workspace_mode_override: str | None = None,
-    user_container_allowed: bool | None = None,
     plan_override: str | None = None,
 ) -> WorkspaceContext:
     plan = (
@@ -79,7 +76,6 @@ def build_workspace_context(
         plan=plan,
         workspace_mode_override=override,
         subscription_active=subscription_active,
-        user_container_allowed=user_container_allowed,
     )
     limits = limits_for_plan(plan)
     if mode == WorkspaceMode.LOCAL:

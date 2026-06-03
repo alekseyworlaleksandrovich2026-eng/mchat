@@ -93,7 +93,6 @@ interface CustomerServiceConfig {
   enabled: boolean
   widget_session_ttl_hours?: number
   workspace_mode?: string | null
-  workspace_container_allowed?: boolean | null
   created_at?: string
   updated_at?: string
 }
@@ -172,7 +171,6 @@ function normalizeCustomerConfig(
     enabled: raw?.enabled ?? true,
     widget_session_ttl_hours: raw?.widget_session_ttl_hours ?? 24,
     workspace_mode: raw?.workspace_mode ?? null,
-    workspace_container_allowed: raw?.workspace_container_allowed ?? null,
     created_at: raw?.created_at,
     updated_at: raw?.updated_at,
   }
@@ -676,15 +674,11 @@ export function CustomerConfig() {
                 options={[
                   { value: 'auto', label: t('customerAgents.workspaceModeAuto') },
                   { value: 'local', label: t('customerAgents.workspaceModeLocal') },
-                  ...(config.workspace_container_allowed === false
-                    ? []
-                    : [{ value: 'container', label: t('customerAgents.workspaceModeContainer') }]),
+                  { value: 'container', label: t('customerAgents.workspaceModeContainer') },
                 ]}
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 -mt-4">
-                {config.workspace_container_allowed === false
-                  ? t('customerAgents.workspaceModeContainerDisabled')
-                  : t('customerAgents.workspaceModeHint')}
+                {t('customerAgents.workspaceModeHint')}
               </p>
               <Select
                 label={t('customerAgents.bindAiModel')}

@@ -119,17 +119,55 @@ async def test_user_container_entitled_pro_plan(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_user_container_entitled_denied(db_session, monkeypatch):
+async def test_user_container_entitled_free_without_container_channel(
+    db_session, monkeypatch
+):
     from app.workspace.skill_policy import user_container_entitled
 
     monkeypatch.setattr(settings, "workspace_container_enabled", True)
     user = User(
-        id="u-deny",
-        username="denyuser",
+        id="u-free",
+        username="freeuser",
         password_hash="x",
         role="agent",
-        workspace_container_allowed=False,
     )
     db_session.add(user)
     await db_session.flush()
+    db_session.add(
+        CustomerConfig(
+            id="ch-free",
+            name="Free",
+            user_id=user.id,
+            plan="free",
+            enabled=True,
+        )
+    )
+    await db_session.flush()
     assert await user_container_entitled(db_session, user.id) is False
+
+
+@pytest.mark.asyncio
+async def test_user_container_entitled_channel_override(db_session, monkeypatch):
+    from app.workspace.skill_policy import user_container_entitled
+
+    monkeypatch.setattr(settings, "workspace_container_enabled", True)
+    user = User(
+        id="u-ch",
+        username="chuser",
+        password_hash="x",
+        role="agent",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        CustomerConfig(
+            id="ch-override",
+            name="Override",
+            user_id=user.id,
+            plan="free",
+            workspace_mode="container",
+            enabled=True,
+        )
+    )
+    await db_session.flush()
+    assert await user_container_entitled(db_session, user.id) is True

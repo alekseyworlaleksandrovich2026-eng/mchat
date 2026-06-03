@@ -11,7 +11,6 @@ from app.core.config import settings
 from app.core.skills_paths import resolve_skill_directory
 from app.models.customer import CustomerConfig
 from app.models.skill import Skill
-from app.models.user import User
 from app.skill.ops_policy import is_server_ops_skill
 from app.workspace.paths import tenant_skills_dir
 from app.workspace.resolver import resolve_workspace_mode
@@ -37,14 +36,9 @@ async def _best_plan_for_user(db: AsyncSession, user_id: str) -> str:
 
 
 async def user_container_entitled(db: AsyncSession, user_id: str) -> bool:
-    """User may author/run tenant skills in container workspace."""
+    """Tenant may author/run custom skills when container workspace is available."""
     if not settings.workspace_container_enabled:
         return False
-    user = await db.get(User, user_id)
-    if user is not None and user.workspace_container_allowed is False:
-        return False
-    if user is not None and user.workspace_container_allowed is True:
-        return True
 
     result = await db.execute(
         select(CustomerConfig.workspace_mode).where(CustomerConfig.user_id == user_id)
@@ -54,14 +48,7 @@ async def user_container_entitled(db: AsyncSession, user_id: str) -> bool:
             return True
 
     plan = await _best_plan_for_user(db, user_id)
-    allowed = user.workspace_container_allowed if user else None
-    return (
-        resolve_workspace_mode(
-            plan=plan,
-            user_container_allowed=allowed,
-        )
-        == WorkspaceMode.CONTAINER
-    )
+    return resolve_workspace_mode(plan=plan) == WorkspaceMode.CONTAINER
 
 
 def skill_origin_for_disk_path(path: str, *, user_id: str, skill_name: str) -> str:
