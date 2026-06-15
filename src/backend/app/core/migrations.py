@@ -187,6 +187,10 @@ def apply_schema_patches(conn: Connection) -> list[str]:
         user_patches = [
             ("email", "VARCHAR(255) NULL"),
             ("account_status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+            ("phone", "VARCHAR(30) NULL"),
+            ("phone_verified_at", "DATETIME NULL"),
+            ("external_provider", "VARCHAR(30) NULL"),
+            ("external_id", "VARCHAR(255) NULL"),
         ]
         for col_name, col_def in user_patches:
             if col_name not in cols:
