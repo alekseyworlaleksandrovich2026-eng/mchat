@@ -81,9 +81,9 @@ Click any screenshot to open the full image.
 - **Security** — JWT, API keys, RBAC
 - **Docker** — `make docker-up-lite` full stack
 
-## Workflow orchestration (Beta)
+## Workflow orchestration
 
-MChat **Workflow** chains multiple Skills into reusable pipelines — not just one-shot chat, but multi-step automation with parallel branches, conditional routing, human approval, and structured outputs (reports, exports, alerts).
+MChat **Workflow** chains multiple Skills into reusable pipelines — not just one-shot chat, but multi-step automation with parallel branches, conditional routing, human approval, loop iteration, node groups, and structured outputs (reports, exports, alerts).
 
 ```mermaid
 flowchart LR
@@ -101,15 +101,19 @@ flowchart LR
 | **Workflow** | Ordered steps or a **graph** (`graph_json`) that wires Skills together |
 | **Trigger** | **Manual** (admin run-once), **Schedule** (cron via Skill Schedules + worker), or **Channel** (message rules on WeChat / Telegram / Web) |
 
-**Visual graph editor** (Admin → **Workflows**, `/admin/workflows`):
+**ComfyUI-style visual graph editor** (Admin → **Workflows** → Edit Graph):
 
-- ComfyUI-style canvas: pointer vs pan (`V` / `H`), drag nodes from the skill library
-- Node types: `start` · `skill` · `condition` · `approval` · `merge` · `end`
-- **Payload mapper** — `${input.keyword}`, `${nodes.<id>.result.xxx}` templates per node
-- **Merge** — wait for parallel branches, then feed downstream chart/export steps
+- **Full-screen canvas** with node tree sidebar, template gallery, run history, and results overlay
+- **Double-click to search** — ComfyUI-style command palette for instant node insertion
+- **Node types**: `start` · `skill` · `condition` (10 operators) · `approval` · `merge` · `batch` (loop) · `group` (visual) · `end`
+- **Node groups** — select nodes → `Cmd/G` to create a colored, collapsible, resizable group frame
+- **Payload mapper** — `${input.keyword}`, `${nodes.<id>.result.xxx}`, `${item}` templates per node; type-preserving variable linking
+- **Batch / Loop** — iterate a list, run sub-workflow per item with `${item}` context, concurrent execution
+- **Condition** — 10 operators (`==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `not_contains`, `startswith`, `endswith`); both `left` and `right` support template variables
 - **Approval** — pause a run until an operator approves or rejects in the admin UI
+- **Merge** — wait for parallel branches, then feed downstream chart/export steps
 
-**Templates**: built-in flows such as **Patent Multi-Dimension Report** (search → parallel analysis → merge → chart/Excel/Word/PPT). Save any workflow as **My template** and instantiate it again with one click. Skills bind by `skill_name`, so the same graph works across tenants after skills are installed.
+**Templates**: built-in flows such as **Patent Multi-Dimension Report** (search → parallel analysis → merge → chart/Excel/Word/PPT). Browse templates in the gallery with **mini graph preview**, filter by category, and apply with one click. Save any workflow as a reusable template.
 
 **Example**: one `patent-search` skill can appear in many nodes with different payloads — `command: search` for retrieval, `command: analysis` + `dimension: applicant|ipc|…` for parallel analytics, then `patent-report` for export.
 
@@ -120,8 +124,7 @@ flowchart LR
 3. Open **Admin → Workflows** — use a template or build a graph, then **Run once**
 4. For **scheduled** runs: start the worker — `make dev-worker` or set `WORKER_ENABLED=true` in `.env`
 
-> **Beta** — core paths are production-ready for validation; graph DSL and UI may evolve.  
-> Details: [Workflow orchestrator](docs/workflow-orchestrator.en.md) · [Product tour — Workflow](docs/product-tour.en.md#workflow-orchestration-beta) · API: [docs/api.en.md#workflows-beta](docs/api.en.md#workflows-beta)
+> **Complete guide**: [Workflow Orchestrator](docs/workflow-orchestrator-guide.en.md) · [中文版](docs/workflow-orchestrator-guide.zh.md) · [Product tour](docs/product-tour.en.md#workflow-orchestration-beta) · API: [docs/api.en.md#workflows-beta](docs/api.en.md#workflows-beta)
 
 ## Quick start
 

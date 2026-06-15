@@ -2,13 +2,16 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   GripVertical,
   Maximize2,
   Minimize2,
+  Plus,
   Save,
   Trash2,
+  X,
 } from 'lucide-react'
 import {
   Background,
@@ -33,13 +36,16 @@ import { Input } from '@/components/ui/Input'
 import { Tabs, TabPanel } from '@/components/ui/Tabs'
 import { cn } from '@/lib/utils'
 import {
+  CATEGORY_ORDER,
   CONTROL_NODE_TYPES,
   NODE_COLORS,
   collectUpstreamNodeIds,
   defaultPayloadForSkill,
   extractStartInputFields,
+  groupSkillsByCategory,
   inferSkillCategory,
   type GraphNodeType,
+  type InputFieldDef,
   type WorkflowSkillOption,
 } from '@/lib/workflowSkillMeta'
 import { getSkillDisplayName } from '@/lib/skillDisplay'
@@ -55,11 +61,14 @@ import api from '@/lib/api'
 import { PayloadMapper } from '@/components/workflow/PayloadMapper'
 import { WorkflowCanvasToolbar, type CanvasTool } from '@/components/workflow/WorkflowCanvasToolbar'
 import { workflowNodeTypes } from '@/components/workflow/WorkflowCanvasNode'
+import { groupNodeTypes, computeGroupBounds } from '@/components/workflow/WorkflowGroupNode'
 import {
   WorkflowGraphContextMenu,
   type GraphContextMenuState,
 } from '@/components/workflow/WorkflowGraphContextMenu'
 import { WorkflowCanvasToolHint } from '@/components/workflow/WorkflowCanvasToolHint'
+import { WorkflowSidebar, type PresetItem } from '@/components/workflow/WorkflowSidebar'
+import { WorkflowNodeSearch } from '@/components/workflow/WorkflowNodeSearch'
 import { useWorkflowGraphHistory } from '@/hooks/useWorkflowGraphHistory'
 
 export type { GraphNodeType }
@@ -92,6 +101,7 @@ export interface WorkflowGraphValue {
     name?: string
     position?: { x: number; y: number }
     config?: Record<string, unknown>
+    parentId?: string
   }>
   edges: Array<{
     id: string
@@ -108,6 +118,11 @@ interface Props {
   value?: WorkflowGraphValue | null
   skills: WorkflowSkillOption[]
   onSave: (value: WorkflowGraphValue) => void
+  workflowId?: string
+  workflowName?: string
+  onBack?: () => void
+  headerExtra?: React.ReactNode
+  presets?: PresetItem[]
 }
 
 function isDarkMode() {
@@ -181,6 +196,18 @@ function toFlowNodes(
   locale: string,
   t: (key: string) => string,
 ): Node[] {
+  const parentIds = new Map<string, number>()
+  const parentChildNames = new Map<string, string[]>()
+  for (const node of graphNodes) {
+    if (node.parentId) {
+      parentIds.set(node.parentId, (parentIds.get(node.parentId) || 0) + 1)
+      const list = parentChildNames.get(node.parentId) || []
+      const cfg = node.config || {}
+      const sn = node.type === 'skill' ? (String(cfg.skill_name || '') || node.name || '') : (node.type || '')
+      if (sn) list.push(sn)
+      parentChildNames.set(node.parentId, list)
+    }
+  }
   return graphNodes.map((node) => {
     const rawConfig = node.config || {}
     const config =
@@ -191,10 +218,24 @@ function toFlowNodes(
         ? t(`workflows.skillCategory.${String(config.workflow_role || inferSkillCategory({ id: '', name: skillLabel || node.name || '', config }))}`)
         : ''
     const skillMissing = node.type === 'skill' ? isSkillMissing(config, skills) : false
+    const batchListPath = node.type === 'batch' ? String(config.list_path || '') : ''
+    const batchChildCount = node.type === 'batch' ? (parentIds.get(node.id) || 0) : 0
+    const batchChildLabels = node.type === 'batch' ? (parentChildNames.get(node.id) || []) : []
+    const isGroup = node.type === 'group'
+    const groupChildCount = isGroup ? (parentIds.get(node.id) || 0) : 0
+    const groupW = isGroup ? Number(config.width) || 280 : undefined
+    const groupH = isGroup ? Number(config.height) || 160 : undefined
     return {
       id: node.id,
-      type: 'workflowNode',
+      type: isGroup ? 'workflowGroup' : 'workflowNode',
       position: node.position || { x: 100, y: 100 },
+      style: node.parentId ? undefined : (node.type === 'batch' ? { width: 320, height: 240 } : isGroup ? { width: groupW, height: groupH } : undefined),
+      width: (node.type === 'batch' && !node.parentId) ? 320 : isGroup ? groupW : undefined,
+      height: (node.type === 'batch' && !node.parentId) ? 240 : isGroup ? groupH : undefined,
+      measured: (node.type === 'batch' && !node.parentId) ? { width: 320, height: 240 } : isGroup ? { width: groupW, height: groupH } : undefined,
+      parentId: node.parentId || undefined,
+      extent: node.parentId ? 'parent' : undefined,
+      hidden: isGroup && config.collapsed ? false : undefined,
       data: {
         label: node.name || node.id,
         nodeType: node.type,
@@ -202,6 +243,10 @@ function toFlowNodes(
         skillLabel: skillMissing && config.skill_name ? String(config.skill_name) : skillLabel,
         categoryLabel: category,
         skillMissing,
+        batchListPath,
+        batchChildCount,
+        batchChildLabels,
+        groupChildCount,
       },
     }
   })
@@ -216,6 +261,27 @@ function toFlowEdges(edges: WorkflowGraphValue['edges']): Edge[] {
     sourceHandle: edge.source_handle,
     targetHandle: edge.target_handle,
   }))
+}
+
+function recomputeBatchChildrenMeta(nodes: Node[], batchId: string): Node[] {
+  const children = nodes.filter((n) => n.parentId === batchId)
+  const count = children.length
+  const labels = children
+    .map((n) => {
+      const nd = (n.data || {}) as Record<string, unknown>
+      const cfg = (nd.config || {}) as Record<string, unknown>
+      const nt = String(nd.nodeType || '')
+      const lbl = String(nd.label || '')
+      return nt === 'skill' ? String(cfg.skill_name || '') || lbl || '' : nt || lbl || ''
+    })
+    .filter(Boolean)
+  return nodes.map((n) => {
+    const nd = n.data as Record<string, unknown> | undefined
+    if (n.id === batchId && nd?.nodeType === 'batch') {
+      return { ...n, data: { ...nd, batchChildCount: count, batchChildLabels: labels } }
+    }
+    return n
+  })
 }
 
 function IconToolButton({
@@ -289,7 +355,7 @@ export function WorkflowGraphEditor(props: Props) {
   )
 }
 
-function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
+function WorkflowGraphEditorInner({ value, skills, onSave, workflowId, workflowName, onBack, headerExtra, presets }: Props) {
   const { t, i18n } = useTranslation()
   const uiLocale = i18n.language || 'zh'
   const { screenToFlowPosition, zoomIn, zoomOut, fitView, getViewport, setViewport } = useReactFlow()
@@ -316,6 +382,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
   const [jsonError, setJsonError] = useState('')
   const [skillSearch, setSkillSearch] = useState('')
   const [contextMenu, setContextMenu] = useState<GraphContextMenuState>(null)
+  const [nodeSearch, setNodeSearch] = useState<{ open: boolean; pos: { x: number; y: number } | null }>({ open: false, pos: null })
   const [canvasTool, setCanvasTool] = useState<CanvasTool>('pointer')
   const [spaceHeld, setSpaceHeld] = useState(false)
   const [showMinimap, setShowMinimap] = useState(true)
@@ -381,6 +448,33 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       cancelled = true
     }
   }, [])
+  // Listen for batch node drop events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { raw: string; batchNodeId: string }
+      if (!detail?.raw || !detail?.batchNodeId) return
+      e.stopPropagation()
+      let payload: { kind: string; skillId?: string }
+      try { payload = JSON.parse(detail.raw) } catch { return }
+      if (payload.kind === 'skill' && payload.skillId) {
+        const skill = skills.find((s) => s.id === payload.skillId)
+        if (!skill) return
+        pushHistory()
+        const label = getSkillDisplayName(skill, uiLocale)
+        const existing = nodes.filter((n) => n.parentId === detail.batchNodeId).length
+        const relPos = { x: 20, y: 60 + existing * 50 }
+        const childNode = buildSkillNode(skill, relPos, label)
+        childNode.parentId = detail.batchNodeId
+        childNode.extent = 'parent'
+        setNodes((prev) => recomputeBatchChildrenMeta([...prev, childNode], detail.batchNodeId))
+        setSelectedNodeId(childNode.id)
+        setSelectedEdgeId(null)
+        setPropsOpen(true)
+      }
+    }
+    window.addEventListener('mchat-batch-drop', handler)
+    return () => window.removeEventListener('mchat-batch-drop', handler)
+  }, [skills, nodes, pushHistory, setNodes, uiLocale])
 
   const filteredSkills = useMemo(() => {
     const q = skillSearch.trim().toLowerCase()
@@ -441,6 +535,9 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
         selectCanvasTool('pointer')
       } else if (e.key === 'h' || e.key === 'H') {
         selectCanvasTool('pan')
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault()
+        createGroupFromSelected()
       } else if (e.key === '=' || e.key === '+') {
         e.preventDefault()
         zoomIn({ duration: 120 })
@@ -450,6 +547,11 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       } else if (e.key === '0') {
         e.preventDefault()
         fitView({ padding: 0.15, duration: 200 })
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedEdgeId) {
+          e.preventDefault()
+          deleteEdgeById(selectedEdgeId)
+        }
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
@@ -465,7 +567,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       window.removeEventListener('keyup', onKeyUp)
       window.clearTimeout(toolHintTimerRef.current)
     }
-  }, [fitView, redo, selectCanvasTool, showToolHint, t, undo, zoomIn, zoomOut])
+  }, [fitView, redo, selectCanvasTool, showToolHint, t, undo, zoomIn, zoomOut, selectedNodeId, selectedEdgeId])
 
   useEffect(() => {
     const observer = new MutationObserver(() => setDark(isDarkMode()))
@@ -534,6 +636,8 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       condition: t('workflows.graphNodeCondition'),
       approval: t('workflows.graphNodeApproval'),
       merge: t('workflows.graphNodeMerge'),
+      batch: t('workflows.graphNodeBatch'),
+      group: t('workflows.graphNodeGroup', 'Group'),
       end: t('workflows.graphNodeEnd'),
     }
     const config: Record<string, unknown> =
@@ -547,12 +651,19 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
           }
         : nodeType === 'merge'
           ? { merge_mode: 'sections' }
-          : {}
+          : nodeType === 'batch'
+            ? { list_path: '', max_concurrent: 3 }
+            : {}
     const pos = position || { x: 120 + nodes.length * 36, y: 80 + nodes.length * 24 }
+    const isBatch = nodeType === 'batch'
     const next: Node = {
       id,
       type: 'workflowNode',
-      position: pos,
+      position: isBatch ? { x: pos.x, y: pos.y } : pos,
+      style: isBatch ? { width: 320, height: 240 } : undefined,
+      width: isBatch ? 320 : undefined,
+      height: isBatch ? 240 : undefined,
+      measured: isBatch ? { width: 320, height: 240 } : undefined,
       data: {
         label: defaultName[nodeType],
         nodeType,
@@ -641,8 +752,23 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
 
   const addSkillNodeAt = (skill: WorkflowSkillOption, position: { x: number; y: number }) => {
     pushHistory()
-    const next = buildSkillNode(skill, position)
-    setNodes((prev) => [...prev, next])
+    const label = getSkillDisplayName(skill, uiLocale)
+    const next = buildSkillNode(skill, position, label)
+    // Auto-assign parent batch node if dropped inside one
+    let batchId: string | null = null
+    const batchNodes = nodes.filter((n) => (n.data as any)?.nodeType === 'batch' && !n.parentId)
+    for (const bn of batchNodes) {
+      const bw = (bn.style as any)?.width || 320
+      const bh = (bn.style as any)?.height || 240
+      if (position.x > bn.position.x && position.x < bn.position.x + bw && position.y > bn.position.y + 8 && position.y < bn.position.y + bh) {
+        next.parentId = bn.id
+        next.extent = 'parent'
+        next.position = { x: position.x - bn.position.x, y: position.y - bn.position.y }
+        batchId = bn.id
+        break
+      }
+    }
+    setNodes((prev) => (batchId ? recomputeBatchChildrenMeta([...prev, next], batchId) : [...prev, next]))
     setSelectedNodeId(next.id)
     setSelectedEdgeId(null)
     setPropsOpen(true)
@@ -651,7 +777,21 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
   const addEmptySkillNodeAt = (position: { x: number; y: number }) => {
     pushHistory()
     const next = buildSkillNode(null, position, t('workflows.emptySkillNode'))
-    setNodes((prev) => [...prev, next])
+    // Auto-assign parent batch
+    let batchId: string | null = null
+    const batchNodes = nodes.filter((n) => (n.data as any)?.nodeType === 'batch' && !n.parentId)
+    for (const bn of batchNodes) {
+      const bw = (bn.style as any)?.width || 320
+      const bh = (bn.style as any)?.height || 240
+      if (position.x > bn.position.x && position.x < bn.position.x + bw && position.y > bn.position.y + 8 && position.y < bn.position.y + bh) {
+        next.parentId = bn.id
+        next.extent = 'parent'
+        next.position = { x: position.x - bn.position.x, y: position.y - bn.position.y }
+        batchId = bn.id
+        break
+      }
+    }
+    setNodes((prev) => (batchId ? recomputeBatchChildrenMeta([...prev, next], batchId) : [...prev, next]))
     setSelectedNodeId(next.id)
     setSelectedEdgeId(null)
     setPropsOpen(true)
@@ -669,7 +809,27 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
 
   const deleteNodeById = (nodeId: string) => {
     pushHistory()
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId))
+    const target = nodes.find((n) => n.id === nodeId)
+    const parentId = target?.parentId || undefined
+    const isGroup = (target?.data as any)?.nodeType === 'group'
+    setNodes((prev) => {
+      let filtered = prev.filter((n) => n.id !== nodeId)
+      // When deleting a group, unparent its children (convert to absolute coords)
+      if (isGroup && target) {
+        filtered = filtered.map((n) => {
+          if (n.parentId === nodeId) {
+            return {
+              ...n,
+              parentId: undefined,
+              extent: undefined,
+              position: { x: n.position.x + target.position.x, y: n.position.y + target.position.y },
+            }
+          }
+          return n
+        })
+      }
+      return parentId ? recomputeBatchChildrenMeta(filtered, parentId) : filtered
+    })
     setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId))
     if (selectedNodeId === nodeId) setSelectedNodeId(null)
   }
@@ -695,10 +855,128 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
     setPropsOpen(true)
   }
 
+  const createGroupFromSelected = useCallback(() => {
+    const selected = nodes.filter((n) => n.selected && (n.data as any)?.nodeType !== 'group' && !n.parentId)
+    if (selected.length === 0) return
+    pushHistory()
+    const bounds = computeGroupBounds(selected)
+    const groupId = `group_${Date.now()}`
+    const groupNode: Node = {
+      id: groupId,
+      type: 'workflowGroup',
+      position: { x: bounds.x, y: bounds.y },
+      style: { width: bounds.width, height: bounds.height },
+      width: bounds.width,
+      height: bounds.height,
+      measured: { width: bounds.width, height: bounds.height },
+      data: {
+        label: t('workflows.groupDefaultName', 'Group'),
+        nodeType: 'group',
+        config: { color: '#64748b', collapsed: false },
+        groupChildCount: selected.length,
+      },
+    }
+    setNodes((prev) => {
+      let updated = [...prev.filter((n) => !n.selected), groupNode]
+      // Reparent selected nodes into the group
+      updated = updated.map((n) => {
+        if (selected.some((s) => s.id === n.id)) {
+          return {
+            ...n,
+            parentId: groupId,
+            extent: 'parent' as const,
+            position: { x: n.position.x - bounds.x, y: n.position.y - bounds.y },
+            selected: false,
+          }
+        }
+        return n
+      })
+      return updated
+    })
+  }, [nodes, pushHistory, setNodes, t])
+
+  // Listen for group node events (toggle collapse, rename, color change)
+  useEffect(() => {
+    const onToggle = (e: Event) => {
+      const { groupId } = (e as CustomEvent).detail
+      setNodes((prev) => prev.map((n) => {
+        if (n.id !== groupId) return n
+        const cfg = (n.data as any)?.config || {}
+        const collapsed = !cfg.collapsed
+        return {
+          ...n,
+          data: { ...n.data, config: { ...cfg, collapsed } },
+          // Hide/show children
+        }
+      }))
+      // Toggle children visibility
+      setNodes((prev) => {
+        const group = prev.find((n) => n.id === groupId)
+        const collapsed = (group?.data as any)?.config?.collapsed
+        if (collapsed === undefined) return prev
+        return prev.map((n) => {
+          if (n.parentId === groupId) {
+            return { ...n, hidden: collapsed }
+          }
+          return n
+        })
+      })
+    }
+    const onRename = (e: Event) => {
+      const { groupId, label } = (e as CustomEvent).detail
+      setNodes((prev) => prev.map((n) =>
+        n.id === groupId ? { ...n, data: { ...n.data, label } } : n,
+      ))
+    }
+    const onColor = (e: Event) => {
+      const { groupId, color } = (e as CustomEvent).detail
+      setNodes((prev) => prev.map((n) => {
+        if (n.id !== groupId) return n
+        const cfg = (n.data as any)?.config || {}
+        return { ...n, data: { ...n.data, config: { ...cfg, color } } }
+      }))
+    }
+    window.addEventListener('mchat-group-toggle', onToggle)
+    window.addEventListener('mchat-group-rename', onRename)
+    window.addEventListener('mchat-group-color', onColor)
+    return () => {
+      window.removeEventListener('mchat-group-toggle', onToggle)
+      window.removeEventListener('mchat-group-rename', onRename)
+      window.removeEventListener('mchat-group-color', onColor)
+    }
+  }, [setNodes])
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
   }, [])
+
+  const autoAssignParent = useCallback((nodeId: string, absolutePos: { x: number; y: number }) => {
+    const batchNodes = nodes.filter((n) => (n.data as any)?.nodeType === 'batch' && n.id !== nodeId && !n.parentId)
+    for (const bn of batchNodes) {
+      const bw = (bn.style as any)?.width || 320
+      const bh = (bn.style as any)?.height || 240
+      if (
+        absolutePos.x > bn.position.x &&
+        absolutePos.x < bn.position.x + bw &&
+        absolutePos.y > bn.position.y + 8 &&
+        absolutePos.y < bn.position.y + bh
+      ) {
+        setNodes((prev) => {
+          let updated = prev.map((n) => {
+            if (n.id === nodeId) {
+              return { ...n, parentId: bn.id, extent: 'parent' as const, position: { x: absolutePos.x - bn.position.x, y: absolutePos.y - bn.position.y } }
+            }
+            return n
+          })
+          updated = recomputeBatchChildrenMeta(updated, bn.id)
+          return updated
+        })
+        return true
+      }
+    }
+    return false
+  }, [nodes, setNodes])
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -706,14 +984,42 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       setContextMenu(null)
       const raw = event.dataTransfer.getData(DRAG_MIME)
       if (!raw || !reactFlowWrapper.current) return
-      let payload: { kind: string; skillId?: string; presetId?: string }
+      let payload: { kind: string; skillId?: string; presetId?: string; nodeType?: string }
       try {
         payload = JSON.parse(raw)
       } catch {
         return
       }
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY })
-      if (payload.kind === 'skill' && payload.skillId) {
+
+      // Check if drop target is inside a batch container node
+      const batchEl = (event.target as HTMLElement)?.closest('[data-batch-container]')
+      if (batchEl && payload.kind === 'skill' && payload.skillId) {
+        const batchId = batchEl.getAttribute('data-batch-id')
+        if (batchId) {
+          const skill = skills.find((s) => s.id === payload.skillId)
+          if (skill) {
+            pushHistory()
+            const label = getSkillDisplayName(skill, uiLocale)
+            const batchNode = nodes.find((n) => n.id === batchId)
+            const relPos = batchNode
+              ? { x: position.x - batchNode.position.x, y: position.y - batchNode.position.y }
+              : { x: 20, y: 60 + (nodes.filter((n) => n.parentId === batchId).length * 50) }
+            const childNode = buildSkillNode(skill, relPos, label)
+            childNode.parentId = batchId
+            childNode.extent = 'parent'
+            setNodes((prev) => recomputeBatchChildrenMeta([...prev, childNode], batchId))
+            setSelectedNodeId(childNode.id)
+            setSelectedEdgeId(null)
+            setPropsOpen(true)
+            return
+          }
+        }
+      }
+
+      if (payload.kind === 'control' && payload.nodeType) {
+        addControlNode(payload.nodeType as GraphNodeType, position)
+      } else if (payload.kind === 'skill' && payload.skillId) {
         const skill = skills.find((s) => s.id === payload.skillId)
         if (skill) addSkillNodeAt(skill, position)
       } else if (payload.kind === 'patent-preset' && payload.presetId) {
@@ -738,6 +1044,11 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
 
   const beginEmptySkillDrag = (event: React.DragEvent) => {
     event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ kind: 'skill-empty' }))
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  const beginControlNodeDrag = (event: React.DragEvent, nodeType: GraphNodeType) => {
+    event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ kind: 'control', nodeType }))
     event.dataTransfer.effectAllowed = 'move'
   }
 
@@ -785,6 +1096,18 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
     else await el.requestFullscreen()
   }
 
+  const applyTemplate = (graph: WorkflowGraphValue) => {
+    pushHistory()
+    const tplNodes = (graph.nodes || []).map((n: WorkflowGraphValue['nodes'][number]) => ({ ...n, type: n.type as GraphNodeType }))
+    const tplEdges = (graph.edges || []).map((e: WorkflowGraphValue['edges'][number]) => ({ ...e }))
+    setNodes(toFlowNodes(tplNodes, skills, uiLocale, t))
+    setEdges(toFlowEdges(tplEdges))
+    setPropsOpen(false)
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setTimeout(() => fitView({ padding: 0.2 }), 100)
+  }
+
   const saveGraph = () => {
     onSave({
       version: 1,
@@ -792,11 +1115,17 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
         const nodeType = ((n.data as any)?.nodeType || 'skill') as GraphNodeType
         const rawConfig = ((n.data as any)?.config || {}) as Record<string, unknown>
         const config = nodeType === 'skill' ? enrichSkillConfig(rawConfig, skills) : rawConfig
+        // Persist group dimensions so they survive save/reload
+        if (nodeType === 'group') {
+          config.width = n.width || (n.style as any)?.width || 280
+          config.height = n.height || (n.style as any)?.height || 160
+        }
         return {
           id: n.id,
           type: nodeType,
           name: String((n.data as any)?.label || ''),
           position: n.position,
+          parentId: n.parentId || undefined,
           config,
         }
       }),
@@ -819,6 +1148,8 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
       condition: t('workflows.graphNodeCondition'),
       approval: t('workflows.graphNodeApproval'),
       merge: t('workflows.graphNodeMerge'),
+      batch: t('workflows.graphNodeBatch'),
+      group: t('workflows.graphNodeGroup', 'Group'),
       end: t('workflows.graphNodeEnd'),
     }
     return map[type]
@@ -852,20 +1183,56 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
     }
   }
 
+  const handleNodeSearchSelect = (rawPayload: string) => {
+    if (!nodeSearch.pos) return
+    const flowPos = screenToFlowPosition({ x: nodeSearch.pos.x, y: nodeSearch.pos.y })
+    let payload: { kind: string; nodeType?: string; skillId?: string }
+    try { payload = JSON.parse(rawPayload) } catch { return }
+    if (payload.kind === 'control' && payload.nodeType) {
+      addControlNode(payload.nodeType as GraphNodeType, flowPos)
+    } else if (payload.kind === 'skill' && payload.skillId) {
+      const skill = skills.find((s) => s.id === payload.skillId)
+      if (skill) addSkillNodeAt(skill, flowPos)
+    } else if (payload.kind === 'skill-empty') {
+      addEmptySkillNodeAt(flowPos)
+    }
+    setNodeSearch({ open: false, pos: null })
+  }
+
   return (
     <div ref={containerRef} className="flex h-full min-h-0 flex-col bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
-        <p className="truncate text-xs font-medium text-gray-600 dark:text-gray-300">{t('workflows.graphEditorTitle')}</p>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-200 px-2 py-1 dark:border-gray-800">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {onBack && (
+            <button type="button" onClick={onBack} className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title={t('common.back', 'Back')}>
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <p className="truncate text-xs font-semibold text-gray-700 dark:text-gray-200">{workflowName || t('workflows.graphEditorTitle')}</p>
+        </div>
         <div className="flex items-center gap-1">
-          <IconToolButton title={fullScreen ? t('workflows.graphExitFullscreen') : t('workflows.graphFullscreen')} onClick={toggleFullscreen}>
-            {fullScreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </IconToolButton>
-          <IconToolButton title={t('workflows.graphDeleteSelected')} onClick={removeSelected} disabled={!selectedNodeId && !selectedEdgeId} className="text-red-600 dark:text-red-400">
-            <Trash2 className="h-4 w-4" />
-          </IconToolButton>
-          <IconToolButton title={t('workflows.graphSave')} onClick={saveGraph}>
-            <Save className="h-4 w-4" />
-          </IconToolButton>
+          {headerExtra}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={fullScreen ? t('workflows.graphExitFullscreen') : t('workflows.graphFullscreen')}
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            {fullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={removeSelected}
+            disabled={!selectedNodeId && !selectedEdgeId}
+            title={t('workflows.graphDeleteSelected')}
+            className="inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 p-1.5 text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={saveGraph} className="flex items-center gap-1 rounded-md bg-primary-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700">
+            <Save className="h-3.5 w-3.5" />
+            {t('workflows.graphSave')}
+          </button>
         </div>
       </div>
 
@@ -875,158 +1242,103 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
         ) : null}
 
         {paletteOpen ? (
-          <aside className="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <aside className="flex w-64 shrink-0 flex-col border-r border-gray-200 dark:border-gray-800">
             <div className="flex items-center justify-between border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
               <span className="text-xs font-medium">{t('workflows.graphNodeLibrary')}</span>
-              <button type="button" title={t('workflows.graphHideLeft')} aria-label={t('workflows.graphHideLeft')} onClick={() => setPaletteOpen(false)} className="rounded p-0.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+              <button type="button" title={t('workflows.graphHideLeft')} aria-label={t('workflows.graphHideLeft')} onClick={() => setPaletteOpen(false)} className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <ChevronLeft className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-3">
-              <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{t('workflows.paletteControl')}</p>
-                <div className="flex flex-col gap-1">
-                  {CONTROL_NODE_TYPES.map((nodeType) => (
-                    <button
-                      key={nodeType}
-                      type="button"
-                      title={nodeTypeLabel(nodeType)}
-                      onClick={() => addControlNode(nodeType)}
-                      className="rounded-md border border-gray-200 px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                      style={{ borderLeftWidth: 3, borderLeftColor: NODE_COLORS[nodeType] }}
-                    >
-                      {nodeTypeLabel(nodeType)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {showcaseConfig?.enabled !== false ? (
-              <div>
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  {t('workflows.palettePatentPresets')}
-                </p>
-                <p className="mb-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-                  {t('workflows.palettePatentPresetsHint')}
-                </p>
-                {showcaseConfig && !showcaseConfig.ready ? (
-                  <p className="mb-2 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
-                    {t('workflows.patentShowcaseNotReady')}
-                  </p>
-                ) : null}
-                <div className="flex flex-col gap-1">
-                  {patentPresets.map((preset) => {
-                    const missing = !skills.some((s) => s.name === preset.skillName)
-                    return (
-                      <div
-                        key={preset.id}
-                        draggable
-                        onDragStart={(e) => beginPresetDrag(e, preset.id)}
-                        title={t('workflows.dragPresetHint')}
-                        className="flex cursor-grab items-start gap-1.5 rounded-md border border-gray-200 px-2 py-1.5 active:cursor-grabbing hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                        style={{
-                          borderLeftWidth: 3,
-                          borderLeftColor: NODE_COLORS.skill,
-                        }}
-                      >
-                        <GripVertical className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-40" />
-                        <div className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium">
-                            {getPatentPresetTitle(preset, uiLocale)}
-                          </span>
-                          <span className="block truncate text-[10px] text-gray-400">
-                            {getPatentPresetDescription(preset, uiLocale)}
-                          </span>
-                          {missing ? (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-400">⚠</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-              ) : null}
-
-              <div>
-                <div className="mb-1 flex items-center justify-between gap-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                    {t('workflows.paletteSkills')}
-                  </p>
-                  <Link to="/admin/skills" className="text-[10px] text-primary-600 hover:underline dark:text-primary-400">
-                    {t('workflows.manageSkills')}
-                  </Link>
-                </div>
-                <p className="mb-2 text-[10px] leading-relaxed text-gray-500 dark:text-gray-400">
-                  {t('workflows.paletteSkillsHint')}
-                </p>
-                <input
-                  type="search"
-                  value={skillSearch}
-                  onChange={(e) => setSkillSearch(e.target.value)}
-                  placeholder={t('workflows.paletteSkillSearch')}
-                  className="mb-2 w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800"
-                />
-                <div
-                  draggable
-                  onDragStart={beginEmptySkillDrag}
-                  className="mb-2 flex cursor-grab items-center gap-1.5 rounded-md border border-dashed border-gray-300 px-2 py-1.5 text-xs text-gray-600 active:cursor-grabbing dark:border-gray-600 dark:text-gray-300"
-                >
-                  <GripVertical className="h-3.5 w-3.5 shrink-0 opacity-50" />
-                  {t('workflows.dragEmptySkill')}
-                </div>
-                {skills.length === 0 ? (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">{t('workflows.paletteNoSkills')}</p>
-                ) : filteredSkills.length === 0 ? (
-                  <p className="text-xs text-gray-500">{t('common.noData')}</p>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    {filteredSkills.map((skill) => {
-                      const cat = inferSkillCategory(skill)
-                      return (
-                        <div
-                          key={skill.id}
-                          draggable
-                          onDragStart={(e) => beginSkillDrag(e, skill)}
-                          title={t('workflows.dragSkillHint')}
-                          className="flex cursor-grab items-start gap-1.5 rounded-md border border-gray-200 px-2 py-1.5 active:cursor-grabbing hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-                          style={{ borderLeftWidth: 3, borderLeftColor: NODE_COLORS.skill }}
-                        >
-                          <GripVertical className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-40" />
-                          <div className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium">{getSkillDisplayName(skill, uiLocale)}</span>
-                            <span className="block truncate text-[10px] text-gray-400">{skill.name}</span>
-                            <span className="text-[10px] text-gray-500">{t(`workflows.skillCategory.${cat}`)}</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
+            <WorkflowSidebar
+              skills={skills}
+              locale={uiLocale}
+              onAddControlNode={(nt) => addControlNode(nt)}
+              presets={presets}
+            />
           </aside>
         ) : null}
 
         <div
           ref={reactFlowWrapper}
+          tabIndex={0}
           className={cn(
             'min-h-0 min-w-0 flex-1 bg-white dark:bg-gray-900',
             !isPointerTool && '[&_.react-flow__pane]:cursor-grab [&_.react-flow__pane:active]:cursor-grabbing',
           )}
           onDragOver={onDragOver}
           onDrop={onDrop}
+          onKeyDown={(e) => {
+            if (isEditableTarget(e.target as HTMLElement)) return
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+              if (selectedNodeId) {
+                e.preventDefault()
+                e.stopPropagation()
+                deleteNodeById(selectedNodeId)
+              } else if (selectedEdgeId) {
+                e.preventDefault()
+                e.stopPropagation()
+                deleteEdgeById(selectedEdgeId)
+              }
+            }
+          }}
         >
           <ReactFlow
             className="h-full w-full"
-            nodeTypes={workflowNodeTypes}
+            nodeTypes={{ ...workflowNodeTypes, ...groupNodeTypes }}
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChangeWrapped}
             onEdgesChange={onEdgesChangeWrapped}
             onConnect={onConnect}
             onNodeDragStart={onNodeDragStart}
-            onNodeDragStop={onNodeDragStop}
+            onNodeDragStop={(event, node) => {
+              onNodeDragStop()
+              const halfW = ((node.style as any)?.width || 180) / 2
+              const halfH = ((node.style as any)?.height || 40) / 2
+              // node.position is relative to parent when the node is already a child;
+              // convert to canvas-absolute coordinates before comparing with batch rects.
+              const parentOfDragged = node.parentId ? nodes.find((n) => n.id === node.parentId) : null
+              const absLeft = node.position.x + (parentOfDragged?.position.x || 0)
+              const absTop = node.position.y + (parentOfDragged?.position.y || 0)
+              const cx = absLeft + halfW
+              const cy = absTop + halfH
+              const batchNodes = nodes.filter((n) => (n.data as any)?.nodeType === 'batch' && n.id !== node.id)
+              let targetBatch: Node | null = null
+              for (const bn of batchNodes) {
+                const bw = (bn.style as any)?.width || 320
+                const bh = (bn.style as any)?.height || 240
+                if (cx > bn.position.x && cx < bn.position.x + bw && cy > bn.position.y && cy < bn.position.y + bh) {
+                  targetBatch = bn
+                  break
+                }
+              }
+              if (targetBatch) {
+                if (node.parentId !== targetBatch.id) {
+                  const previousParentId = node.parentId
+                  setNodes((prev) => {
+                    let updated = prev.map((n) => (n.id === node.id
+                      ? { ...n, parentId: targetBatch.id, extent: 'parent' as const, position: { x: absLeft - targetBatch.position.x, y: absTop - targetBatch.position.y } }
+                      : n))
+                    updated = recomputeBatchChildrenMeta(updated, targetBatch.id)
+                    if (previousParentId) updated = recomputeBatchChildrenMeta(updated, previousParentId)
+                    return updated
+                  })
+                }
+                return
+              }
+              // Center is outside every batch: detach if it was a child.
+              if (node.parentId) {
+                const previousParentId = node.parentId
+                setNodes((prev) => {
+                  let updated = prev.map((n) => {
+                    if (n.id !== node.id || !n.parentId) return n
+                    return { ...n, parentId: undefined, extent: undefined, position: { x: absLeft, y: absTop } }
+                  })
+                  updated = recomputeBatchChildrenMeta(updated, previousParentId)
+                  return updated
+                })
+              }
+            }}
             onInit={onFlowInit}
             minZoom={0.08}
             maxZoom={2.5}
@@ -1040,7 +1352,20 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
             nodesDraggable={isPointerTool}
             nodesConnectable={isPointerTool}
             elementsSelectable={isPointerTool}
+            deleteKeyCode={null}
+            multiSelectionKeyCode="Shift"
             proOptions={{ hideAttribution: true }}
+            onNodesDelete={(deleted) => {
+              pushHistory()
+              const ids = new Set(deleted.map((n) => n.id))
+              setEdges((prev) => prev.filter((e) => !ids.has(e.source) && !ids.has(e.target)))
+              if (selectedNodeId && ids.has(selectedNodeId)) setSelectedNodeId(null)
+            }}
+            onEdgesDelete={(deleted) => {
+              pushHistory()
+              const ids = new Set(deleted.map((e) => e.id))
+              if (selectedEdgeId && ids.has(selectedEdgeId)) setSelectedEdgeId(null)
+            }}
             onNodeClick={(_, node) => {
               if (!isPointerTool) return
               setContextMenu(null)
@@ -1077,7 +1402,12 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
               const position = screenToFlowPosition({ x: e.clientX, y: e.clientY })
               setContextMenu({ kind: 'pane', x: e.clientX, y: e.clientY, flowX: position.x, flowY: position.y })
             }}
-            onPaneClick={() => setContextMenu(null)}
+            onDoubleClick={(e) => {
+              // ComfyUI-style: double-click empty canvas → node search popup
+              if (e.target instanceof HTMLElement && e.target.closest('.react-flow__node')) return
+              setNodeSearch({ open: true, pos: { x: e.clientX, y: e.clientY } })
+            }}
+            onPaneClick={() => { setContextMenu(null); setNodeSearch({ open: false, pos: null }) }}
             colorMode={dark ? 'dark' : 'light'}
           >
             <Background gap={20} size={1} />
@@ -1124,6 +1454,10 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
             )
           }}
           onAddControlAt={(nodeType, position) => addControlNode(nodeType as GraphNodeType, position)}
+          onAddSkillAt={(skill, position) => addSkillNodeAt(skill, position)}
+          onGroupSelected={createGroupFromSelected}
+          selectedCount={nodes.filter((n) => n.selected).length}
+          skills={filteredSkills}
         />
 
         {!propsOpen ? (
@@ -1164,10 +1498,122 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
                           onChange={(e) => updateNodeData(selectedNode.id, (data) => ({ ...data, label: e.target.value }))}
                         />
                         {selectedNodeType === 'start' ? (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.startNodeHint')}</p>
+                          <div className="space-y-2">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.startNodeHint')}</p>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">{t('workflows.startInputFields')}</span>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-primary-600 hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-950"
+                                  onClick={() => {
+                                    const fields = [...(Array.isArray(selectedNodeConfig.input_fields) ? selectedNodeConfig.input_fields : [])]
+                                    fields.push({ key: '', label: '', placeholder: '', required: false })
+                                    updateNodeConfig('input_fields', fields)
+                                  }}
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                              {(Array.isArray(selectedNodeConfig.input_fields) ? selectedNodeConfig.input_fields as InputFieldDef[] : []).map((field, idx) => (
+                                <div key={idx} className="rounded border border-gray-200 p-2 space-y-1 dark:border-gray-700">
+                                  <div className="flex items-center gap-1">
+                                    <Input
+                                      placeholder={t('workflows.startFieldKey')}
+                                      value={field.key || ''}
+                                      onChange={(e) => {
+                                        const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                        fields[idx] = { ...fields[idx], key: e.target.value }
+                                        updateNodeConfig('input_fields', fields)
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
+                                      onClick={() => {
+                                        const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                        fields.splice(idx, 1)
+                                        updateNodeConfig('input_fields', fields)
+                                      }}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                  <Input
+                                    placeholder={t('workflows.startFieldLabel')}
+                                    value={field.label || ''}
+                                    onChange={(e) => {
+                                      const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                      fields[idx] = { ...fields[idx], label: e.target.value }
+                                      updateNodeConfig('input_fields', fields)
+                                    }}
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      placeholder={t('workflows.startFieldPlaceholder')}
+                                      value={field.placeholder || ''}
+                                      onChange={(e) => {
+                                        const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                        fields[idx] = { ...fields[idx], placeholder: e.target.value }
+                                        updateNodeConfig('input_fields', fields)
+                                      }}
+                                    />
+                                    <label className="flex shrink-0 items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(field.required)}
+                                        onChange={(e) => {
+                                          const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                          fields[idx] = { ...fields[idx], required: e.target.checked }
+                                          updateNodeConfig('input_fields', fields)
+                                        }}
+                                        className="h-3 w-3"
+                                      />
+                                      {t('workflows.startFieldRequired')}
+                                    </label>
+                                    <select
+                                      className="h-6 rounded border border-gray-300 bg-white text-[10px] dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                                      value={field.type || 'text'}
+                                      onChange={(e) => {
+                                        const fields = [...(selectedNodeConfig.input_fields as InputFieldDef[])]
+                                        fields[idx] = { ...fields[idx], type: e.target.value as InputFieldDef['type'] }
+                                        updateNodeConfig('input_fields', fields)
+                                      }}
+                                    >
+                                      <option value="text">{t('workflows.fieldTypeText')}</option>
+                                      <option value="multiline">{t('workflows.fieldTypeMultiline')}</option>
+                                      <option value="number">{t('workflows.fieldTypeNumber')}</option>
+                                      <option value="file">{t('workflows.fieldTypeFile')}</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         ) : null}
                         {selectedNodeType === 'merge' ? (
                           <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.mergeNodeHint')}</p>
+                        ) : null}
+                        {selectedNodeType === 'batch' ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.batchNodeHint')}</p>
+                            <div className="rounded-lg border border-cyan-200 bg-cyan-50 dark:border-cyan-800 dark:bg-cyan-950/30 p-3">
+                              <p className="text-xs text-cyan-700 dark:text-cyan-300 font-medium mb-1">{t('workflows.batchHowTo')}</p>
+                              <p className="text-xs text-cyan-600 dark:text-cyan-400">{t('workflows.batchHowToDesc')}</p>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.batchListPath')}</label>
+                              <input placeholder="input.urls 或 nodes.fetch.result.links" value={String(selectedNodeConfig.list_path || '')} onChange={(e) => updateNodeConfig('list_path', e.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.batchItemKey')}</label>
+                              <input placeholder="line / url" value={String(selectedNodeConfig.item_key || '')} onChange={(e) => updateNodeConfig('item_key', e.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.graphMaxConcurrent', '并发数')}</label>
+                              <input type="number" value={String(selectedNodeConfig.max_concurrent ?? 3)} onChange={(e) => updateNodeConfig('max_concurrent', toSafeInt(e.target.value, 3))} className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                            </div>
+                          </div>
                         ) : null}
                         {selectedNodeType === 'skill' ? (
                           <>
@@ -1205,37 +1651,83 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
                               ))}
                             </select>
                             <div className="grid grid-cols-2 gap-2">
-                              <Input label={t('workflows.graphRetryCount')} type="number" value={String(selectedNodeConfig.retry_count ?? 0)} onChange={(e) => updateNodeConfig('retry_count', toSafeInt(e.target.value, 0))} />
-                              <Input label={t('workflows.graphTimeoutSec')} type="number" value={String(selectedNodeConfig.timeout_seconds ?? 0)} onChange={(e) => updateNodeConfig('timeout_seconds', toSafeInt(e.target.value, 0))} />
+                              <div>
+                                <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.graphRetryCount')}</label>
+                                <input type="number" value={String(selectedNodeConfig.retry_count ?? 0)} onChange={(e) => updateNodeConfig('retry_count', toSafeInt(e.target.value, 0))} className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.graphTimeoutSec')}</label>
+                                <input type="number" value={String(selectedNodeConfig.timeout_seconds ?? 0)} onChange={(e) => updateNodeConfig('timeout_seconds', toSafeInt(e.target.value, 0))} className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                              </div>
                             </div>
+                            {(() => {
+                            const selSkill = skills.find((s) => s.name === String(selectedNodeConfig.skill_name || ''))
+                            return (
                             <PayloadMapper
                               skillName={String(selectedNodeConfig.skill_name || '')}
                               fields={startInputFields}
                               upstreamNodeIds={upstreamForSelected}
                               payload={(selectedNodeConfig.payload_template || {}) as Record<string, unknown>}
                               onChange={(next) => updateNodeConfig('payload_template', next)}
-                            />
+                              workflowFields={(selSkill?.config as any)?.workflow_fields}
+                            />)})()}
                           </>
                         ) : null}
                         {selectedNodeType === 'condition' ? (
                           <div className="space-y-2">
-                            <Input label={t('workflows.graphConditionLeft')} value={String(selectedNodeConfig.left || '')} onChange={(e) => updateNodeConfig('left', e.target.value)} />
-                            <select className="block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800" value={String(selectedNodeConfig.op || '==')} onChange={(e) => updateNodeConfig('op', e.target.value)}>
-                              <option value="==">==</option>
-                              <option value="!=">!=</option>
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.graphConditionLeft')}</label>
+                              <input value={String(selectedNodeConfig.left || '')} onChange={(e) => updateNodeConfig('left', e.target.value)} placeholder="input.keyword 或 nodes.x.result.field" className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                            </div>
+                            <select className="block w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" value={String(selectedNodeConfig.op || '==')} onChange={(e) => updateNodeConfig('op', e.target.value)}>
+                              <option value="==">== (等于)</option>
+                              <option value="!=">!= (不等于)</option>
+                              <option value=">">&gt; (大于)</option>
+                              <option value="<">&lt; (小于)</option>
+                              <option value=">=">&gt;= (大于等于)</option>
+                              <option value="<=">&lt;= (小于等于)</option>
+                              <option value="contains">contains (包含)</option>
+                              <option value="not_contains">not_contains (不包含)</option>
+                              <option value="startswith">startswith (前缀)</option>
+                              <option value="endswith">endswith (后缀)</option>
                             </select>
-                            <Input label={t('workflows.graphConditionRight')} value={String(selectedNodeConfig.right ?? '')} onChange={(e) => updateNodeConfig('right', e.target.value)} />
+                            <div>
+                              <label className="block text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-0.5">{t('workflows.graphConditionRight')}</label>
+                              <input value={String(selectedNodeConfig.right ?? '')} onChange={(e) => updateNodeConfig('right', e.target.value)} placeholder="静态值 或 ${nodes.x.result.field}" className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+                            </div>
+                            <p className="text-[10px] text-gray-400">支持 ${'{' + 'input.xxx}'}/{'}{'}nodes.xxx.result{'}'}, right 也支持模板变量</p>
                           </div>
                         ) : null}
                         {selectedNodeType === 'approval' ? (
                           <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.graphApprovalHint')}</p>
+                        ) : null}
+                        {selectedNodeType === 'end' ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{t('workflows.endNodeHint')}</p>
+                            {upstreamForSelected.length > 0 ? (
+                              <div className="rounded border border-gray-200 p-2 dark:border-gray-700">
+                                <p className="text-[10px] font-medium text-gray-500 mb-1">{t('workflows.endNodeUpstream')}</p>
+                                {upstreamForSelected.map((uid) => {
+                                  const un = nodes.find((n) => n.id === uid)
+                                  const uName = String((un?.data as any)?.label || un?.id || uid)
+                                  return (
+                                    <p key={uid} className="text-[10px] text-gray-600 dark:text-gray-300">
+                                      • {uName} &rarr; <code className="text-[10px]">{`\${nodes.${uid}.result}`}</code>
+                                    </p>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-amber-600 dark:text-amber-400">{t('workflows.endNodeNoUpstream')}</p>
+                            )}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
                     {selectedEdge ? (
                       <div className="space-y-2">
                         <select
-                          className="block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800"
+                          className="block w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                           value={typeof selectedEdge.label === 'string' ? selectedEdge.label : ''}
                           onChange={(e) => setEdges((prev) => prev.map((edge) => (edge.id === selectedEdge.id ? { ...edge, label: e.target.value } : edge)))}
                         >
@@ -1247,7 +1739,7 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
                     ) : null}
                   </TabPanel>
                   <TabPanel id="json" activeTab={selectedTab}>
-                    <textarea className="mt-2 h-72 w-full rounded border border-gray-300 bg-white px-2 py-1.5 font-mono text-xs dark:border-gray-600 dark:bg-gray-800" value={jsonDraft} onChange={(e) => setJsonDraft(e.target.value)} />
+                    <textarea className="mt-2 h-72 w-full rounded border border-gray-300 bg-white px-2 py-1.5 font-mono text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100" value={jsonDraft} onChange={(e) => setJsonDraft(e.target.value)} />
                     {jsonError ? <p className="text-xs text-red-600">{jsonError}</p> : null}
                     <div className="mt-2 flex justify-end">
                       <Button size="sm" variant="secondary" onClick={applyJsonDraft}>{t('workflows.graphApplyJson')}</Button>
@@ -1259,6 +1751,16 @@ function WorkflowGraphEditorInner({ value, skills, onSave }: Props) {
           </aside>
         ) : null}
       </div>
+
+      {/* ComfyUI-style double-click node search */}
+      <WorkflowNodeSearch
+        open={nodeSearch.open}
+        position={nodeSearch.pos}
+        skills={skills}
+        locale={uiLocale}
+        onSelect={handleNodeSearchSelect}
+        onClose={() => setNodeSearch({ open: false, pos: null })}
+      />
     </div>
   )
 }

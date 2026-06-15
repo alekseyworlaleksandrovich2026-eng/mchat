@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Eye, LayoutTemplate, Network, Pencil, Play, Plus, RefreshCw, Trash2, Workflow } from 'lucide-react'
 
@@ -113,6 +114,7 @@ interface WorkflowApprovalTask {
 
 export function WorkflowsPage() {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
   const uiLocale = i18n.language?.startsWith('zh') ? 'zh' : 'en'
   const [loading, setLoading] = useState(true)
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
@@ -602,9 +604,7 @@ export function WorkflowsPage() {
   const myTemplates = templates.filter((t) => t.builtin === false)
 
   const openGraphEditor = (row: WorkflowItem) => {
-    setSelectedWorkflow(row)
-    setGraphDraft(row.graph_json || { version: 1, nodes: [], edges: [] })
-    setGraphOpen(true)
+    navigate(`/admin/workflows/${row.id}/graph`)
   }
 
   const saveGraph = async (graph: WorkflowGraphValue) => {

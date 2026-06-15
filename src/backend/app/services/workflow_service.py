@@ -18,6 +18,7 @@ import httpx
 
 from app.models.skill import Skill
 from app.models.setting import Setting
+from app.models.user import User
 from app.models.workflow import (
     SkillWorkflowApproval,
     SkillWorkflow,
@@ -30,6 +31,7 @@ from app.schemas.workflow import (
     WorkflowApprovalDecisionRequest,
     WorkflowApprovalResponse,
     WorkflowGraph,
+    WorkflowGraphEdge,
     WorkflowCreate,
     WorkflowResponse,
     WorkflowRunDetailResponse,
@@ -38,8 +40,10 @@ from app.schemas.workflow import (
     WorkflowStepInput,
     WorkflowStepResponse,
     WorkflowStepRunResponse,
+    WorkflowMarketplaceResponse,
     WorkflowSaveAsTemplateRequest,
     WorkflowTemplateSummary,
+    WorkflowTemplateVisibilityUpdate,
     WorkflowUpdate,
 )
 from app.data.patent_workflow_showcase import (
@@ -135,6 +139,39 @@ async def _execute_skill_for_user(
         if timeout_s > 0:
             return await asyncio.wait_for(execute_skill(skill, payload), timeout=timeout_s)
         return await execute_skill(skill, payload)
+
+
+async def _resolve_workflow_skill(
+    db: AsyncSession,
+    *,
+    skill_id: str,
+    skill_name: str,
+    user_id: str,
+    require_enabled: bool = False,
+) -> Skill | None:
+    """Resolve a skill by id or name on the given session (concurrency-safe)."""
+    skill: Skill | None = None
+    if skill_id:
+        result = await db.execute(
+            select(Skill).where(Skill.id == skill_id, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+    elif skill_name:
+        result = await db.execute(
+            select(Skill).where(Skill.name == skill_name, Skill.user_id == user_id)
+        )
+        skill = result.scalar_one_or_none()
+        if skill is None:
+            from app.services.skill_service import SkillService
+
+            await SkillService(db).reload_skills(user_id)
+            result = await db.execute(
+                select(Skill).where(Skill.name == skill_name, Skill.user_id == user_id)
+            )
+            skill = result.scalar_one_or_none()
+    if skill is not None and require_enabled and not skill.enabled:
+        return None
+    return skill
 
 
 def graph_for_template_export(
@@ -233,9 +270,51 @@ def _resolve_path(path: str, context: dict[str, Any]) -> Any:
             continue
         if isinstance(current, dict):
             current = current.get(key)
+        elif isinstance(current, list) and key.lstrip("-").isdigit():
+            # Support list index: nodes.x.results.0.title
+            try:
+                current = current[int(key)]
+            except (IndexError, ValueError):
+                return None
         else:
             return None
     return current
+
+
+def _eval_condition(left: Any, op: str, right: Any) -> bool:
+    """Evaluate a condition node's comparison with type coercion."""
+    if op == "==":
+        return left == right
+    if op == "!=":
+        return left != right
+    # Try numeric comparison for >, <, >=, <=
+    try:
+        ln = float(left) if left is not None else None
+        rn = float(right) if right is not None else None
+        if ln is not None and rn is not None:
+            if op == ">":
+                return ln > rn
+            if op == "<":
+                return ln < rn
+            if op == ">=":
+                return ln >= rn
+            if op == "<=":
+                return ln <= rn
+    except (TypeError, ValueError):
+        pass
+    # String operators
+    ls = str(left) if left is not None else ""
+    rs = str(right) if right is not None else ""
+    if op == "contains":
+        return rs in ls
+    if op == "not_contains":
+        return rs not in ls
+    if op == "startswith":
+        return ls.startswith(rs)
+    if op == "endswith":
+        return ls.endswith(rs)
+    # Unknown op: default to equality
+    return left == right
 
 
 _PATENT_REPORT_COMMANDS = frozenset({"chart", "excel", "word", "ppt", "all"})
@@ -372,10 +451,20 @@ class WorkflowService:
         user_id: str,
         require_enabled: bool = False,
     ) -> Skill | None:
-        result = await self.db.execute(
-            select(Skill).where(Skill.name == skill_name, Skill.user_id == user_id)
-        )
-        skill = result.scalar_one_or_none()
+        async def _lookup() -> Skill | None:
+            result = await self.db.execute(
+                select(Skill).where(
+                    Skill.name == skill_name, Skill.user_id == user_id
+                )
+            )
+            return result.scalar_one_or_none()
+
+        skill = await _lookup()
+        if skill is None:
+            from app.services.skill_service import SkillService
+
+            await SkillService(self.db).reload_skills(user_id)
+            skill = await _lookup()
         if skill is not None and require_enabled and not skill.enabled:
             raise RuntimeError(f"skill '{skill.name}' is disabled")
         return skill
@@ -509,6 +598,12 @@ class WorkflowService:
     async def create_workflow(
         self, *, user_id: str, data: WorkflowCreate
     ) -> WorkflowResponse:
+        from app.models.user import User
+        from app.services.workflow_entitlements import ensure_can_create_workflow
+
+        user = await self.db.get(User, user_id)
+        if user is not None:
+            await ensure_can_create_workflow(self.db, user)
         workflow = SkillWorkflow(
             user_id=user_id,
             name=data.name.strip(),
@@ -536,7 +631,12 @@ class WorkflowService:
         }
 
     @staticmethod
-    def _template_summary_from_model(row: SkillWorkflowTemplate) -> dict[str, Any]:
+    def _template_summary_from_model(
+        row: SkillWorkflowTemplate,
+        *,
+        user_id: str | None = None,
+        author_name: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "id": row.id,
             "name": row.name,
@@ -545,7 +645,29 @@ class WorkflowService:
             "locale": row.locale,
             "node_count": len((row.graph_json or {}).get("nodes") or []),
             "builtin": False,
+            "visibility": row.visibility or "private",
+            "author_id": row.user_id,
+            "author_name": author_name,
+            "use_count": int(row.use_count or 0),
+            "is_mine": user_id is not None and row.user_id == user_id,
         }
+
+    @staticmethod
+    def _locale_filter(lang: str | None, locale: str | None) -> bool:
+        if not lang or not locale:
+            return True
+        return locale == lang
+
+    @staticmethod
+    def _normalize_visibility(
+        visibility: str, *, user_role: str
+    ) -> str:
+        key = (visibility or "private").strip().lower()
+        if key == "system" and user_role != "admin":
+            return "shared"
+        if key not in ("private", "shared", "system"):
+            return "private"
+        return key
 
     async def list_templates(
         self, *, user_id: str, locale: str | None = None
@@ -564,10 +686,54 @@ class WorkflowService:
             lang = "zh" if locale.lower().startswith("zh") else "en"
         custom: list[dict[str, Any]] = []
         for row in result.scalars().all():
-            if lang and row.locale and row.locale != lang:
+            if not self._locale_filter(lang, row.locale):
                 continue
-            custom.append(self._template_summary_from_model(row))
+            custom.append(self._template_summary_from_model(row, user_id=user_id))
         return builtin + custom
+
+    async def list_marketplace(
+        self, *, user_id: str, locale: str | None = None
+    ) -> WorkflowMarketplaceResponse:
+        lang = None
+        if locale:
+            lang = "zh" if locale.lower().startswith("zh") else "en"
+        system = [
+            WorkflowTemplateSummary(
+                **self._template_summary_from_builtin(t),
+                visibility="system",
+                author_name="MChat",
+                is_mine=False,
+            )
+            for t in list_workflow_templates(locale=locale)
+        ]
+        result = await self.db.execute(
+            select(SkillWorkflowTemplate, User.display_name, User.username)
+            .join(User, User.id == SkillWorkflowTemplate.user_id)
+            .where(
+                (SkillWorkflowTemplate.user_id == user_id)
+                | (SkillWorkflowTemplate.visibility.in_(("shared", "system")))
+            )
+            .order_by(
+                SkillWorkflowTemplate.use_count.desc(),
+                SkillWorkflowTemplate.updated_at.desc(),
+            )
+        )
+        community: list[WorkflowTemplateSummary] = []
+        mine: list[WorkflowTemplateSummary] = []
+        for row, display_name, username in result.all():
+            if not self._locale_filter(lang, row.locale):
+                continue
+            author = (display_name or username or "").strip() or None
+            summary = WorkflowTemplateSummary(
+                **self._template_summary_from_model(
+                    row, user_id=user_id, author_name=author
+                )
+            )
+            if row.user_id == user_id:
+                mine.append(summary)
+            elif row.visibility in ("shared", "system"):
+                community.append(summary)
+        return WorkflowMarketplaceResponse(system=system, community=community, mine=mine)
 
     async def get_patent_showcase_config(self, *, user_id: str) -> dict[str, Any]:
         search_skill = resolve_showcase_skill_name(PATENT_SHOWCASE_SEARCH_SKILL)
@@ -615,6 +781,59 @@ class WorkflowService:
         )
         return result.scalar_one_or_none()
 
+    async def _get_accessible_user_template(
+        self, *, template_id: str, user_id: str
+    ) -> SkillWorkflowTemplate | None:
+        result = await self.db.execute(
+            select(SkillWorkflowTemplate).where(
+                SkillWorkflowTemplate.id == template_id
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        if row.user_id == user_id:
+            return row
+        if (row.visibility or "private") in ("shared", "system"):
+            return row
+        return None
+
+    async def update_template_visibility(
+        self,
+        *,
+        user_id: str,
+        user_role: str,
+        template_id: str,
+        data: WorkflowTemplateVisibilityUpdate,
+    ) -> WorkflowTemplateSummary:
+        row = await self._get_user_template(template_id=template_id, user_id=user_id)
+        if row is None and user_role == "admin":
+            result = await self.db.execute(
+                select(SkillWorkflowTemplate).where(
+                    SkillWorkflowTemplate.id == template_id
+                )
+            )
+            row = result.scalar_one_or_none()
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workflow template not found",
+            )
+        if row.user_id != user_id and user_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the template owner can change visibility",
+            )
+        row.visibility = self._normalize_visibility(data.visibility, user_role=user_role)
+        await self.db.flush()
+        user = await self.db.get(User, row.user_id)
+        author = (user.display_name or user.username) if user else None
+        return WorkflowTemplateSummary(
+            **self._template_summary_from_model(
+                row, user_id=user_id, author_name=author
+            )
+        )
+
     async def save_workflow_as_template(
         self,
         *,
@@ -643,6 +862,9 @@ class WorkflowService:
         graph = graph_for_template_export(workflow.graph_json, skill_map)
         _ensure_graph_valid(graph)
         locale = (data.locale or "").strip() or None
+        user = await self.db.get(User, user_id)
+        role = user.role if user else "user"
+        visibility = self._normalize_visibility(data.visibility, user_role=role)
         row = SkillWorkflowTemplate(
             user_id=user_id,
             name=data.name.strip(),
@@ -651,6 +873,7 @@ class WorkflowService:
             locale=locale,
             graph_json=graph,
             source_workflow_id=workflow_id,
+            visibility=visibility,
         )
         self.db.add(row)
         await self.db.flush()
@@ -675,6 +898,16 @@ class WorkflowService:
         description: str | None = None,
         enabled: bool = True,
     ) -> WorkflowResponse:
+        from app.models.user import User
+        from app.services.workflow_entitlements import (
+            ensure_can_create_workflow,
+            ensure_can_save_dag,
+        )
+
+        user = await self.db.get(User, user_id)
+        if user is not None:
+            await ensure_can_create_workflow(self.db, user)
+            await ensure_can_save_dag(self.db, user)
         tpl = get_workflow_template(template_id)
         tpl_name: str | None = None
         tpl_desc: str | None = None
@@ -684,7 +917,7 @@ class WorkflowService:
             tpl_name = tpl.get("name")
             tpl_desc = tpl.get("description")
         else:
-            user_tpl = await self._get_user_template(
+            user_tpl = await self._get_accessible_user_template(
                 template_id=template_id, user_id=user_id
             )
             if user_tpl is None:
@@ -695,6 +928,7 @@ class WorkflowService:
             graph_source = user_tpl.graph_json
             tpl_name = user_tpl.name
             tpl_desc = user_tpl.description
+            user_tpl.use_count = int(user_tpl.use_count or 0) + 1
         graph_json = await self._resolve_graph_skill_ids(
             graph_source, user_id=user_id
         )
@@ -732,6 +966,12 @@ class WorkflowService:
         if "enabled" in payload and payload["enabled"] is not None:
             workflow.enabled = bool(payload["enabled"])
         if "graph_json" in payload:
+            from app.models.user import User
+            from app.services.workflow_entitlements import ensure_can_save_dag
+
+            user = await self.db.get(User, user_id)
+            if user is not None and payload["graph_json"]:
+                await ensure_can_save_dag(self.db, user)
             graph = payload["graph_json"]
             if graph:
                 graph = await self._resolve_graph_skill_ids(graph, user_id=user_id)
@@ -900,16 +1140,31 @@ class WorkflowService:
             }
             cfg = node.config or {}
             try:
+                # 'group' nodes are visual-only containers; skip during execution
+                if node.type == "group":
+                    record["result"] = {}
+                    record["status"] = "success"
+                    return node_id, record
                 if node.type == "start":
+                    # Validate required input_fields
+                    for field in (cfg.get("input_fields") or []):
+                        if isinstance(field, dict) and field.get("required"):
+                            fkey = str(field.get("key") or "").strip()
+                            if fkey and not str(outputs.get("input", {}).get(fkey) or "").strip():
+                                raise RuntimeError(
+                                    f"Missing required input field: {field.get('label') or fkey}"
+                                )
                     record["result"] = outputs.get("input") or {}
                     record["status"] = "success"
                     return node_id, record
                 if node.type == "condition":
                     left_path = str((cfg.get("left") or "")).strip()
-                    op = str((cfg.get("op") or "==")).strip()
-                    right = cfg.get("right")
+                    op = str((cfg.get("op") or "==")).strip().lower()
+                    right_raw = cfg.get("right")
                     left = _resolve_path(left_path, outputs) if left_path else None
-                    ok = (left == right) if op == "==" else (left != right)
+                    # right 也支持模板渲染，允许动态比较
+                    right = _render_template(right_raw, outputs) if right_raw is not None else None
+                    ok = _eval_condition(left, op, right)
                     record["result"] = {"condition": ok, "left": left, "right": right, "op": op}
                     record["status"] = "success"
                     return node_id, record
@@ -961,72 +1216,239 @@ class WorkflowService:
                     record["status"] = "success"
                     return node_id, record
 
-                # skill node
-                skill_id = str((cfg.get("skill_id") or "")).strip()
-                skill: Skill | None = None
-                if skill_id:
-                    skill = await self._get_skill(
-                        skill_id=skill_id,
+                if node.type == "batch":
+                    # Find child nodes inside this batch container
+                    child_nodes = [n for n in graph.nodes if n.parentId == node.id]
+                    if child_nodes:
+                        # Child nodes (sub-workflow): execute chain for each item
+                        list_path = str(cfg.get("list_path") or "").strip()
+                        if not list_path:
+                            raise RuntimeError("batch node with children requires config.list_path")
+                        items_raw = _resolve_path(list_path, outputs)
+                        items: list[Any] = []
+                        if isinstance(items_raw, list):
+                            items = list(items_raw)
+                        elif isinstance(items_raw, str) and items_raw.strip():
+                            stripped = items_raw.strip()
+                            if stripped.startswith("["):
+                                try:
+                                    import json as _json
+                                    parsed = _json.loads(stripped)
+                                    items = parsed if isinstance(parsed, list) else [parsed]
+                                except Exception:
+                                    items = [{"line": l.strip()} for l in stripped.split("\n") if l.strip()]
+                            else:
+                                items = [{"line": l.strip()} for l in stripped.split("\n") if l.strip()]
+                        if not items:
+                            record["result"] = {"items": [], "count": 0}
+                            record["status"] = "success"
+                            return node_id, record
+                        max_concurrent = max(1, int(cfg.get("max_concurrent") or 3))
+                        # Build child node chain (topological sort)
+                        child_ids = {n.id for n in child_nodes}
+                        child_incoming: dict[str, list[str]] = {}
+                        child_outgoing: dict[str, list[WorkflowGraphEdge]] = {}
+                        for cn in child_nodes:
+                            child_incoming[cn.id] = []
+                            child_outgoing[cn.id] = []
+                        for edge in graph.edges:
+                            if edge.source in child_ids and edge.target in child_ids:
+                                child_incoming[edge.target].append(edge.source)
+                                child_outgoing[edge.source].append(edge)
+                        # Topological sort
+                        sorted_children: list[str] = []
+                        visited: set[str] = set()
+                        ready = [n.id for n in child_nodes if not child_incoming[n.id]]
+                        while ready:
+                            nid = ready.pop(0)
+                            if nid in visited:
+                                continue
+                            visited.add(nid)
+                            sorted_children.append(nid)
+                            for edge in child_outgoing[nid]:
+                                target = edge.target
+                                if all(s in visited for s in child_incoming[target]):
+                                    ready.append(target)
+                        if not sorted_children:
+                            sorted_children = [n.id for n in child_nodes]
+                        child_node_map = {n.id: n for n in child_nodes}
+
+                        async def _run_batch_child(item_idx: int, item: Any, child_db: AsyncSession) -> dict:
+                            local_outputs = {
+                                "input": dict(outputs.get("input") or {}),
+                                "nodes": dict(outputs.get("nodes") or {}),
+                                "item": item,
+                                "item_value": item.get("line") if isinstance(item, dict) and "line" in item else item,
+                            }
+                            node_results: dict[str, Any] = {}
+                            for cid in sorted_children:
+                                cn = child_node_map[cid]
+                                if cn.type != "skill":
+                                    node_results[cid] = {"result": {}, "status": "skipped"}
+                                    local_outputs["nodes"][cid] = node_results[cid]
+                                    continue
+                                child_skill_name = str((cn.config or {}).get("skill_name") or "").strip()
+                                child_skill_id = str((cn.config or {}).get("skill_id") or "").strip()
+                                skill = await _resolve_workflow_skill(
+                                    child_db,
+                                    skill_id=child_skill_id,
+                                    skill_name=child_skill_name,
+                                    user_id=workflow.user_id,
+                                    require_enabled=True,
+                                )
+                                if skill is None:
+                                    node_results[cid] = {"result": {"error": f"Skill not found: {child_skill_name or child_skill_id}"}, "status": "failed"}
+                                    local_outputs["nodes"][cid] = node_results[cid]
+                                    continue
+                                pt = (cn.config or {}).get("payload_template") or {}
+                                payload = _render_template(pt, local_outputs)
+                                if not isinstance(payload, dict):
+                                    payload = {"value": payload}
+                                else:
+                                    payload = _strip_blank_skill_params(payload)
+                                try:
+                                    raw = await _execute_skill_for_user(child_db, workflow.user_id, skill, payload, tenant_facing=tenant_facing)
+                                    result = _to_result_dict(raw)
+                                    node_results[cid] = {"result": result, "status": "success"}
+                                except Exception as exc:
+                                    node_results[cid] = {"result": {"error": str(exc)}, "status": "failed"}
+                                local_outputs["nodes"][cid] = node_results[cid]
+                            return {"index": item_idx, "item": item, "children": node_results}
+
+                        sem = asyncio.Semaphore(max_concurrent)
+                        async def _bounded(item_idx: int, item: Any) -> dict:
+                            async with sem:
+                                # Each concurrent batch child gets its own session.
+                                # Sharing self.db across asyncio.gather coroutines
+                                # triggers "this session is already handling a
+                                # request" when max_concurrent > 1.
+                                async with async_session_factory() as child_db:
+                                    return await _run_batch_child(item_idx, item, child_db)
+                        tasks = [_bounded(i, it) for i, it in enumerate(items)]
+                        batch_results = list(await asyncio.gather(*tasks))
+                        record["result"] = {"items": batch_results, "count": len(items), "children": [n.id for n in child_nodes]}
+                        record["status"] = "success"
+                        return node_id, record
+
+                    # No child nodes: use config-based approach (backward compat)
+                    list_path = str(cfg.get("list_path") or "").strip()
+                    if not list_path:
+                        raise RuntimeError("batch node requires config.list_path")
+                    items_raw = _resolve_path(list_path, outputs)
+                    items: list[Any] = []
+                    if isinstance(items_raw, list):
+                        items = list(items_raw)
+                    elif isinstance(items_raw, str) and items_raw.strip():
+                        stripped = items_raw.strip()
+                        if stripped.startswith("["):
+                            try:
+                                import json as _json
+                                parsed = _json.loads(stripped)
+                                items = parsed if isinstance(parsed, list) else [parsed]
+                            except Exception:
+                                items = [{"line": l.strip()} for l in stripped.split("\n") if l.strip()]
+                        else:
+                            items = [{"line": l.strip()} for l in stripped.split("\n") if l.strip()]
+                    if not items:
+                        record["result"] = {"items": [], "count": 0}
+                        record["status"] = "success"
+                        return node_id, record
+                    item_key = str(cfg.get("item_key") or "").strip()
+                    skill_name = str(cfg.get("skill_name") or "").strip()
+                    if not skill_name:
+                        raise RuntimeError("batch node requires config.skill_name")
+                    skill = await self._get_skill_by_name(
+                        skill_name=skill_name,
                         user_id=workflow.user_id,
                         require_enabled=True,
                     )
-                else:
-                    skill_name = str((cfg.get("skill_name") or "")).strip()
-                    if skill_name:
-                        skill = await self._get_skill_by_name(
-                            skill_name=skill_name,
-                            user_id=workflow.user_id,
-                            require_enabled=True,
+                    if skill is None:
+                        raise RuntimeError(f"batch node: skill '{skill_name}' not found")
+                    payload_tpl = cfg.get("payload_template") or {}
+                    max_concurrent = max(1, int(cfg.get("max_concurrent") or 3))
+                    batch_results: list[Any] = []
+                    sem = asyncio.Semaphore(max_concurrent)
+
+                    async def _run_batch_item(idx: int, item: Any) -> Any:
+                        async with sem:
+                            ctx = outputs.copy()
+                            if item_key and isinstance(item, dict):
+                                ctx["item"] = item
+                                ctx["item_value"] = item.get(item_key)
+                            else:
+                                ctx["item"] = item
+                                ctx["item_value"] = item
+                            payload = _render_template(payload_tpl, ctx)
+                            if not isinstance(payload, dict):
+                                payload = {"value": payload}
+                            try:
+                                raw = await _execute_skill_for_user(
+                                    self.db, workflow.user_id, skill, payload,
+                                    tenant_facing=tenant_facing,
+                                )
+                                return {"index": idx, "item": item, "result": _to_result_dict(raw)}
+                            except Exception as exc:
+                                return {"index": idx, "item": item, "error": str(exc)}
+
+                    tasks = [_run_batch_item(i, item) for i, item in enumerate(items)]
+                    batch_results = list(await asyncio.gather(*tasks))
+                    record["result"] = {"items": batch_results, "count": len(items)}
+                    record["status"] = "success"
+                    return node_id, record
+
+                # skill node
+                skill_id = str((cfg.get("skill_id") or "")).strip()
+                skill_name = str((cfg.get("skill_name") or "")).strip()
+                # Use a dedicated session so that parallel graph branches
+                # (asyncio.gather at the top level) don't share self.db.
+                async with async_session_factory() as node_db:
+                    skill = await _resolve_workflow_skill(
+                        node_db,
+                        skill_id=skill_id,
+                        skill_name=skill_name,
+                        user_id=workflow.user_id,
+                        require_enabled=True,
+                    )
+                    if skill is None:
+                        raise RuntimeError(
+                            "skill node requires config.skill_id or resolvable config.skill_name"
                         )
-                if skill is None:
-                    raise RuntimeError(
-                        "skill node requires config.skill_id or resolvable config.skill_name"
-                    )
-                payload_template = cfg.get("payload_template") or {}
-                payload = _render_template(payload_template, outputs)
-                if not isinstance(payload, dict):
-                    payload = {"value": payload}
-                else:
-                    payload = _strip_blank_skill_params(payload)
-                if skill.name == "patent-report":
-                    payload = _apply_patent_report_input(
-                        payload,
-                        outputs.get("input") or {},
-                        locale=run_locale,
-                    )
-                retry_count = int(cfg.get("retry_count") or 0)
-                timeout_s = int(cfg.get("timeout_seconds") or 0)
-                last_error: Exception | None = None
-                for _attempt in range(retry_count + 1):
-                    try:
-                        if timeout_s > 0:
+                    payload_template = cfg.get("payload_template") or {}
+                    payload = _render_template(payload_template, outputs)
+                    if not isinstance(payload, dict):
+                        payload = {"value": payload}
+                    else:
+                        payload = _strip_blank_skill_params(payload)
+                    if skill.name == "patent-report":
+                        payload = _apply_patent_report_input(
+                            payload,
+                            outputs.get("input") or {},
+                            locale=run_locale,
+                        )
+                    retry_count = int(cfg.get("retry_count") or 0)
+                    timeout_s = int(cfg.get("timeout_seconds") or 0)
+                    last_error: Exception | None = None
+                    for _attempt in range(retry_count + 1):
+                        try:
                             raw = await _execute_skill_for_user(
-                                self.db,
+                                node_db,
                                 workflow.user_id,
                                 skill,
                                 payload,
                                 timeout_s=timeout_s,
                                 tenant_facing=tenant_facing,
                             )
-                        else:
-                            raw = await _execute_skill_for_user(
-                                self.db,
-                                workflow.user_id,
-                                skill,
-                                payload,
-                                tenant_facing=tenant_facing,
-                            )
-                        result = _to_result_dict(raw)
-                        has_error = bool(isinstance(raw, dict) and raw.get("error"))
-                        if has_error:
-                            raise RuntimeError(str(result.get("error")))
-                        record["payload"] = payload
-                        record["result"] = result
-                        record["status"] = "success"
-                        return node_id, record
-                    except Exception as e:
-                        last_error = e
-                raise RuntimeError(str(last_error) if last_error else "skill execution failed")
+                            result = _to_result_dict(raw)
+                            has_error = bool(isinstance(raw, dict) and raw.get("error"))
+                            if has_error:
+                                raise RuntimeError(str(result.get("error")))
+                            record["payload"] = payload
+                            record["result"] = result
+                            record["status"] = "success"
+                            return node_id, record
+                        except Exception as e:
+                            last_error = e
+                    raise RuntimeError(str(last_error) if last_error else "skill execution failed")
             except Exception as e:
                 record["status"] = "failed"
                 record["error"] = str(e)
@@ -1102,6 +1524,12 @@ class WorkflowService:
         self, *, workflow_id: str, user_id: str, input_payload: dict | None = None
     ) -> WorkflowRunDetailResponse:
         """Enqueue workflow run; returns immediately while execution continues in background."""
+        from app.models.user import User
+        from app.services.workflow_entitlements import ensure_can_run_workflow
+
+        user = await self.db.get(User, user_id)
+        if user is not None:
+            await ensure_can_run_workflow(self.db, user)
         workflow = await self._get_workflow(workflow_id=workflow_id, user_id=user_id)
         if not workflow.enabled:
             raise HTTPException(

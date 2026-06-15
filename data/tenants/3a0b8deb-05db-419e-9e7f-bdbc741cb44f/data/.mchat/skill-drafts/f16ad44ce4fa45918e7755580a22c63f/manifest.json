@@ -1,0 +1,11 @@
+{
+  "id": "f16ad44ce4fa45918e7755580a22c63f",
+  "user_id": "3a0b8deb-05db-419e-9e7f-bdbc741cb44f",
+  "conversation_id": "bb69701c-3f1a-418d-b447-0d508de3acab",
+  "name": "csv-json-to-table",
+  "description": "Convert CSV or JSON data into a formatted Markdown table and save it.",
+  "skill_type": "tool",
+  "status": "draft",
+  "created_at": "2026-06-04T16:00:15.152358+00:00",
+  "updated_at": "2026-06-04T16:00:15.152358+00:00"
+}

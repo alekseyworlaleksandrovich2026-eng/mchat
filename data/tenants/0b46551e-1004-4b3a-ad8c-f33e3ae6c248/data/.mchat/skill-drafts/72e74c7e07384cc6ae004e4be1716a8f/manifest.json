@@ -1,0 +1,11 @@
+{
+  "id": "72e74c7e07384cc6ae004e4be1716a8f",
+  "user_id": "0b46551e-1004-4b3a-ad8c-f33e3ae6c248",
+  "conversation_id": "8ba736ed-0632-4746-aa8e-bc6fcf10eca3",
+  "name": "json-csv-to-table",
+  "description": "将JSON或CSV数据转换为Markdown表格",
+  "skill_type": "tool",
+  "status": "draft",
+  "created_at": "2026-06-07T08:00:38.167628+00:00",
+  "updated_at": "2026-06-07T08:00:38.167628+00:00"
+}

@@ -22,13 +22,25 @@ from app.schemas.workflow import (
     WorkflowStepResponse,
     WorkflowStepsPutRequest,
     WorkflowPatentShowcaseConfig,
+    WorkflowMarketplaceResponse,
     WorkflowSaveAsTemplateRequest,
     WorkflowTemplateSummary,
+    WorkflowTemplateVisibilityUpdate,
     WorkflowUpdate,
 )
+from app.schemas.workflow_entitlements import WorkflowEntitlementsResponse
+from app.services.workflow_entitlements import get_workflow_entitlements
 from app.services.workflow_service import WorkflowService
 
 router = APIRouter()
+
+
+@router.get("/entitlements", response_model=WorkflowEntitlementsResponse)
+async def workflow_entitlements(
+    current_user: User = Depends(require_permission(Permission.SKILLS_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> WorkflowEntitlementsResponse:
+    return await get_workflow_entitlements(db, current_user)
 
 
 @router.get("", response_model=list[WorkflowResponse])
@@ -56,6 +68,18 @@ async def get_patent_showcase_config(
     return await WorkflowService(db).get_patent_showcase_config(user_id=admin.id)
 
 
+@router.get("/marketplace", response_model=WorkflowMarketplaceResponse)
+async def workflow_marketplace(
+    locale: str | None = None,
+    current_user: User = Depends(require_permission(Permission.SKILLS_READ)),
+    db: AsyncSession = Depends(get_db),
+) -> WorkflowMarketplaceResponse:
+    """Browse system, community-shared, and own workflow templates."""
+    return await WorkflowService(db).list_marketplace(
+        user_id=current_user.id, locale=locale
+    )
+
+
 @router.get("/templates", response_model=list[WorkflowTemplateSummary])
 async def list_workflow_templates(
     locale: str | None = None,
@@ -63,6 +87,24 @@ async def list_workflow_templates(
     db: AsyncSession = Depends(get_db),
 ):
     return await WorkflowService(db).list_templates(user_id=admin.id, locale=locale)
+
+
+@router.patch(
+    "/templates/{template_id}/visibility",
+    response_model=WorkflowTemplateSummary,
+)
+async def update_workflow_template_visibility(
+    template_id: str,
+    request: WorkflowTemplateVisibilityUpdate,
+    current_user: User = Depends(require_permission(Permission.SKILLS_WRITE)),
+    db: AsyncSession = Depends(get_db),
+) -> WorkflowTemplateSummary:
+    return await WorkflowService(db).update_template_visibility(
+        user_id=current_user.id,
+        user_role=current_user.role,
+        template_id=template_id,
+        data=request,
+    )
 
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -235,6 +277,25 @@ async def list_pending_approvals(
         user_id=admin.id,
         workflow_id=workflow_id,
         limit=limit,
+    )
+
+
+@router.get("/wf/{workflow_id}", response_model=WorkflowResponse)
+async def get_workflow(
+    workflow_id: str,
+    admin: User = Depends(require_permission(Permission.SKILLS_READ)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch a single workflow by ID (for the graph editor page)."""
+    wf = await WorkflowService(db)._get_workflow(workflow_id=workflow_id, user_id=admin.id)
+    return WorkflowResponse(
+        id=wf.id,
+        name=wf.name,
+        description=wf.description,
+        enabled=wf.enabled,
+        graph_json=wf.graph_json,
+        created_at=wf.created_at,
+        updated_at=wf.updated_at,
     )
 
 
