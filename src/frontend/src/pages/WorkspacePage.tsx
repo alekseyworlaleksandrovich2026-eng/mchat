@@ -95,7 +95,7 @@ export function WorkspacePage() {
       setSidecars(sc)
       setRuntime(rt)
     } catch (e) {
-      toast.error(String(e))
+      toast(String(e), { type: 'error' })
     } finally {
       setLoading(false)
     }
@@ -115,9 +115,9 @@ export function WorkspacePage() {
       setChannels((rows) =>
         rows.map((r) => (r.customer_id === customerId ? updated : r)),
       )
-      toast.success(t('workspace.modeUpdated'))
+      toast(t('workspace.modeUpdated'), { type: 'success' })
     } catch (e) {
-      toast.error(String(e))
+      toast(String(e), { type: 'error' })
     } finally {
       setSavingId(null)
     }
@@ -126,10 +126,10 @@ export function WorkspacePage() {
   const recycleUser = async (userId: string) => {
     try {
       const res = await api.post<{ message: string }>(`/workspace/sidecars/${userId}/recycle`, {})
-      toast.success(res.message || t('workspace.recycled'))
+      toast(res.message || t('workspace.recycled'), { type: 'success' })
       await load()
     } catch (e) {
-      toast.error(String(e))
+      toast(String(e), { type: 'error' })
     }
   }
 
@@ -139,10 +139,10 @@ export function WorkspacePage() {
         '/workspace/sidecars/recycle-idle',
         {},
       )
-      toast.success(res.message)
+      toast(res.message, { type: 'success' })
       await load()
     } catch (e) {
-      toast.error(String(e))
+      toast(String(e), { type: 'error' })
     }
   }
 
