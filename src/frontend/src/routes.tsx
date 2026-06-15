@@ -37,6 +37,7 @@ const HelpPage = lazyNamed(() => import('./pages/HelpPage'), 'HelpPage')
 const UsersPage = lazyNamed(() => import('./pages/UsersPage'), 'UsersPage')
 const RolesPage = lazyNamed(() => import('./pages/RolesPage'), 'RolesPage')
 const TemplateManagerPage = lazyNamed(() => import('./pages/admin/TemplateManagerPage'), 'TemplateManagerPage')
+const AdminOrdersPage = lazyNamed(() => import('./pages/admin/AdminOrdersPage'), 'AdminOrdersPage')
 
 const RegisterPage = lazyNamed(() => import('./pages/RegisterPage'), 'RegisterPage')
 const PortalDashboard = lazyNamed(() => import('./pages/portal/DashboardPage'), 'DashboardPage')
@@ -91,7 +92,10 @@ export function CoreRoutes() {
         <Route path="/admin/channels" element={<AdminLayout><PageSuspense><ChannelsPage /></PageSuspense></AdminLayout>} />
         <Route path="/admin/roles" element={<AdminLayout><PageSuspense><RolesPage /></PageSuspense></AdminLayout>} />
         {isCloudEdition ? (
-          <Route path="/admin/templates" element={<AdminLayout><PageSuspense><TemplateManagerPage /></PageSuspense></AdminLayout>} />
+          <>
+            <Route path="/admin/templates" element={<AdminLayout><PageSuspense><TemplateManagerPage /></PageSuspense></AdminLayout>} />
+            <Route path="/admin/orders" element={<AdminLayout><PageSuspense><AdminOrdersPage /></PageSuspense></AdminLayout>} />
+          </>
         ) : (
           <Route path="/admin/templates" element={<Navigate to="/admin" replace />} />
         )}

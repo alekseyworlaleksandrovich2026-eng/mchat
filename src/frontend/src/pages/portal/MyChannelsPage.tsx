@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, MessageCircle, MessageSquare, ShoppingBag, Trash2 } from 'lucide-react'
-import api from '@/lib/api'
 import { portalApi, type MyChannel } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
@@ -50,8 +49,9 @@ export function MyChannelsPage() {
 
   const handleStartChat = async (channel: MyChannel) => {
     try {
-      const conv = await api.post<{ id: string }>('/chat/conversations', { title: channel.name })
-      navigate(`/chat/${conv.id}`)
+      const conv = await portalApi.resumeChannelConversation(channel.id)
+      sessionStorage.setItem('mchat_portal_channel_id', channel.id)
+      navigate(`/chat/${conv.id}?channel=${channel.id}`)
     } catch (e: any) {
       setError(e.message || 'Failed to start chat')
     }
@@ -125,6 +125,9 @@ export function MyChannelsPage() {
                     {channel.channel_category === 'patent_rag' ? 'Patent RAG' : channel.channel_category}
                     {channel.trial_ends_at && (
                       <> · {t('portal.trialRemaining', { days: Math.max(0, Math.ceil((new Date(channel.trial_ends_at).getTime() - Date.now()) / 86400000)) })}</>
+                    )}
+                    {channel.subscription_ends_at && (
+                      <> · {t('portal.subscriptionUntil', { date: new Date(channel.subscription_ends_at).toLocaleDateString() })}</>
                     )}
                   </p>
                 </div>

@@ -1,4 +1,5 @@
-import { CoreRoutes, PortalRoutes } from './routes'
+import { CoreRoutes } from './routes'
+import { PortalRoutes } from './routes-portal'
 
 function AppPortal() {
   return (

@@ -47,6 +47,24 @@ def resolve_api_key(provider: str, configured: str | None) -> str:
     return (configured or "").strip()
 
 
+def _apply_fallback_llm_config(
+    target: AIConfig, source: AIConfig, api_key: str
+) -> None:
+    """Copy credentials; align provider/model when fallback differs (portal template stubs)."""
+    src_provider = (source.provider or "").lower()
+    tgt_provider = (target.provider or "").lower()
+    if src_provider != tgt_provider:
+        logger.warning(
+            f"AI config {target.id} ({target.provider}/{target.model}) "
+            f"inherits provider+model from {source.id} ({source.provider}/{source.model})"
+        )
+        target.provider = source.provider
+        target.model = source.model
+    target.api_key = api_key
+    if source.api_base:
+        target.api_base = source.api_base
+
+
 async def ensure_ai_config_api_key(
     db: AsyncSession, ai_config: AIConfig
 ) -> AIConfig:
@@ -73,9 +91,7 @@ async def ensure_ai_config_api_key(
                 f"AI config {ai_config.id} has no valid API key; "
                 f"using key from config {fallback.id} ({fallback.provider})"
             )
-            ai_config.api_key = fb_key
-            if not ai_config.api_base and fallback.api_base:
-                ai_config.api_base = fallback.api_base
+            _apply_fallback_llm_config(ai_config, fallback, fb_key)
             return ai_config
 
     default_result = await db.execute(
@@ -89,9 +105,7 @@ async def ensure_ai_config_api_key(
                 f"AI config {ai_config.id} has no valid API key; "
                 f"using default config {default_cfg.id} ({default_cfg.provider})"
             )
-            ai_config.api_key = fb_key
-            if not ai_config.api_base and default_cfg.api_base:
-                ai_config.api_base = default_cfg.api_base
+            _apply_fallback_llm_config(ai_config, default_cfg, fb_key)
             return ai_config
 
     return ai_config

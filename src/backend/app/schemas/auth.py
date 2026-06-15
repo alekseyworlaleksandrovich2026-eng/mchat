@@ -31,9 +31,12 @@ class UserResponse(BaseModel):
     username: str
     role: str
     email: str | None = None
+    phone: str | None = None
     account_status: str = "active"
     avatar_url: str | None = None
     display_name: str | None = None
+    external_provider: str | None = None
+    can_set_password: bool = True
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -60,6 +63,13 @@ class ChangePasswordRequest(BaseModel):
 
     current_password: str = Field(..., min_length=1, max_length=255)
     new_password: str = Field(..., min_length=6, max_length=255)
+
+
+class SetPasswordRequest(BaseModel):
+    """Portal: set password without current (phone signup) or with current."""
+
+    new_password: str = Field(..., min_length=6, max_length=255)
+    current_password: str | None = Field(None, min_length=1, max_length=255)
 
 
 class CreateUserRequest(BaseModel):

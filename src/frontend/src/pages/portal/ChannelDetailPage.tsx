@@ -1,12 +1,27 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, Copy, ExternalLink, MessageSquare } from 'lucide-react'
-import api from '@/lib/api'
-import { portalApi, type MyChannel, type EmbedCode } from '@/lib/portalApi'
+import { ArrowLeft, BookOpen, Check, Copy, ExternalLink, MessageSquare } from 'lucide-react'
+import {
+  portalApi,
+  type ChannelIntegrations,
+  type MyChannel,
+  type EmbedCode,
+  type PortalAiConfigOption,
+} from '@/lib/portalApi'
+import {
+  PortalAdvancedPanel,
+  PortalAdvancedSubsection,
+} from '@/components/portal/PortalAdvancedPanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
 import { Spinner } from '@/components/ui/Spinner'
+
+type SkillBindingState = {
+  override?: boolean
+  secrets?: Record<string, string>
+}
 
 export function ChannelDetailPage() {
   const { t } = useTranslation()
@@ -20,17 +35,64 @@ export function ChannelDetailPage() {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', welcome_message: '' })
+  const [integrations, setIntegrations] = useState<ChannelIntegrations | null>(null)
+  const [skillBindings, setSkillBindings] = useState<Record<string, SkillBindingState>>({})
+  const [aiConfigs, setAiConfigs] = useState<PortalAiConfigOption[]>([])
+  const [aiOverride, setAiOverride] = useState(false)
+  const [aiConfigId, setAiConfigId] = useState('')
+  const [savingBindings, setSavingBindings] = useState(false)
+  const [savingAi, setSavingAi] = useState(false)
 
-  useEffect(() => {
+  const aiSelectOptions = useMemo(() => {
+    const opts = aiConfigs.map((c) => ({
+      value: c.id,
+      label: `${c.name} (${c.provider}/${c.model})`,
+    }))
+    const currentId = aiConfigId || channel?.ai_config_id
+    if (currentId && !opts.some((o) => o.value === currentId) && channel) {
+      opts.unshift({
+        value: currentId,
+        label: `${channel.ai_provider}/${channel.ai_model} (${t('portal.aiCurrent')})`,
+      })
+    }
+    return [{ value: '', label: t('portal.aiSelectPlaceholder') }, ...opts]
+  }, [aiConfigs, aiConfigId, channel, t])
+
+  const loadChannel = () => {
     if (!id) return
+    setLoading(true)
     Promise.all([
       portalApi.getMyChannel(id),
       portalApi.getEmbedCode(id).catch(() => null),
-    ]).then(([ch, em]) => {
-      setChannel(ch)
-      setEmbed(em)
-      setForm({ name: ch.name, welcome_message: ch.welcome_message || '' })
-    }).catch((e) => setError(e.message)).finally(() => setLoading(false))
+      portalApi.getChannelIntegrations(id).catch(() => null),
+      portalApi.listAiConfigs().catch(() => [] as PortalAiConfigOption[]),
+    ])
+      .then(([ch, em, integ, aiList]) => {
+        setChannel(ch)
+        setEmbed(em)
+        setForm({ name: ch.name, welcome_message: ch.welcome_message || '' })
+        setIntegrations(integ)
+        setSkillBindings((ch.skill_bindings || {}) as Record<string, SkillBindingState>)
+        setAiConfigs(aiList)
+        setAiOverride(!!ch.ai_override)
+        setAiConfigId(ch.ai_config_id || '')
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadChannel()
+  }, [id])
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (id) {
+        portalApi.getMyChannel(id).then(setChannel).catch(() => {})
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [id])
 
   const handleSave = async () => {
@@ -55,12 +117,12 @@ export function ChannelDetailPage() {
   }
 
   const handleStartChat = async () => {
+    if (!id) return
     setStartingChat(true)
     try {
-      const conv = await api.post<{ id: string }>('/chat/conversations', {
-        title: channel?.name || 'Chat',
-      })
-      navigate(`/chat/${conv.id}`)
+      const conv = await portalApi.resumeChannelConversation(id)
+      sessionStorage.setItem('mchat_portal_channel_id', id)
+      navigate(`/chat/${conv.id}?channel=${id}`)
     } catch (e: any) {
       setError(e.message || 'Failed to start chat')
     } finally {
@@ -93,14 +155,83 @@ export function ChannelDetailPage() {
             </p>
           </div>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
           {channel.welcome_message || 'Start a conversation with this channel.'}
         </p>
-        <Button onClick={handleStartChat} isLoading={startingChat} className="gap-2">
-          <MessageSquare className="w-4 h-4" />
-          {t('portal.startChat', 'Open Chat')}
-        </Button>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+          {t(
+            'portal.persistentChatHint',
+            'Chat history is saved for this channel. Leave and return anytime to continue.',
+          )}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleStartChat} isLoading={startingChat} className="gap-2">
+            <MessageSquare className="w-4 h-4" />
+            {t('portal.startChat', 'Open Chat')}
+          </Button>
+          <Link to={`/portal/channels/${id}/knowledge`}>
+            <Button type="button" variant="outline" className="gap-2">
+              <BookOpen className="w-4 h-4" />
+              {t('portal.manageKnowledge', 'Knowledge & files')}
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Subscription */}
+      {channel.subscription_active === false && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 text-sm text-amber-800 dark:text-amber-200">
+          <p className="font-medium">{t('portal.subscriptionExpired')}</p>
+          <p className="mt-1 text-amber-700 dark:text-amber-300">{t('portal.subscriptionExpiredHint')}</p>
+          {channel.template_id && (
+            <Link
+              to={`/portal/checkout?channel=${id}&template=${channel.template_id}&period=monthly`}
+              className="inline-block mt-3 text-primary-600 font-medium hover:underline"
+            >
+              {t('portal.renewNow')}
+            </Link>
+          )}
+        </div>
+      )}
+
+      {(channel.subscription_ends_at || channel.trial_ends_at) && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
+            {t('portal.subscriptionTitle')}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-gray-500">{t('portal.planLabel')}</dt>
+              <dd className="font-medium">{channel.plan}</dd>
+            </div>
+            {channel.trial_ends_at && (
+              <div>
+                <dt className="text-gray-500">{t('portal.trialEnds')}</dt>
+                <dd>{new Date(channel.trial_ends_at).toLocaleString()}</dd>
+              </div>
+            )}
+            {channel.subscription_ends_at && (
+              <div>
+                <dt className="text-gray-500">{t('portal.subscriptionEnds')}</dt>
+                <dd>{new Date(channel.subscription_ends_at).toLocaleString()}</dd>
+              </div>
+            )}
+          </dl>
+          <div className="flex flex-wrap gap-4 mt-3">
+            <Link to="/portal/orders" className="text-sm text-primary-600 hover:underline">
+              {t('portal.viewOrders')}
+            </Link>
+            {channel.template_id && channel.plan === 'pro' && (
+              <Link
+                to={`/portal/checkout?channel=${id}&template=${channel.template_id}&period=monthly`}
+                className="text-sm text-primary-600 hover:underline"
+              >
+                {t('portal.renewNow')}
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Usage */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
@@ -123,36 +254,217 @@ export function ChannelDetailPage() {
         </div>
       </div>
 
-      {/* Settings */}
+      {/* Basic settings — visible by default */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('portal.channelSettings')}</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          <span className="text-gray-500">{t('portal.aiCurrent')}: </span>
+          <span className="font-medium text-gray-800 dark:text-gray-200">
+            {channel.ai_provider}/{channel.ai_model}
+            {!channel.ai_override && channel.template_default_ai_config_id && (
+              <span className="text-gray-400 font-normal"> ({t('portal.aiFromTemplate')})</span>
+            )}
+          </span>
+        </p>
         <div className="space-y-4">
           <Input label={t('common.name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <Input label="Welcome message" value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })} />
+          <Input
+            label={t('portal.welcomeMessageLabel', '欢迎语')}
+            value={form.welcome_message}
+            onChange={(e) => setForm({ ...form, welcome_message: e.target.value })}
+          />
           <Button onClick={handleSave} isLoading={saving}>{t('common.save')}</Button>
         </div>
       </div>
 
-      {/* Embed */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{t('portal.embedCode')}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{t('portal.embedHint')}</p>
-        {embed && (
-          <>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto mb-3">{embed.embed_script}</pre>
-            <div className="flex items-center gap-3">
-              <Button onClick={handleCopy} size="sm" className="gap-1">
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? t('portal.copied') : t('portal.copyCode')}
-              </Button>
-              <a href={embed.widget_url} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline">
-                {t('common.preview')} <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </>
-        )}
-      </div>
+      <PortalAdvancedPanel hint={t('portal.advancedSettingsHint')}>
+        <PortalAdvancedSubsection title={t('portal.aiConfigTitle')} hint={t('portal.aiConfigHint')}>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={aiOverride}
+              onChange={(e) => setAiOverride(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            {t('portal.aiOverrideLabel')}
+          </label>
+          {aiOverride && (
+            <>
+              {aiSelectOptions.length <= 1 ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  {t('portal.noAiConfigs')}{' '}
+                  <Link to="/portal/account" className="text-primary-600 dark:text-primary-400 underline">
+                    {t('portal.goAddAiConfig')}
+                  </Link>
+                </p>
+              ) : (
+                <Select
+                  label={t('portal.aiSelect')}
+                  value={aiConfigId}
+                  onChange={(e) => setAiConfigId(e.target.value)}
+                  options={aiSelectOptions}
+                />
+              )}
+            </>
+          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            <Link to="/portal/account" className="text-primary-600 dark:text-primary-400 hover:underline">
+              {t('portal.manageAiKeys')}
+            </Link>
+          </p>
+          <Button
+            size="sm"
+            disabled={aiOverride && !aiConfigId}
+            isLoading={savingAi}
+            onClick={async () => {
+              if (!id) return
+              setSavingAi(true)
+              try {
+                const updated = await portalApi.updateMyChannel(id, {
+                  ai_override: aiOverride,
+                  ai_config_id: aiOverride ? aiConfigId : channel.ai_config_id,
+                })
+                setChannel(updated)
+                setAiConfigId(updated.ai_config_id || '')
+              } catch (e: any) {
+                setError(e.message)
+              } finally {
+                setSavingAi(false)
+              }
+            }}
+          >
+            {t('common.save')}
+          </Button>
+        </PortalAdvancedSubsection>
+
+        <PortalAdvancedSubsection
+          title={t('portal.integrationsTitle')}
+          hint={t('portal.integrationsHintOverride')}
+        >
+          {integrations && integrations.integrations.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('portal.noIntegrationsHint')}</p>
+          ) : (
+            <>
+              <div className="space-y-4">
+                {integrations?.integrations.map((block) => {
+                  const binding = skillBindings[block.skill] || {}
+                  const overrideOn = !!binding.override
+                  return (
+                    <div
+                      key={block.skill}
+                      className="rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {block.skill}
+                          {block.source && (
+                            <span className="ml-2 text-xs text-gray-400">({block.source})</span>
+                          )}
+                        </p>
+                        {block.allow_channel_override !== false && (
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={overrideOn}
+                              onChange={(e) => {
+                                const on = e.target.checked
+                                setSkillBindings((prev) => ({
+                                  ...prev,
+                                  [block.skill]: { ...prev[block.skill], override: on },
+                                }))
+                              }}
+                              className="rounded border-gray-300"
+                            />
+                            {t('portal.skillOverrideLabel')}
+                          </label>
+                        )}
+                      </div>
+                      {overrideOn &&
+                        block.fields.map((field) => (
+                          <div key={`${block.skill}-${field.key}`}>
+                            <Input
+                              label={field.label || field.key}
+                              type={field.secret !== false ? 'password' : 'text'}
+                              placeholder={field.placeholder || undefined}
+                              value={binding.secrets?.[field.key] ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setSkillBindings((prev) => ({
+                                  ...prev,
+                                  [block.skill]: {
+                                    ...prev[block.skill],
+                                    override: true,
+                                    secrets: {
+                                      ...(prev[block.skill]?.secrets || {}),
+                                      [field.key]: v,
+                                    },
+                                  },
+                                }))
+                              }}
+                            />
+                            {field.help && (
+                              <p className="text-xs text-gray-400 mt-1">{field.help}</p>
+                            )}
+                          </div>
+                        ))}
+                      {!overrideOn && (
+                        <p className="text-xs text-gray-400">{t('portal.skillUsePlatformDefault')}</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              {integrations && integrations.integrations.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    if (!id) return
+                    setSavingBindings(true)
+                    try {
+                      const updated = await portalApi.updateMyChannel(id, {
+                        skill_bindings: skillBindings,
+                      })
+                      setChannel(updated)
+                      setSkillBindings((updated.skill_bindings || {}) as Record<string, SkillBindingState>)
+                    } catch (e: any) {
+                      setError(e.message)
+                    } finally {
+                      setSavingBindings(false)
+                    }
+                  }}
+                  isLoading={savingBindings}
+                >
+                  {t('portal.saveIntegrations')}
+                </Button>
+              )}
+            </>
+          )}
+        </PortalAdvancedSubsection>
+
+        <PortalAdvancedSubsection title={t('portal.embedAdvanced')} hint={t('portal.embedHint')}>
+          {embed ? (
+            <>
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs overflow-x-auto">{embed.embed_script}</pre>
+              <div className="flex items-center gap-3">
+                <Button onClick={handleCopy} size="sm" className="gap-1">
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? t('portal.copied') : t('portal.copyCode')}
+                </Button>
+                <a
+                  href={embed.widget_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                >
+                  {t('common.preview')} <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.loading')}</p>
+          )}
+        </PortalAdvancedSubsection>
+      </PortalAdvancedPanel>
     </div>
   )
 }

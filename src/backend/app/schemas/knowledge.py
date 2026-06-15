@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.config import settings
 
 ChunkStrategy = Literal["fixed", "paragraph", "markdown"]
 RetrievalMode = Literal["vector", "keyword", "hybrid"]
@@ -21,7 +23,7 @@ class KnowledgeBaseRagFields(BaseModel):
     embedding_provider: str | None = None
     embedding_model: str | None = None
     embedding_api_base: str | None = None
-    embedding_dimension: int = Field(1536, ge=128, le=4096)
+    embedding_dimension: int | None = Field(None, ge=128, le=4096)
     retrieval_mode: RetrievalMode = "hybrid"
     retrieval_top_k: int = Field(5, ge=1, le=50)
     retrieval_candidate_k: int = Field(20, ge=5, le=100)
@@ -41,6 +43,20 @@ class KnowledgeBaseCreate(KnowledgeBaseRagFields):
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = None
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _default_embedding_from_settings(self) -> "KnowledgeBaseCreate":
+        if self.embedding_dimension is None:
+            object.__setattr__(
+                self, "embedding_dimension", int(settings.embedding_dimension)
+            )
+        if self.embedding_provider is None:
+            object.__setattr__(self, "embedding_provider", settings.embedding_provider)
+        if self.embedding_model is None:
+            object.__setattr__(self, "embedding_model", settings.embedding_model)
+        if self.embedding_api_base is None and settings.embedding_api_base:
+            object.__setattr__(self, "embedding_api_base", settings.embedding_api_base)
+        return self
 
 
 class KnowledgeBaseUpdate(BaseModel):

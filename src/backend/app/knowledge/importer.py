@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.knowledge.chunk_store import load_document_chunks, replace_document_chunks
 from app.knowledge.chunking import chunk_text, chunk_text_with_parents
 from app.knowledge.embedder import embedder_for_config
+from app.knowledge.embedding_align import align_kb_embedding_to_milvus
+from app.knowledge.embedding_align import align_kb_embedding_to_milvus
 from app.knowledge.milvus_client import milvus_client
 from app.knowledge.rag_config import KnowledgeBaseRagSettings, rag_settings_from_kb
 from app.models.knowledge import Document, KnowledgeBase
@@ -39,6 +41,7 @@ class DocumentImporter:
     ) -> Document:
         """Import a file as a knowledge document."""
         if kb is not None:
+            align_kb_embedding_to_milvus(kb)
             self.rag_settings = rag_settings_from_kb(kb)
             self._embedder = embedder_for_config(self.rag_settings.embedding_config())
 
@@ -93,6 +96,7 @@ class DocumentImporter:
     ) -> Document:
         """Import content from a URL."""
         if kb is not None:
+            align_kb_embedding_to_milvus(kb)
             self.rag_settings = rag_settings_from_kb(kb)
             self._embedder = embedder_for_config(self.rag_settings.embedding_config())
 
@@ -150,8 +154,9 @@ class DocumentImporter:
         if dimension != expected:
             raise ValueError(
                 f"Embedding dimension {dimension} does not match Milvus "
-                f"collection dimension {expected}. Update EMBEDDING_DIMENSION "
-                f"or recreate the Milvus collection."
+                f"collection dimension {expected}. Set EMBEDDING_DIMENSION={expected} "
+                f"in .env, use embedding_provider=ollama with nomic-embed-text (768), "
+                f"or recreate the knowledge base after restarting the API."
             )
 
     async def reindex_document(
@@ -207,8 +212,14 @@ class DocumentImporter:
         user_id: str,
         chunks: list[str] | None = None,
         skip_milvus_delete: bool = False,
+        kb: KnowledgeBase | None = None,
     ) -> int:
         """Chunk and index a document's content into Milvus and chunk store."""
+        if kb is not None:
+            align_kb_embedding_to_milvus(kb)
+            self.rag_settings = rag_settings_from_kb(kb)
+            self._embedder = embedder_for_config(self.rag_settings.embedding_config())
+
         if not milvus_client._connected:
             logger.warning("Milvus not connected, skipping vector indexing")
             if chunks and self.db is not None:

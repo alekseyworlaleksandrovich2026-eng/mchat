@@ -11,8 +11,10 @@ from app.knowledge.chunk_store import delete_document_chunks
 from app.knowledge.embedding_fingerprint import needs_reindex
 from app.knowledge.importer import DocumentImporter
 from app.knowledge.milvus_client import milvus_client
+from app.knowledge.embedding_align import align_kb_embedding_to_milvus
 from app.knowledge.rag import RagService
 from app.knowledge.rag_config import rag_settings_from_kb
+from app.core.config import settings as app_settings
 from app.models.knowledge import Document, KnowledgeBase
 from app.services.storage_service import storage_service
 from app.schemas.knowledge import (
@@ -137,6 +139,12 @@ class KnowledgeService:
             enabled=data.enabled,
         )
         _apply_rag_fields(kb, data)
+        if getattr(data, "embedding_dimension", None) is None:
+            kb.embedding_dimension = int(app_settings.embedding_dimension)
+        if kb.embedding_provider is None:
+            kb.embedding_provider = app_settings.embedding_provider
+        if kb.embedding_model is None:
+            kb.embedding_model = app_settings.embedding_model
         self.db.add(kb)
         await self.db.flush()
         await self.db.refresh(kb)
@@ -426,6 +434,9 @@ class KnowledgeService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Knowledge base not found",
             )
+
+        if milvus_client._connected and align_kb_embedding_to_milvus(kb):
+            await self.db.flush()
 
         content = await file.read()
         stored = storage_service.save_bytes(

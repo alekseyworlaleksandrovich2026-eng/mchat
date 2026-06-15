@@ -45,6 +45,9 @@ class ChannelTemplate(Base):
     default_theme: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     default_offline_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    integration_schema: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )  # [{"skill":"earth2037","fields":[{"key":"game_api_key","label":"游戏 API Key","secret":true}]}]
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

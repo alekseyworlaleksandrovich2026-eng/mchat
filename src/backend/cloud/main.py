@@ -8,9 +8,12 @@ from fastapi import FastAPI
 
 from app.main import create_app as create_core_app
 from cloud.api.auth import router as cloud_auth_router
+from cloud.api.pay_callbacks import router as pay_callbacks_router
+from cloud.api.payments import router as payments_router
 from cloud.api.portal import router as portal_router
 from cloud.api.templates import router as templates_router
 from cloud.api.admin_templates import router as admin_templates_router
+from cloud.api.admin_orders import router as admin_orders_router
 
 
 def create_app() -> FastAPI:
@@ -19,9 +22,12 @@ def create_app() -> FastAPI:
 
     # Cloud-specific routes
     app.include_router(cloud_auth_router, prefix="/api/auth", tags=["Auth"])
+    app.include_router(pay_callbacks_router, prefix="/api/pay", tags=["Pay"])
+    app.include_router(payments_router, prefix="/api/portal", tags=["Portal Payments"])
     app.include_router(portal_router, prefix="/api/portal", tags=["Portal"])
     app.include_router(templates_router, prefix="/api/templates", tags=["Templates"])
     app.include_router(admin_templates_router, prefix="/api", tags=["Admin Templates"])
+    app.include_router(admin_orders_router, prefix="/api", tags=["Admin Orders"])
 
     # Seed channel templates on startup
     from collections.abc import AsyncIterator
@@ -42,7 +48,7 @@ def create_app() -> FastAPI:
                         ChannelTemplate.category == "patent_rag"
                     )
                 )
-                if existing.scalar_one_or_none() is None:
+                if existing.scalars().first() is None:
                     patent_template = ChannelTemplate(
                         name="专利查新助手",
                         description=(
@@ -69,6 +75,9 @@ def create_app() -> FastAPI:
                             "chunk_strategy": "fixed",
                             "chunk_size": 1000,
                             "chunk_overlap": 100,
+                            "embedding_provider": "ollama",
+                            "embedding_model": "nomic-embed-text",
+                            "embedding_dimension": 768,
                         },
                         default_theme={
                             "primaryColor": "#0891b2",

@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.auth import (
     BootstrapResponse,
     ChangePasswordRequest,
+    SetPasswordRequest,
     CreateUserRequest,
     LoginRequest,
     RegisterRequest,
@@ -86,9 +87,10 @@ async def register(
 @router.get("/me", response_model=UserResponse)
 async def get_me(
     current_user: User = Depends(get_current_user),
-) -> User:
+    db: AsyncSession = Depends(get_db),
+) -> UserResponse:
     """Get current authenticated user info."""
-    return current_user
+    return AuthService(db).user_response(current_user)
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -103,6 +105,21 @@ async def change_password(
         current_user,
         request.current_password,
         request.new_password,
+    )
+
+
+@router.post("/set-password", status_code=status.HTTP_204_NO_CONTENT)
+async def set_password(
+    request: SetPasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Set password (portal phone users without current; admin still needs current)."""
+    auth_service = AuthService(db)
+    await auth_service.set_password(
+        current_user,
+        request.new_password,
+        request.current_password,
     )
 
 

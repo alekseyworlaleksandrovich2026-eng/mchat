@@ -31,6 +31,9 @@ HTMLEOF
 VITE_MCHAT_EDITION=cloud npm run build:cloud
 mv -f "$INDEX_BAK" index.html
 trap - EXIT
+# widget-loader.js lives in public/; ensure it is in dist for Docker nginx
+cp -f public/widget-loader.js dist/widget-loader.js
+chmod a+r dist/widget-loader.js public/widget-loader.js 2>/dev/null || true
 
 echo "==> Rsync to ${REMOTE}:${REMOTE_DIR}"
 rsync -avz --delete \
@@ -88,19 +91,35 @@ EOF
   rsync -avz "$ENV_FILE" "${REMOTE}:${REMOTE_DIR}/.env"
 fi
 
-echo "==> Fix frontend dist permissions on server"
-ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist 2>/dev/null || true"
+echo "==> Fix frontend dist permissions on server (nginx in Docker must read static files)"
+ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist ${REMOTE_DIR}/src/frontend/public 2>/dev/null || true"
 
-if [ -d "$PROJECT_DIR/skills/mchat-help" ]; then
-  echo "==> Sync skills/mchat-help (other server skills untouched)"
-  ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/skills/mchat-help"
-  rsync -avz \
-    "$PROJECT_DIR/skills/mchat-help/" \
-    "${REMOTE}:${REMOTE_DIR}/skills/mchat-help/"
-fi
+sync_skill_dir() {
+  local name="$1"
+  local src="$PROJECT_DIR/skills/$name"
+  [ -d "$src" ] || return 0
+  echo "==> Sync skills/$name (overwrite)"
+  ssh "$REMOTE" "mkdir -p ${REMOTE_DIR}/skills/$name"
+  rsync -avz --delete \
+    --exclude '__pycache__/' \
+    --exclude '.DS_Store' \
+    --exclude 'config.json' \
+    --exclude 'dist/' \
+    "$src/" "${REMOTE}:${REMOTE_DIR}/skills/$name/"
+}
+
+sync_skill_dir mchat-help
+sync_skill_dir mchat-ops
+for patent_dir in "$PROJECT_DIR"/skills/patent-*; do
+  [ -d "$patent_dir" ] || continue
+  sync_skill_dir "$(basename "$patent_dir")"
+done
 
 echo "==> Remote setup (pip, db migrate, restart Cloud services)"
 ssh "$REMOTE" "chmod +x ${REMOTE_DIR}/ops/deploy/remote-setup-cloud.sh && bash ${REMOTE_DIR}/ops/deploy/remote-setup-cloud.sh"
+
+echo "==> Fix frontend dist permissions again (after Docker restart)"
+ssh "$REMOTE" "chmod -R a+rX ${REMOTE_DIR}/src/frontend/dist ${REMOTE_DIR}/src/frontend/public 2>/dev/null || true"
 
 echo ""
 echo "Cloud deployed to https://mchat.9235.net"

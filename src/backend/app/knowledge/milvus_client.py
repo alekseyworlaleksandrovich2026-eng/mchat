@@ -112,10 +112,23 @@ class MilvusClient:
             )
 
             if utility.has_collection(self._collection_name):
-                logger.info(
-                    f"Collection '{self._collection_name}' already exists"
-                )
-                return True
+                coll = Collection(self._collection_name)
+                for field in coll.schema.fields:
+                    if field.name == "embedding":
+                        existing_dim = int(field.params.get("dim", 0))
+                        if existing_dim and existing_dim != self.dimension:
+                            logger.warning(
+                                f"Milvus collection dim {existing_dim} != "
+                                f"EMBEDDING_DIMENSION {self.dimension}; recreating"
+                            )
+                            utility.drop_collection(self._collection_name)
+                        break
+                if utility.has_collection(self._collection_name):
+                    logger.info(
+                        f"Collection '{self._collection_name}' already exists "
+                        f"(dim={self.dimension})"
+                    )
+                    return True
 
             fields = [
                 FieldSchema(

@@ -53,6 +53,9 @@ dev-worker: ## Start Core dev servers + worker (worker default disabled otherwis
 dev-stop: ## Stop processes on ports 3001 and 5173
 	@bash ops/scripts/dev-stop.sh
 
+dev-db: ## Start local dev MySQL (Docker)
+	@bash ops/scripts/ensure-dev-mysql.sh
+
 cloud: ## Start Cloud (Core + signup/portal/templates) dev servers
 	@bash ops/scripts/cloud-start.sh
 

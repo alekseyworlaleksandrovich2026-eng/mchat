@@ -1,56 +1,95 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, FileSearch, MessageSquare } from 'lucide-react'
-import { portalApi, type ChannelTemplate } from '@/lib/portalApi'
+import { portalApi, type ChannelTemplate, type MyChannel } from '@/lib/portalApi'
 import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 
-const iconMap: Record<string, React.ComponentType<{ className?: string }>> = { FileSearch, MessageSquare }
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  FileSearch,
+  MessageSquare,
+}
 
 export function TemplateDetailPage() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [template, setTemplate] = useState<ChannelTemplate | null>(null)
+  const [ownedChannel, setOwnedChannel] = useState<MyChannel | null>(null)
   const [loading, setLoading] = useState(true)
   const [renting, setRenting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
-    portalApi.getTemplate(id).then(setTemplate).catch((e) => setError(e.message)).finally(() => setLoading(false))
+    Promise.all([
+      portalApi.getTemplate(id),
+      portalApi.getMyChannels().catch(() => [] as MyChannel[]),
+    ])
+      .then(([tmpl, channels]) => {
+        setTemplate(tmpl)
+        setOwnedChannel(channels.find((c) => c.template_id === id) ?? null)
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
   }, [id])
 
   const handleRent = async () => {
-    if (!id) return
+    if (!id || !template) return
+    const needsPay =
+      template.price_monthly_cents > 0 || template.price_yearly_cents > 0
+    if (needsPay) {
+      navigate(`/portal/checkout?template=${id}&period=monthly`)
+      return
+    }
     setRenting(true)
     try {
       await portalApi.rentChannel(id)
       navigate('/portal/channels', { replace: true })
     } catch (e: any) {
-      setError(e.message || t('portal.rentFailed'))
+      const msg = e.message || ''
+      if (msg.includes('402') || msg.toLowerCase().includes('payment')) {
+        navigate(`/portal/checkout?template=${id}&period=monthly`)
+        return
+      }
+      setError(msg || t('portal.rentFailed'))
     } finally {
       setRenting(false)
     }
   }
 
-  if (loading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>
-  if (!template) return <div className="text-red-500 text-sm p-4">{error || t('common.noData')}</div>
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    )
+  }
+  if (!template) {
+    return <div className="text-red-500 text-sm p-4">{error || t('common.noData')}</div>
+  }
 
   const Icon = iconMap[template.icon || ''] || MessageSquare
-  const price = template.price_monthly_cents > 0
-    ? `¥${(template.price_monthly_cents / 100).toFixed(0)}${t('portal.monthly')}`
-    : t('portal.planFree')
+  const price =
+    template.price_monthly_cents > 0
+      ? `¥${(template.price_monthly_cents / 100).toFixed(0)}${t('portal.monthly')}`
+      : t('portal.planFree')
 
   return (
     <div className="space-y-6">
-      <button onClick={() => navigate('/portal/templates')}
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400">
+      <button
+        onClick={() => navigate('/portal/templates')}
+        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 dark:text-gray-400"
+      >
         <ArrowLeft className="w-4 h-4" /> {t('portal.templates')}
       </button>
 
-      {error && <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">{error}</div>}
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
         <div className="flex items-start gap-4 mb-6">
@@ -58,7 +97,14 @@ export function TemplateDetailPage() {
             <Icon className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{template.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">{template.name}</h1>
+              {ownedChannel && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  {t('portal.templateInUse', 'In use')}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{template.description}</p>
           </div>
         </div>
@@ -71,14 +117,37 @@ export function TemplateDetailPage() {
           <div>
             <p className="text-xs text-gray-500">{t('portal.trialDays', { days: template.trial_days })}</p>
             <p className="text-sm text-green-600 dark:text-green-400 font-medium">
-              {template.trial_days > 0 ? t('portal.trialRemaining', { days: template.trial_days }) : t('portal.noTrial')}
+              {template.trial_days > 0
+                ? t('portal.trialRemaining', { days: template.trial_days })
+                : t('portal.noTrial')}
             </p>
           </div>
         </div>
 
-        <Button onClick={handleRent} className="w-full" size="lg" isLoading={renting}>
-          {template.trial_days > 0 ? t('portal.rentChannel') : t('portal.rentChannel')}
-        </Button>
+        {ownedChannel ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {t(
+                'portal.templateAlreadyOwned',
+                'You already opened this solution. Continue chatting or manage knowledge.',
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Link to={`/portal/channels/${ownedChannel.id}`}>
+                <Button type="button">{t('portal.openAssistant', 'Open assistant')}</Button>
+              </Link>
+              <Link to={`/portal/channels/${ownedChannel.id}/knowledge`}>
+                <Button type="button" variant="outline">
+                  {t('portal.manageKnowledge', 'Knowledge & files')}
+                </Button>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <Button onClick={handleRent} className="w-full" size="lg" isLoading={renting}>
+            {t('portal.rentChannel')}
+          </Button>
+        )}
       </div>
     </div>
   )

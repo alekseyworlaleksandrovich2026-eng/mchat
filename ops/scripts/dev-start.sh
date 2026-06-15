@@ -21,6 +21,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+bash "$ROOT/ops/scripts/ensure-dev-mysql.sh"
+
 cd "$ROOT/src/backend"
 # shellcheck disable=SC1091
 source venv/bin/activate

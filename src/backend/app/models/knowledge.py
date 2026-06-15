@@ -42,7 +42,7 @@ class KnowledgeBase(Base):
     embedding_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     embedding_api_base: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    embedding_dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=1536)
+    embedding_dimension: Mapped[int] = mapped_column(Integer, nullable=False, default=768)
     # Retrieval
     retrieval_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="hybrid"

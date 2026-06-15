@@ -1,5 +1,6 @@
 """Bot engine event handler - processes messages and streams AI responses."""
 
+from fastapi import HTTPException as FastAPIHTTPException
 from loguru import logger
 from sqlalchemy import select
 
@@ -12,6 +13,7 @@ from app.core.event_bus import event_bus
 from app.models.ai_config import AIConfig
 from app.models.conversation import Conversation
 from app.models.customer import CustomerConfig
+from app.services.subscription_gate import ensure_channel_subscription_active
 from app.models.message import Message
 from app.models.user import User
 from app.websocket import ws_manager
@@ -51,6 +53,26 @@ async def on_message_created(
                     )
                 )
                 customer_config = cust_result.scalar_one_or_none()
+                if customer_config is not None:
+                    try:
+                        ensure_channel_subscription_active(customer_config)
+                    except FastAPIHTTPException as sub_exc:
+                        detail = sub_exc.detail
+                        msg = (
+                            detail.get("message")
+                            if isinstance(detail, dict)
+                            else str(detail)
+                        )
+                        await ws_manager.send_to_conversation(
+                            cov_id,
+                            {
+                                "type": "chat:message",
+                                "role": "assistant",
+                                "content": msg or "订阅已到期",
+                                "done": True,
+                            },
+                        )
+                        return
 
             async def _load_ai_config(config_id: str | None) -> AIConfig | None:
                 if not config_id:
