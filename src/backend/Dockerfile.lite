@@ -26,6 +26,7 @@ COPY skills/ ./skills/
 COPY src/backend/.env.example ./.env.example
 
 ENV PATH=/app/.local/bin:$PATH
+ENV PYTHONPATH=/app/.local/lib/python3.12/site-packages:$PYTHONPATH
 ENV UPLOAD_DIR=/app/uploads
 ENV SKILLS_DIR=/app/skills
 ENV MILVUS_ENABLED=false
